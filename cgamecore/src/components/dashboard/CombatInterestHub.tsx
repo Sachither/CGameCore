@@ -1,0 +1,249 @@
+"use client";
+import React, { useEffect, useState } from "react";
+import { getChallengeInterestCount, registerChallengeInterest } from "@/lib/match-service";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { Loader2, Users, Swords, Trophy, ShieldCheck, User } from "lucide-react";
+import { useRouter } from "next/navigation";
+
+interface InterestCardProps {
+  game: 'CODM' | 'EFOOTBALL';
+  segment: '1v1' | '5v5' | 'br' | 'ffa' | 'league';
+  title: string;
+  quota: number;
+  icon: React.ReactNode;
+  onRegistered: () => void;
+}
+
+const InterestCard = ({ game, segment, title, quota, icon, onRegistered }: InterestCardProps) => {
+  const { user, profile } = useAuth();
+  const router = useRouter();
+  const [count, setCount] = useState<number>(0);
+  const [loading, setLoading] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [localTagName, setLocalTagName] = useState("");
+  const [error, setError] = useState("");
+
+  const profileTag = game === 'CODM' ? profile?.codTag : profile?.efootballTag;
+  const hasTag = !!profileTag;
+
+  useEffect(() => {
+    const fetchCount = async () => {
+      setLoading(true);
+      try {
+        const c = await getChallengeInterestCount(game, segment);
+        setCount(c);
+      } catch (err) {
+        console.error("Failed to fetch count:", err);
+      }
+      setLoading(false);
+    };
+    fetchCount();
+    // Poll every 30 seconds for live feel for MVP (Real-time listener better for prod)
+    const interval = setInterval(fetchCount, 30000);
+    return () => clearInterval(interval);
+  }, [game, segment]);
+
+  const handleRegister = async () => {
+    if (!user || !profile) return;
+    
+    const finalInGameName = hasTag ? profileTag : localTagName;
+    if (!finalInGameName || finalInGameName.length < 3) {
+      setError("MISSION ABORTED: Valid In-Game ID required (min 3 chars).");
+      return;
+    }
+
+    setRegistering(true);
+    setError("");
+    try {
+      const idToken = await user.getIdToken();
+      const result: any = await registerChallengeInterest(
+        idToken,
+        profile.username,
+        profile.avatarId,
+        game,
+        segment,
+        500, // fee
+        finalInGameName
+      );
+      
+      // If a match was spawned, redirect immediately
+      if (result.matchCreated && result.matchId) {
+        router.push(`/match/${result.matchId}`);
+        return;
+      }
+
+      // Refresh count immediately
+      const c = await getChallengeInterestCount(game, segment);
+      setCount(c);
+      setShowConfirm(false);
+      onRegistered();
+    } catch (err: any) {
+      setError(err.message || "Failed to register interest.");
+    }
+    setRegistering(false);
+  };
+
+  const progress = Math.min((count / quota) * 100, 100);
+
+  return (
+    <div className="bg-surface border border-surface-border rounded-sm p-5 hover:border-accent/40 transition-all group relative overflow-hidden">
+      {/* Background Glow */}
+      <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+      
+      <div className="flex items-start justify-between relative z-10 mb-4">
+        <div className="p-2.5 bg-black border border-surface-border rounded-[3px] text-accent group-hover:scale-110 transition-transform">
+          {icon}
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest leading-none mb-1">Fee</div>
+          <div className="text-sm font-black italic text-main tracking-tighter">500 CR</div>
+        </div>
+      </div>
+
+      <div className="relative z-10">
+        <h3 className="text-base font-black italic uppercase text-white tracking-tight mb-1">{title}</h3>
+        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{game} Edition</p>
+      </div>
+
+      <div className="mt-6 relative z-10">
+        <div className="flex justify-between items-end mb-2">
+          <span className="text-[10px] font-black uppercase tracking-widest text-accent">Combat Group</span>
+          <span className="text-xs font-black italic text-main">
+            {loading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : `${count}/${quota}`}
+          </span>
+        </div>
+        <div className="h-1 bg-black border border-surface-border rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-accent shadow-[0_0_8px_rgba(0,255,102,0.6)] transition-all duration-1000"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="mt-5 relative z-10 space-y-3">
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 p-2 rounded-sm animate-in slide-in-from-top-1">
+            <p className="text-[10px] text-red-500 font-bold uppercase tracking-widest text-center">{error}</p>
+          </div>
+        )}
+
+        {!showConfirm ? (
+          <button 
+            onClick={() => {
+              setError("");
+              setShowConfirm(true);
+            }}
+            className="w-full bg-main hover:bg-main-hover text-black py-2.5 rounded-sm text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+          >
+            Register Interest
+          </button>
+        ) : (
+          <div className="bg-black border border-accent/20 p-3 rounded-sm space-y-3 animate-in fade-in slide-in-from-bottom-1">
+             <div className="flex items-center gap-2 text-[9px] text-gray-400 leading-tight">
+                <ShieldCheck className="w-3 h-3 text-accent shrink-0" />
+                <span>500 Credits will be moved to the Secure Vault and held until the quota is met.</span>
+             </div>
+
+             {!hasTag && (
+               <div className="space-y-2 animate-in fade-in duration-300">
+                 <label className="block text-[9px] font-bold uppercase tracking-widest text-sub">One-Time Identity Link ({game})</label>
+                 <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500" />
+                    <input 
+                      type="text"
+                      placeholder="Enter In-Game ID..."
+                      value={localTagName}
+                      onChange={(e) => setLocalTagName(e.target.value)}
+                      className="w-full bg-black border border-surface-border focus:border-accent p-2 pl-8 rounded-sm text-[10px] text-white font-bold outline-none"
+                    />
+                 </div>
+               </div>
+             )}
+             <div className="flex gap-2">
+                <button 
+                  onClick={() => setShowConfirm(false)}
+                  className="flex-1 bg-surface border border-surface-border text-gray-400 py-1.5 rounded-sm text-[10px] font-black uppercase tracking-widest"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleRegister}
+                  className="flex-1 bg-accent hover:bg-accent-hover text-black py-1.5 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center"
+                  disabled={registering}
+                >
+                  {registering ? <Loader2 className="w-3 h-3 animate-spin" /> : "Confirm"}
+                </button>
+             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default function CombatInterestHub() {
+  const [key, setKey] = useState(0);
+
+  return (
+    <div className="mt-12">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-sm font-bold uppercase tracking-widest text-gray-400 flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+          High-Stake Combat Queues
+        </h2>
+        <span className="text-[10px] text-accent font-black uppercase tracking-widest bg-accent/5 px-2 py-1 rounded-sm border border-accent/20 italic">
+          Vaulted Entry: 500 Credits
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
+        {/* COD BR */}
+        <InterestCard 
+          game="CODM" 
+          segment="br" 
+          title="Battle Royale" 
+          quota={20} 
+          icon={<Users className="w-5 h-5" />} 
+          onRegistered={() => setKey(k => k + 1)}
+        />
+        {/* eFootball League */}
+        <InterestCard 
+          game="EFOOTBALL" 
+          segment="league" 
+          title="Gold Cup League" 
+          quota={16} 
+          icon={<Trophy className="w-5 h-5" />} 
+          onRegistered={() => setKey(k => k + 1)}
+        />
+        {/* eFootball 1v1 High-Stake */}
+        <InterestCard 
+          game="EFOOTBALL" 
+          segment="1v1" 
+          title="Pro Duel EF" 
+          quota={2} 
+          icon={<Swords className="w-5 h-5" />} 
+          onRegistered={() => setKey(k => k + 1)}
+        />
+        {/* 1v1 High-Stake COD */}
+        <InterestCard 
+          game="CODM" 
+          segment="1v1" 
+          title="Pro Duel COD" 
+          quota={2} 
+          icon={<Swords className="w-5 h-5" />} 
+          onRegistered={() => setKey(k => k + 1)}
+        />
+        {/* COD FFA */}
+        <InterestCard 
+          game="CODM" 
+          segment="ffa" 
+          title="Free For All" 
+          quota={8} 
+          icon={<Users className="w-5 h-5" />} 
+          onRegistered={() => setKey(k => k + 1)}
+        />
+      </div>
+    </div>
+  );
+}
