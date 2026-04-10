@@ -1,0 +1,214 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- HELPERS ---
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      // Use exists() check as a safe guard. get().data is only called if it exists.
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data 
+        : {};
+    }
+
+    function isBanned() {
+      return isSignedIn() && getUserData().get('isBanned', false) == true;
+    }
+
+    function isSuspended() {
+      let userData = getUserData();
+      return isSignedIn() && 
+             userData.get('suspendedUntil', null) != null && 
+             userData.suspendedUntil.toMillis() > request.time.toMillis();
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.isSuperAdmin == true
+      );
+    }
+
+    function isStaff() {
+      return isSignedIn() && (
+        request.auth.token.role in ['ADMIN', 'MODERATOR', 'SUPER_ADMIN'] ||
+        request.auth.token.isAdmin == true ||
+        getUserData().get('role', 'PLAYER') in ['ADMIN', 'MODERATOR'] ||
+        getUserData().get('isAdmin', false) == true
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.role == 'ADMIN' ||
+        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.isAdmin == true ||
+        getUserData().get('role', 'PLAYER') == 'ADMIN' ||
+        getUserData().get('isAdmin', false) == true
+      );
+    }
+
+    // Rate limiting helper
+    function getRateLimitCount(key, intervalSeconds) {
+      let limitId = request.auth.uid + "_" + key;
+      let limitExists = exists(/databases/$(database)/documents/rate_limits/$(limitId));
+      let data = limitExists ? get(/databases/$(database)/documents/rate_limits/$(limitId)).data : null;
+      let now = request.time.toMillis();
+      return (data == null || data.get('resetAt', 0) < now) ? 0 : data.get('count', 0);
+    }
+
+    // --- IDENTITY RESERVATION ---
+    match /usernames/{username} {
+      // Direct client reads are blocked; availability is verified through secure server routes.
+      allow read: if false;
+      allow create: if isSignedIn() && !isBanned() && !exists(/databases/$(database)/documents/usernames/$(username));
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /phones/{phone} {
+      allow read: if false;
+      allow create: if isSignedIn() && !isBanned() && !exists(/databases/$(database)/documents/phones/$(phone));
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // --- USER PROFILES ---
+    match /users/{userId} {
+      allow read: if isSignedIn() && (isOwner(userId) || (isSignedIn() && !isBanned()));
+      
+      allow create: if isOwner(userId)
+        && !('isAdmin' in request.resource.data)
+        && !('role' in request.resource.data)
+        && !('isBanned' in request.resource.data);
+
+      allow update: if isOwner(userId) && !isBanned() && !isSuspended()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['balanceCoins', 'totalWins', 'totalMatches', 'stats', 'isAdmin', 'role', 'isBanned', 'testMode', 'suspendedUntil', 'banReason', 'intervention']);
+          
+      match /notifications/{noteId} {
+        allow read: if isOwner(userId) && !isBanned();
+        allow write: if false; 
+      }
+      
+      match /fcmTokens/{tokenId} {
+        // Users write their own device tokens; server reads via Admin SDK
+        allow create, update: if isOwner(userId) && !isBanned();
+        allow delete: if isOwner(userId);
+        allow read: if false;
+      }
+    }
+
+    // --- MATCHES (LOBBY & PRIVATE) ---
+    match /matches/{matchId} {
+      allow read: if isSignedIn() && !isBanned() && !isSuspended() && (
+        resource.data.get('status', 'WAITING') in ['WAITING', 'READY', 'WAITING_FOR_OPPONENT'] || 
+        resource.data.get('circuitId', null) != null || 
+        resource.data.get('leagueId', null) != null ||
+        request.auth.uid in resource.data.playerIds ||
+        resource.data.creatorId == request.auth.uid ||
+        isStaff() 
+      );
+      
+      allow write: if false;
+    }
+
+    // --- MESSAGES (MATCH CHAT) ---
+    match /matches/{matchId}/messages/{messageId} {
+      function canAccessChat() {
+        let matchDoc = get(/databases/$(database)/documents/matches/$(matchId)).data;
+        let pIds = matchDoc.get('playerIds', []);
+        let pMap = matchDoc.get('players', {});
+        return isSignedIn() && (
+          (request.auth.uid in pIds || 
+           request.auth.uid in pMap || 
+           matchDoc.get('creatorId', '') == request.auth.uid) 
+             && !isBanned() && !isSuspended()
+          || isStaff()
+        );
+      }
+
+      allow read: if isSignedIn() && canAccessChat();
+      allow create: if isSignedIn()
+        && request.resource.data.senderUid == request.auth.uid
+        && canAccessChat()
+        && get(/databases/$(database)/documents/matches/$(matchId)).data.status in ['WAITING', 'READY', 'IN_PROGRESS', 'RESOLVING', 'WAITING_FOR_OPPONENT', 'DISPUTED'];
+    }
+
+    // --- COMPETITION CHATS (WAR ROOM GLOBAL) ---
+    match /competition_chats/{competitionId}/messages/{messageId} {
+      allow read: if isSignedIn() && !isBanned();
+      allow create: if isSignedIn() && !isBanned() && !isSuspended()
+                    && request.resource.data.senderUid == request.auth.uid
+                    && getRateLimitCount('created_chats', 86400) < 5;
+    }
+
+    // --- CHALLENGE INTEREST (WAITLIST) ---
+    match /challenge_interest/{interestId} {
+      allow read: if isSignedIn() && !isBanned();
+      allow create: if isSignedIn() && !isBanned() && !isSuspended() && request.resource.data.uid == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow update: if false;
+    }
+    
+    // --- QUEUES (Atomic Matchmaking) ---
+    match /queues/{queueId} {
+      allow read: if isSignedIn() && !isBanned();
+      allow write: if false; 
+    }
+
+    // --- TRANSACTIONS (Order History) ---
+    match /transactions/{docId} {
+      allow read: if isSignedIn() && !isBanned() && (resource.data.uid == request.auth.uid || isStaff());
+      allow write: if false; 
+    }
+
+    // --- WITHDRAWALS (Treasury Queue) ---
+    match /withdrawals/{docId} {
+      allow read: if isSignedIn() && !isBanned() && (resource.data.uid == request.auth.uid || isStaff());
+      allow write: if false; 
+    }
+
+    // --- CIRCUITS (Multi-Stage Tournaments) ---
+    match /circuits/{circuitId} {
+      allow read: if isSignedIn();
+      allow write: if false; 
+    }
+
+    // --- LEAGUES (Legacy Tournament Format) ---
+    match /leagues/{leagueId} {
+      allow read: if isSignedIn();
+      allow write: if false; 
+    }
+
+    // --- CONTACT MESSAGES ---
+    match /contact_messages/{messageId} {
+      allow read, update, delete: if isStaff();
+      allow write: if false; // Creation is handled natively by Server Action bypass
+    }
+
+    // --- ADMIN AUDIT LOG ---
+    match /admin_audit_log/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    // --- GLOBAL STATS ---
+    match /stats/{statId} {
+      allow read: if isSignedIn() && !isBanned() && (statId != 'platform_finances' || isAdmin());
+      allow write: if false;
+    }
+
+    // --- SYSTEM CONFIG ---
+    match /system/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+  }
+}
