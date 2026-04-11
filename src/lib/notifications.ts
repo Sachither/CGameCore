@@ -57,10 +57,14 @@ export async function createNotificationInternal(
           }
         };
 
-        await admin.messaging().sendMulticast({
-          tokens: fcmTokens,
-          ...payload
-        });
+        await Promise.all(
+          fcmTokens.map((token: string) =>
+            admin.messaging().send({
+              token,
+              ...payload
+            })
+          )
+        );
         console.log(`[FCM] Sent ${type} notification to ${uid}`);
       }
     } catch (fcmError) {

@@ -21,10 +21,35 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "CGameCore | High Stakes Mobile Gaming",
   description: "Play CODM and eFootball for real money. Skill-based matchmaking with automated Escrow.",
+  manifest: "/manifest.json",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "CGame",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "32x32" },
+      { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
+      { url: "/web-app-manifest-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/web-app-manifest-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [
+      { url: "/apple-touch-icon.png", sizes: "180x180" },
+      { url: "/web-app-manifest-192x192.png", sizes: "192x192" },
+    ],
+  },
   other: {
     'mobile-web-app-capable': 'yes',
     'apple-mobile-web-app-capable': 'yes',
-    'apple-mobile-web-app-status-bar-style': 'default',
+    'apple-mobile-web-app-status-bar-style': 'black-translucent',
+    'theme-color': '#000000',
+    'msapplication-TileColor': '#000000',
+    'msapplication-config': '/browserconfig.xml',
   },
 };
 

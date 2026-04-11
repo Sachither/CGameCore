@@ -1,0 +1,91 @@
+{
+  "name": "CGameCore - Competitive Gaming Platform",
+  "short_name": "CGame",
+  "description": "Real-time competitive gaming with tournaments, matches, and crypto payouts",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "categories": ["games", "entertainment", "sports"],
+  "screenshots": [
+    {
+      "src": "/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "32x32",
+      "type": "image/x-icon"
+    },
+    {
+      "src": "/favicon-96x96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/web-app-manifest-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "Access your gaming dashboard",
+      "url": "/dashboard",
+      "icons": [{ "src": "/cgame-icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Wallet",
+      "short_name": "Wallet",
+      "description": "Manage your funds and withdrawals",
+      "url": "/dashboard/wallet",
+      "icons": [{ "src": "/cgame-icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Matches",
+      "short_name": "Matches",
+      "description": "Find and join matches",
+      "url": "/dashboard/matches",
+      "icons": [{ "src": "/cgame-icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false
+}

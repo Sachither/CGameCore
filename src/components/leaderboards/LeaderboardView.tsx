@@ -90,11 +90,12 @@ export default function LeaderboardView() {
         const badgeSnap = await getDocs(badgeQuery);
 
         const badgeUsers = badgeSnap.docs
-          .map(doc => ({
+          .filter(doc => !users.find(u => u.id === doc.id)) // Don't duplicate
+          .map((doc, index) => ({
             id: doc.id,
+            rank: users.length + index + 1,
             ...doc.data()
-          }))
-          .filter(badgeUser => !users.find(u => u.id === badgeUser.id)); // Don't duplicate
+          }));
 
         // Add badge users to the list
         users = [...users, ...badgeUsers];

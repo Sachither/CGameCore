@@ -47,17 +47,21 @@ export async function verifyPaystackAmount(
     const transactionRef = adminDb.collection("transactions").doc(reference);
     const transactionSnap = await transactionRef.get();
 
-    const storedAmountKobo = transactionSnap.exists
-      ? (transactionSnap.data()?.fiatAmount || 0) * INTERNAL_USD_TO_NGN_RATE * 100
+    const storedData = transactionSnap.exists ? transactionSnap.data() : null;
+    // Use the stored exchange rate (which includes any platform discount), fall back to hardcoded rate
+    const exchangeRate = storedData?.exchangeRate || INTERNAL_USD_TO_NGN_RATE;
+
+    const storedAmountKobo = storedData
+      ? (storedData?.fiatAmount || 0) * exchangeRate * 100
       : null;
 
-    const storedAmountUsd = transactionSnap.exists
-      ? transactionSnap.data()?.fiatAmount || 0
+    const storedAmountUsd = storedData
+      ? storedData?.fiatAmount || 0
       : null;
 
-    // Step 2: Convert webhook amount (KOBO) to USD
+    // Step 2: Convert webhook amount (KOBO) to USD using the same exchange rate
     const webhookAmountNaira = Number(webhookAmountKobo) / 100;
-    const webhookAmountUsd = webhookAmountNaira / INTERNAL_USD_TO_NGN_RATE;
+    const webhookAmountUsd = webhookAmountNaira / exchangeRate;
 
     // Step 3: Check for mismatch with stored record
     const mismatchWithStored =
@@ -76,7 +80,7 @@ export async function verifyPaystackAmount(
         verified: false,
         storedAmountUsd: storedAmountUsd || 0,
         claimedAmountUsd: webhookAmountUsd,
-        storedAmountKobo,
+        storedAmountKobo: storedAmountKobo ?? undefined,
         claimedAmountKobo: webhookAmountKobo,
         mismatch: true,
         reason: "Webhook amount does not match stored transaction record",
@@ -100,7 +104,7 @@ export async function verifyPaystackAmount(
 
         if (paystackData.status && paystackData.data?.status === "success") {
           const paystackAmountKobo = Number(paystackData.data.amount);
-          const paystackAmountUsd = (paystackAmountKobo / 100) / INTERNAL_USD_TO_NGN_RATE;
+          const paystackAmountUsd = (paystackAmountKobo / 100) / exchangeRate;
 
           // Compare Paystack amount with webhook claim
           if (Math.abs(paystackAmountUsd - webhookAmountUsd) > 0.01) {
@@ -173,7 +177,7 @@ export async function verifyPaystackAmount(
       verified: true,
       storedAmountUsd: storedAmountUsd || webhookAmountUsd,
       claimedAmountUsd: webhookAmountUsd,
-      storedAmountKobo,
+      storedAmountKobo: storedAmountKobo ?? undefined,
       claimedAmountKobo: webhookAmountKobo,
       mismatch: false,
     };

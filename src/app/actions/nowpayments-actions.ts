@@ -8,6 +8,61 @@ import {
 } from "@/lib/payment-verification";
 
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
+const API_TIMEOUT_MS = 15000; // 15 second timeout
+
+/**
+ * Helper: Robust NowPayments API call with timeout and error handling
+ */
+async function callNowPaymentsAPI(
+  endpoint: string,
+  method: string = "POST",
+  body?: any,
+  retryCount = 0
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  const maxRetries = 2;
+  
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+    const response = await fetch(endpoint, {
+      method,
+      headers: {
+        "x-api-key": NOWPAYMENTS_API_KEY!,
+        "Content-Type": "application/json"
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || `HTTP ${response.status}`);
+    }
+
+    return { success: true, data };
+
+  } catch (error: any) {
+    const isNetworkError = error?.name === 'AbortError' || 
+                          error?.message?.includes('fetch') ||
+                          error?.message?.includes('ECONNREFUSED');
+
+    if (isNetworkError && retryCount < maxRetries) {
+      console.warn(`[NowPayments] Network error, retrying... (${retryCount + 1}/${maxRetries})`);
+      await new Promise(resolve => setTimeout(resolve, 1000 * (retryCount + 1)));
+      return callNowPaymentsAPI(endpoint, method, body, retryCount + 1);
+    }
+
+    console.error(`[NowPayments] API Error:`, error?.message);
+    return { 
+      success: false, 
+      error: error?.message || 'API request failed',
+    };
+  }
+}
 
 // Fixed peg: 100 Coins = $1.00 USD
 export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: number) {
@@ -30,7 +85,7 @@ export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: 
     // 1. Generate unique reference for our database
     const reference = `CG-CRYPTO-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
-    // 2. Call NowPayments to create an invoice
+    // 2. Call NowPayments to create an invoice (with retry logic)
     const invoicePayload = {
       price_amount: amountUsd,
       price_currency: "usd",
@@ -40,20 +95,21 @@ export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: 
       cancel_url: `https://cgamecore.com/dashboard/wallet?cancel=true`
     };
 
-    const response = await fetch("https://api.nowpayments.io/v1/invoice", {
-      method: "POST",
-      headers: {
-        "x-api-key": NOWPAYMENTS_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(invoicePayload)
-    });
+    const apiResult = await callNowPaymentsAPI("https://api.nowpayments.io/v1/invoice", "POST", invoicePayload);
 
-    const data = await response.json();
+    if (!apiResult.success) {
+      console.error("[NowPayments] Failed to create invoice:", apiResult.error);
+      return { 
+        success: false, 
+        error: apiResult.error || "Failed to initialize crypto invoice. Please try again.",
+        isNetworkError: true,
+      };
+    }
 
-    if (!response.ok || !data.invoice_url) {
-      console.error("[NowPayments] Failed to create invoice:", data);
-      return { success: false, error: data.message || "Failed to initialize crypto invoice." };
+    const data = apiResult.data;
+    
+    if (!data.invoice_url) {
+      return { success: false, error: "Invalid invoice response from gateway." };
     }
 
     // 3. Save to Firestore
@@ -78,6 +134,10 @@ export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: 
 
   } catch (error: any) {
     console.error("[NowPayments] Error:", error);
+    return { 
+      success: false, 
+      error: error?.message || "Crypto gateway error. Please try again." 
+    };
     return { success: false, error: "System failure initializing Gateway." };
   }
 }

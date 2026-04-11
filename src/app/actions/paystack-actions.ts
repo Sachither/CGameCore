@@ -7,6 +7,9 @@ import {
   recordWebhookEvent,
   checkWebhookRateLimit,
 } from "@/lib/payment-verification";
+import {
+  verifyPaystackTransactionWithSSLRecovery,
+} from "@/lib/paystack-api";
 
 import { getPlatformRate } from "@/app/actions/rate-actions";
 
@@ -68,6 +71,7 @@ export async function createPendingDepositAction(
 
 /**
  * SERVER ACTION: Verify Paystack Transaction & Credit Wallet
+ * Handles SSL/Network errors gracefully with retry logic and webhook fallback
  */
 export async function verifyPaystackPaymentAction(
   idToken: string,
@@ -96,18 +100,34 @@ export async function verifyPaystackPaymentAction(
         return { success: true, message: "Transaction already fulfilled." };
     }
 
-    // 3. Verify with Paystack API
-    const response = await fetch(`https://api.paystack.co/transaction/verify/${reference}`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-      },
-    });
+    // 3. Verify with Paystack API (with SSL error recovery)
+    const verificationResult = await verifyPaystackTransactionWithSSLRecovery(reference, PAYSTACK_SECRET_KEY);
 
-    const data = await response.json();
+    if (verificationResult.networkFailed) {
+      // Critical: Network failed but payment might have gone through
+      console.error(`[PaystackAction] CRITICAL: Network failure verifying ${reference}. Payment status unknown.`);
+      
+      // Update transaction to PENDING_VERIFICATION (waiting for webhook)
+      if (transactionSnap.exists) {
+        await transactionRef.update({
+          status: "PENDING_VERIFICATION",
+          verificationAttemptedAt: admin.firestore.FieldValue.serverTimestamp(),
+          verificationNote: "Network error during verification. Awaiting webhook confirmation.",
+          version: admin.firestore.FieldValue.increment(1),
+        });
+      }
 
-    if (!data.status || data.data.status !== 'success') {
-      const isNotFound = data.message?.toLowerCase().includes("transaction reference not found");
+      // Tell user their payment is being verified
+      return { 
+        success: false, 
+        error: "Network issue - your payment is being verified. You will receive a confirmation shortly.",
+        isPending: true,
+        retryAfterSeconds: 30,
+      };
+    }
+
+    if (!verificationResult.verified) {
+      const isNotFound = verificationResult.error?.toLowerCase().includes("not found");
       
       if (isNotFound && transactionSnap.exists) {
         const createdAt = t?.createdAt?.toDate ? t.createdAt.toDate().getTime() : 0;
@@ -125,11 +145,14 @@ export async function verifyPaystackPaymentAction(
         }
       }
 
-      return { success: false, error: data.message || "Payment verification failed." };
+      return { success: false, error: verificationResult.error || "Payment verification failed." };
     }
 
-    // 1.1 FIX: Verify amount against stored record AND Paystack API before fulfilling
-    const amountKobo = Number(data.data.amount);
+    // Payment verified successfully
+    const data = verificationResult.data;
+    
+    // 3.1 FIX: Verify amount against stored record AND Paystack API before fulfilling
+    const amountKobo = Number(data.amount);
     const verification = await verifyPaystackAmount(reference, amountKobo, true);
 
     if (!verification.verified) {
@@ -179,7 +202,7 @@ export async function verifyPaystackPaymentAction(
     }
 
     // 5. SECURE TRANSACTION: Credit Coins
-    const result = await internalFulfillDeposit(reference, data.data.amount, uid);
+    const result = await internalFulfillDeposit(reference, data.amount, uid);
     
     if (result.success) {
       console.log(`[PaystackAction] Successfully verified and fulfilled $${amountUsd} deposit for ${uid} (+${result.coinsAdded} CR)`);
@@ -190,6 +213,16 @@ export async function verifyPaystackPaymentAction(
 
   } catch (error: any) {
     console.error("[PaystackAction] Integration Error:", error);
+    
+    // Generic error - payment status unknown
+    if (error?.message?.includes('SSL') || error?.message?.includes('ERR_')) {
+      return { 
+        success: false, 
+        error: "Network connectivity issue. Your payment is being verified. Check your account shortly.",
+        isPending: true,
+      };
+    }
+    
     return { success: false, error: error.message || "Paystack link severed." };
   }
 }

@@ -268,6 +268,7 @@ function LeagueCard({ league: t, progress, onJoin, currentUserUid }: { league: L
   // Tournament-only: circuits go to the War Room, gathering goes to match lobby
   let detailHref = `/dashboard/tournaments/view/${t.id}`;
   if (t.isGathering) detailHref = `/match/${t.id}`;
+  const isCircuit = !t.isGathering;
 
   const formatLabel = 'ELITE KNOCKOUT (16P)';
   

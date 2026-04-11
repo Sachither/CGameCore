@@ -97,7 +97,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   };
 
   const getFormatsForGame = () => {
-    if (game === 'CODM') return ['1v1', 'FFA', 'br', 'alcatraz'] as const;
+    if (game === 'CODM') return ['1v1', 'FFA', 'br', 'alcatraz', 'league'] as const;
     return ['1v1', 'tournament'] as const;
   };
 

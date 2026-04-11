@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import PWAInstallButton from './PWAInstallButton';
 
 export default function Navbar() {
   return (
@@ -15,7 +16,8 @@ export default function Navbar() {
             <Link href="/rules" className="text-sub hover:text-accent font-medium transition-colors text-sm uppercase tracking-wide">Games & Rules</Link>
             <Link href="/faq" className="text-sub hover:text-accent font-medium transition-colors text-sm uppercase tracking-wide">FAQ</Link>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
+            <PWAInstallButton />
             <Link href="/login" className="text-sub text-sm font-bold hover:text-main transition-colors uppercase tracking-wide">Login</Link>
             <Link href="/register" className="bg-accent text-black px-6 py-2 rounded-sm text-sm font-black uppercase tracking-wider hover:bg-accent-hover transition-transform hover:-translate-y-0.5 shadow-[0_0_15px_rgba(0,255,102,0.4)]">
               Play Now

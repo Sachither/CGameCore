@@ -59,8 +59,8 @@ export default function CircuitBracket({ circuit, allMatches }: Props) {
            <h3 className="text-[10px] font-black text-white/50 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <Activity className="w-3 h-3" /> Quarter-Finals
            </h3>
-           {quarters.map((tie, idx) => (
-              <TieNode key={idx} tie={tie} players={circuit.players} allMatches={allMatches} round="QF" />
+           {quarters.map((tie: CircuitTie, idx: number) => (
+              <TieNode key={idx} tie={tie} players={circuit.players as any} allMatches={allMatches} round="QF" />
            ))}
         </div>
 
@@ -69,8 +69,8 @@ export default function CircuitBracket({ circuit, allMatches }: Props) {
            <h3 className="text-[10px] font-black text-white/50 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <Swords className="w-3 h-3" /> Semi-Finals
            </h3>
-           {semis.map((tie, idx) => (
-              <TieNode key={idx} tie={tie} players={circuit.players} allMatches={allMatches} round="SF" />
+           {semis.map((tie: CircuitTie, idx: number) => (
+              <TieNode key={idx} tie={tie} players={circuit.players as any} allMatches={allMatches} round="SF" />
            ))}
            {semis.length === 0 && <BracketEmptyState count={2} />}
         </div>
@@ -80,7 +80,7 @@ export default function CircuitBracket({ circuit, allMatches }: Props) {
            <h3 className="text-[10px] font-black text-accent uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
               <Trophy className="w-3 h-3" /> Grand Final
            </h3>
-           <FinalNode final={final} players={circuit.players} allMatches={allMatches} />
+           <FinalNode final={final} players={circuit.players as any} allMatches={allMatches} />
         </div>
       </div>
     </div>

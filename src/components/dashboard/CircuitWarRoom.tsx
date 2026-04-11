@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from 'react';
-import { League, Circuit, Match } from '@/lib/match-service';
+import { Circuit, Match } from '@/lib/match-service';
 import { Swords, ChevronRight, Loader2, Target, ShieldCheck, ShieldAlert, Activity, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
 import { requestAdminInterventionAction } from '@/app/actions/match-actions';
@@ -8,7 +8,7 @@ import CompetitionChat from './CompetitionChat';
 import TacticalMap from './TacticalMap';
 
 interface Props {
-   competition: League | Circuit;
+   competition: Circuit;
    nextMatch: Match | null;
    activeMatches?: Match[];
    allMatches?: Match[];

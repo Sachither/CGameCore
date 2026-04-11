@@ -558,7 +558,7 @@ export async function searchUserAction(idToken: string, query: string) {
 /**
  * ADMIN: GET PLATFORM OVERVIEW STATS
  */
-export async function getPlatformStatsAction(idToken: string) {
+export async function getPlatformStatsAction(idToken: string): Promise<{ success: boolean; error?: string; stats: { totalUsers: number; totalMatches: number; openDisputes: number; activeMatches: number; codmMatches: number; efootballMatches: number; financeDeposits: number; financePayouts: number; financeRevenue: number; financeWithdrawals: number; format1v1: number; format5v5: number; formatBR: number; formatFFA: number; formatTourney: number; formatLeague: number; awaitingPayouts: number; } | null; }> {
   const adminUid = await getVerifiedAdminUid(idToken);
 
   // 🔒 [SECURITY] PHASE 4: Rate limit admin stats requests (20 requests/minute per admin)
@@ -569,13 +569,13 @@ export async function getPlatformStatsAction(idToken: string) {
     return {
       success: false,
       error: `Rate limited - too many stats requests. Try again in ${rateLimitResult.retryAfter} seconds.`,
-      stats: {}
+      stats: null
     };
   }
   try {
     const [
       usersSnap, matchesSnap, disputedSnap, activeSnap, codmSnap, efootballSnap, financesSnap,
-      v1Snap, brSnap, ffaSnap, tourneySnap, resolvingSnap
+      v1Snap, v5Snap, brSnap, ffaSnap, tourneySnap, leagueSnap, resolvingSnap
     ] = await Promise.all([
       adminDb.collection("users").count().get(),
       adminDb.collection("matches").count().get(),
@@ -585,9 +585,11 @@ export async function getPlatformStatsAction(idToken: string) {
       adminDb.collection("matches").where("game", "==", "EFOOTBALL").count().get(),
       adminDb.collection("stats").doc("platform_finances").get(),
       adminDb.collection("matches").where("format", "==", "1v1").count().get(),
+      adminDb.collection("matches").where("format", "==", "5v5").count().get(),
       adminDb.collection("matches").where("format", "==", "br").count().get(),
       adminDb.collection("matches").where("format", "==", "ffa").count().get(),
       adminDb.collection("matches").where("format", "==", "tournament").count().get(),
+      adminDb.collection("matches").where("format", "==", "league").count().get(),
       adminDb.collection("matches").where("status", "==", "RESOLVING").count().get(),
     ]);
 
@@ -609,9 +611,11 @@ export async function getPlatformStatsAction(idToken: string) {
         financeRevenue: finances?.totalPlatformCut || 0,
         financeWithdrawals: finances?.totalWithdrawals || 0,
         format1v1: v1Snap.data().count,
+        format5v5: v5Snap.data().count,
         formatBR: brSnap.data().count,
         formatFFA: ffaSnap.data().count,
         formatTourney: tourneySnap.data().count,
+        formatLeague: leagueSnap.data().count,
         awaitingPayouts: resolvingSnap.data().count,
       },
     };

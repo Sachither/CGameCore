@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { doc, onSnapshot, query, collection, where, limit, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { League, Circuit, Match } from "@/lib/match-service";
+import { Circuit, Match } from "@/lib/match-service";
 import CircuitWarRoom from "@/components/dashboard/CircuitWarRoom";
 import { Loader2, ShieldAlert, ChevronLeft } from "lucide-react";
 import Link from "next/link";
@@ -14,7 +14,7 @@ export default function WarRoomPage() {
   const { user, idToken } = useAuth();
   const router = useRouter();
 
-  const [competition, setCompetition] = useState<League | Circuit | null>(null);
+  const [competition, setCompetition] = useState<Circuit | null>(null);
   const [nextMatch, setNextMatch] = useState<Match | null>(null);
   const [allMatches, setAllMatches] = useState<Match[]>([]);
   const [playerStatus, setPlayerStatus] = useState<{ isQualified: boolean, isEliminated: boolean, played: number, max: number }>({ isQualified: false, isEliminated: false, played: 0, max: 0 });

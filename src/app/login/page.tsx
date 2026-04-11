@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import LoginPageClient from "@/components/auth/LoginPageClient";
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function LoginPage() {
-  return <LoginPageClient />;
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" />}>
+      <LoginPageClient />
+    </Suspense>
+  );
 }

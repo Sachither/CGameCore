@@ -12,7 +12,7 @@ export default function CircuitGroups({ circuit }: Props) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {Object.entries(circuit.groups).map(([gKey, group]) => (
+      {Object.entries(circuit.groups).map(([gKey, group]: [string, any]) => (
         <div key={gKey} className="bg-surface border border-surface-border rounded-sm overflow-hidden group hover:border-accent/40 transition-all">
           <div className="bg-accent/5 px-4 py-3 border-b border-surface-border flex justify-between items-center">
             <h3 className="text-xs font-black text-accent uppercase tracking-widest italic flex items-center gap-2">
@@ -34,7 +34,7 @@ export default function CircuitGroups({ circuit }: Props) {
                 <tbody className="divide-y divide-surface-border/30">
                    {Object.entries(group.standings)
                     .sort((a: any, b: any) => (b[1].pts - a[1].pts) || ((b[1].gf - b[1].ga) - (a[1].gf - a[1].ga)))
-                    .map(([uid, stats], idx) => {
+                    .map(([uid, stats]: [string, any], idx) => {
                       const player = circuit.players[uid];
                       const gd = stats.gf - stats.ga;
                       const isQualifying = idx < 2;

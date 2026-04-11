@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import Navbar from "./Navbar";
 import Footer from "./Footer";
 import UrgentAlertBanner from "./UrgentAlertBanner";
+import PWAInstallPrompt from "./PWAInstallPrompt";
 
 export default function ClientLayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -16,6 +17,7 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
   return (
     <>
       <UrgentAlertBanner />
+      <PWAInstallPrompt />
       {showChrome && <Navbar />}
       <main className="flex-grow">
         {children}

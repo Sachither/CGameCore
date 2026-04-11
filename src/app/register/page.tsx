@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import RegisterPageClient from "@/components/auth/RegisterPageClient";
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function RegisterPage() {
-  return <RegisterPageClient />;
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center" />}>
+      <RegisterPageClient />
+    </Suspense>
+  );
 }

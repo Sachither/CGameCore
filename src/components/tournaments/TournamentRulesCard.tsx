@@ -73,25 +73,25 @@ export default function TournamentRulesCard({ game }: { game: 'efootball' | 'cod
               <div className="bg-black border border-surface-border p-3 rounded-[5px]">
                 <div className="text-[10px] text-gray-500 uppercase tracking-widest">Entry Fee</div>
                 <div className="text-lg font-black text-white">
-                   {league ? league.challengeFee : (isCODM && codMode === 'br' ? '250' : '100')} Coins
+                   {isCODM && codMode === 'br' ? '250' : '100'} Coins
                 </div>
               </div>
               <div className="bg-black border border-surface-border p-3 rounded-[5px]">
                 <div className="text-[10px] text-gray-500 uppercase tracking-widest">Prize Pool</div>
                 <div className="text-lg font-black text-accent">
-                   {league ? (league.totalPool || 0).toLocaleString() : (isCODM && codMode === 'br' ? '24,000' : '10,000')} Coins
+                   {isCODM && codMode === 'br' ? '24,000' : '10,000'} Coins
                 </div>
               </div>
               <div className="bg-black border border-surface-border p-3 rounded-[5px]">
                 <div className="text-[10px] text-gray-500 uppercase tracking-widest">Format</div>
                 <div className="text-sm font-bold text-white mt-1">
-                  {league ? (league.format || league.title) : (isCODM ? (codMode === 'br' ? '100 Player Lobby' : `Alcatraz Siege`) : "1v1 Standard League")}
+                  {isCODM ? (codMode === 'br' ? '100 Player Lobby' : `Alcatraz Siege`) : "1v1 Standard"}
                 </div>
               </div>
               <div className="bg-black border border-surface-border p-3 rounded-[5px]">
                 <div className="text-[10px] text-gray-500 uppercase tracking-widest">Players</div>
                 <div className="text-sm font-bold text-white mt-1">
-                  {league ? `${league.playerCount || 0} / ${league.quota || 40}` : (isCODM && codMode === 'br' ? '88 / 100' : '0 / 40')}
+                  {isCODM && codMode === 'br' ? '88 / 100' : '0 / 40'}
                 </div>
               </div>
           </div>

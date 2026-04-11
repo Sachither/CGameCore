@@ -104,7 +104,7 @@ export async function pushMatchNotification(
 
      if (round === 'FINAL') {
         // Tournament complete - distribute prizes
-        const runnerUpUid = Object.keys(circuit.players).find(pid => pid !== tieWinner);
+        const runnerUpUid = Object.keys(circuit.players).find(pid => pid !== tieWinner) || null;
         await distributeCircuitPrizes(transaction, circuitRef, circuit, tieWinner, runnerUpUid);
         return;
      }
@@ -262,7 +262,7 @@ export async function distributeCircuitPrizes(
    winnerUid: string | null,
    runnerUpUid: string | null
 ) {
-   const totalPlayers = circuitData.format === 'MASTER_CIRCUIT' ? 12 : 16;
+   const totalPlayers = 16; // 16-player tournament
    const challengeFee = circuitData.challengeFee || 0;
    const totalStake = totalPlayers * challengeFee;
    

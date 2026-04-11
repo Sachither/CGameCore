@@ -1,11 +1,10 @@
 "use client";
 import React from 'react';
-import { League, Circuit, Match } from '@/lib/match-service';
+import { Circuit, Match } from '@/lib/match-service';
 import { X, Trophy, Swords, Target, Activity, ShieldCheck, ChevronRight, Users, Clock, Zap, Crown, ShieldAlert } from 'lucide-react';
-import LeagueStandings from '@/components/match/LeagueStandings';
 
 interface Props {
-  competition: League | Circuit;
+  competition: Circuit;
   allMatches?: Match[];
   isOpen: boolean;
   onClose: () => void;
@@ -14,19 +13,13 @@ interface Props {
 export default function TacticalMap({ competition, allMatches, isOpen, onClose }: Props) {
   if (!isOpen) return null;
 
-  const isCircuit = (competition as any).format === 'MASTER_CIRCUIT' || (competition as any).format === '16_TOURNAMENT';
+  const isCircuit = true;
 
   // Get all tournament matches sorted by creation time
   const tournamentMatches = allMatches?.filter(m => {
-    const isCircuit = (competition as any).format === 'MASTER_CIRCUIT' || (competition as any).format === '16_TOURNAMENT';
-    if (isCircuit) {
-      // For circuits (tournaments), only matches with matching circuitId AND a round
-      // This filters out the gathering match which has no round
-      return m.circuitId === competition.id && m.round;
-    } else {
-      // For leagues, only matches with matching leagueId and round
-      return m.leagueId === competition.id && (m.format === 'tournament' || m.round);
-    }
+    // For circuits (tournaments), only matches with matching circuitId AND a round
+    // This filters out the gathering match which has no round
+    return m.circuitId === competition.id && m.round;
   }).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0)) || [];
 
   return (
@@ -92,11 +85,10 @@ export default function TacticalMap({ competition, allMatches, isOpen, onClose }
 }
 
 // Full Tournament Bracket Component
-function FullTournamentBracket({ competition, matches }: { competition: League | Circuit, matches: Match[] }) {
+function FullTournamentBracket({ competition, matches }: { competition: Circuit, matches: Match[] }) {
   // Group matches by round - properly categorize tournament rounds
   // QR1, QR2 are Round of 16 matches, not separate rounds
   const roundOf16 = matches.filter(m =>
-    m.round === 'R16' ||
     m.round === 'QR1' ||
     m.round === 'QR2' ||
     (!m.round && matches.indexOf(m) < 8)
@@ -124,6 +116,8 @@ function FullTournamentBracket({ competition, matches }: { competition: League |
   const duplicatePlayers: string[] = [];
   
   matches.forEach(match => {
+    if (!match.id) return; // Skip matches without IDs
+    
     const players = Object.values(match.players || {});
     const playerUids = players.map((p: any) => p.uid);
     
@@ -154,7 +148,7 @@ function FullTournamentBracket({ competition, matches }: { competition: League |
       if (!playerMatchMap[player.uid]) {
         playerMatchMap[player.uid] = [];
       }
-      playerMatchMap[player.uid].push(match.id);
+      playerMatchMap[player.uid].push(match.id!);
       
       // Track which rounds player appears in
       const roundKey = match.round || 'NONE';
@@ -334,7 +328,7 @@ function RoundSection({
   title: string;
   subtitle: string;
   matches: Match[];
-  competition: League | Circuit;
+  competition: Circuit;
   maxMatches: number;
   isFinal?: boolean;
 }) {
@@ -393,7 +387,7 @@ function MatchCard({
   isFinal
 }: {
   match?: Match;
-  competition: League | Circuit;
+  competition: Circuit;
   matchNumber: number;
   isFinal?: boolean;
 }) {
@@ -419,7 +413,8 @@ function MatchCard({
   const isActive = match.status === 'IN_PROGRESS' || match.status === 'READY';
 
   // Determine winner and loser based on scores
-  let winner, loser;
+  let winner: any = null;
+  let loser: any = null;
   if (isCompleted && player1 && player2) {
     const score1 = (player1.scoreFor || player1.kills || 0);
     const score2 = (player2.scoreFor || player2.kills || 0);
