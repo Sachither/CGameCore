@@ -97,7 +97,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   };
 
   const getFormatsForGame = () => {
-    if (game === 'CODM') return ['1v1', 'FFA', 'br', 'alcatraz', 'league'] as const;
+    if (game === 'CODM') return ['1v1', 'FFA', 'br', 'alcatraz'] as const;
     return ['1v1', 'tournament'] as const;
   };
 
@@ -163,7 +163,6 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                      onClick={() => {
                        setFormat(f);
                        if (f === 'br' || f === 'alcatraz') setMaxPlayers(20);
-                       else if (f === 'league') setMaxPlayers(12);
                        else if (f === 'tournament') setMaxPlayers(16);
                        else if (f === 'FFA') setMaxPlayers(8);
                        else setMaxPlayers(2);

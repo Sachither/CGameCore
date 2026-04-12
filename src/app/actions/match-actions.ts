@@ -864,7 +864,7 @@ export async function registerChallengeInterestAction(
 ) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
   const queueRef = adminDb.collection("queues").doc(`${game.toLowerCase()}_${segment}`);
-  const quotaMap: Record<string, number> = { 'tournament': 16, 'alcatraz': 20 };
+  const quotaMap: Record<string, number> = { 'tournament': 16, 'alcatraz': 20, 'ffa': 8 };
   const target = quotaMap[segment] || 2;
 
   try {
@@ -899,10 +899,34 @@ export async function registerChallengeInterestAction(
              return { matchCreated: true, matchId: matchRef.id };
            }
 
-           // --- ELITE TOURNAMENT: Spawn a full bracket circuit ---
-           const circuitId = await initializeCircuit(transaction, adminDb.collection("circuits").doc(), { game, format: '16_TOURNAMENT', challengeFee: fee } as any, allPlayers as EnginePlayer[], uid);
-           transaction.delete(queueRef);
-           return { matchCreated: true, circuitId };
+            // --- FREE FOR ALL: Spawn a single FFA match ---
+            if (segment === 'ffa') {
+              const matchRef = adminDb.collection("matches").doc();
+              const playersMap: Record<string, any> = {};
+              allPlayers.forEach((p: any) => {
+                playersMap[p.uid] = { ...p, ready: false, team: 'alpha' };
+              });
+              transaction.set(matchRef, {
+                game,
+                format: 'FFA',
+                challengeFee: fee,
+                status: 'WAITING',
+                maxPlayers: 8,
+                playerIds: allPlayers.map((p: any) => p.uid),
+                players: playersMap,
+                championUid: null,
+                creatorId: uid,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                expiresAt: new Date(Date.now() + 6 * 3600 * 1000), // 6h window
+              });
+              transaction.delete(queueRef);
+              return { matchCreated: true, matchId: matchRef.id };
+            }
+
+            // --- ELITE TOURNAMENT: Spawn a full bracket circuit ---
+            const circuitId = await initializeCircuit(transaction, adminDb.collection("circuits").doc(), { game, format: '16_TOURNAMENT', challengeFee: fee } as any, allPlayers as EnginePlayer[], uid);
+            transaction.delete(queueRef);
+            return { matchCreated: true, circuitId };
         } else {
            if (queueData.playerIds.includes(uid)) {
              return { matchCreated: false, alreadyRegistered: true };

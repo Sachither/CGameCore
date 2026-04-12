@@ -55,7 +55,7 @@ export interface MatchPlayer {
 export interface Match {
   id?: string;
   game: 'CODM' | 'EFOOTBALL';
-  format: '1v1' | 'br' | 'FFA' | 'alcatraz' | 'tournament' | 'league'; 
+  format: '1v1' | 'br' | 'FFA' | 'ffa' | 'alcatraz' | 'tournament' | 'league'; 
   duration?: '12m' | '15m' | 'NONE'; 
   challengeFee: number;
   status: 'WAITING' | 'READY' | 'IN_PROGRESS' | 'WAITING_FOR_OPPONENT' | 'COMPLETED' | 'DISPUTED' | 'RESOLVING' | 'CLOSED';

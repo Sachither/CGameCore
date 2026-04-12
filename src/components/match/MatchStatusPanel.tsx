@@ -89,7 +89,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const isCreator = (match as any)?.creatorId === currentUserUid;
   const allPlayers = Object.values(match.players);
   const targetPlayers = match.maxPlayers || 2;
-  const isGatheringLobby = match.format === 'tournament' && (match.maxPlayers || 2) > 2;
+  const isGatheringLobby = (match.format === 'tournament' || match.format === 'league') && (match.maxPlayers || 2) > 2;
 
   const handleHostResponse = async (action: 'ACCEPT' | 'PASS') => {
     if (!currentUserUid || !match.id || !user) return;
@@ -549,50 +549,6 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
           </button>
         )}
 
-        {(process.env.NODE_ENV === 'development' || isStaff) && (match.status === 'WAITING' || match.status === 'READY' || match.status === 'IN_PROGRESS' || match.status === 'RESOLVING' || match.status === 'WAITING_FOR_OPPONENT') && (
-           <div className="mt-4 border-t border-surface-border pt-4">
-              <span className="text-[10px] font-black uppercase text-accent/40 italic mb-2 block">Command Overrides</span>
-              <div className="flex flex-col gap-2">
-                 <button onClick={async () => { 
-                   if (!match.id || !currentUserUid || !user) return; 
-                   setLoading(true); 
-                   try { 
-                     const idToken = await user.getIdToken();
-                     const res = await adminResolveMatchAction(idToken, match.id, currentUserUid);
-                     if (res.success) {
-                       toast.success("DIVINE COMMAND EXECUTED", "Victory has been force-awarded.");
-                     } else {
-                       toast.error("Override Failed", (res as any).error);
-                     }
-                   } catch (e: any) { 
-                     toast.error("Transmission Error", e.message); 
-                   } finally { 
-                     setLoading(false); 
-                   } 
-                 }} className="w-full bg-accent/5 hover:bg-accent/10 border border-accent/20 text-accent font-black uppercase tracking-widest py-2 rounded-sm text-[8px] transition-all">Force Resolve (Award Victory)</button>
-
-                 <button onClick={async () => {
-                   if (!match.id || !user || !window.confirm("CRITICAL WARNING: This will PERMANENTLY DELETE this match document. It should only be used as a last resort for 'Ghost Lobbies' or 'Rubbish'. Proceed?")) return;
-                   setLoading(true);
-                   try {
-                     const { adminForceDeleteMatchAction } = await import("@/app/actions/match-actions");
-                     const idToken = await user.getIdToken();
-                     const res = await adminForceDeleteMatchAction(idToken, match.id);
-                     if (res.success) {
-                       toast.success("ANNIHILATION COMPLETE", "The match has been erased from existence.");
-                       setTimeout(() => window.location.href = "/dashboard", 2000);
-                     } else {
-                       toast.error("Annihilation Failed", (res as any).error);
-                     }
-                   } catch (e: any) {
-                     toast.error("Transmission Error", e.message);
-                   } finally {
-                     setLoading(false);
-                   }
-                 }} className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-500 font-black uppercase tracking-widest py-2 rounded-sm text-[8px] transition-all">Force Annihilate (Delete Document)</button>
-              </div>
-           </div>
-        )}
       </div>
 
       <SubmitResultModal 

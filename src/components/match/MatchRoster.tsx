@@ -19,10 +19,15 @@ export default function MatchRoster({
     setTimeout(() => setCopiedUid(null), 2000);
   };
   
-  // Gathering lobbies have format='league' or 'tournament' and maxPlayers > 2.
-  // Standard duels spawned from them will evaluate to maxPlayers=2.
-  const isGatheringLobby = (match.format === 'league' || match.format === 'tournament') && (match.maxPlayers || 2) > 2;
-  const is1v1 = !isGatheringLobby;
+  // Gathering lobbies and multi-player formats (FFA, BR, Alcatraz, etc.) 
+  // should show the list view even if only 2 players are currently joined.
+  const isMultiPlayerView = (match.maxPlayers || 0) > 2 || 
+                            ['FFA', 'ffa', 'br', 'alcatraz', 'tournament', 'league'].includes(match.format);
+  const is1v1 = !isMultiPlayerView;
+  
+  // DEBUG
+  console.log('[MatchRoster] Match:', { format: match.format, maxPlayers: match.maxPlayers, isMultiPlayerView, is1v1, playerCount: Object.keys(match.players || {}).length });
+  
   const players = match.players || {};
   const playerList = Object.values(players);
   
@@ -172,7 +177,7 @@ export default function MatchRoster({
                })}
 
                {/* Empty Slots Placeholder for FFA */}
-               {match.format === 'FFA' && playerList.length < (match.maxPlayers || 8) && (
+               {(match.format === 'FFA' || match.format === 'ffa') && playerList.length < (match.maxPlayers || 8) && (
                  Array.from({ length: (match.maxPlayers || 8) - playerList.length }).map((_, i) => (
                    <div key={`empty-${i}`} className="bg-black/20 border border-surface-border border-dashed p-4 rounded-[3px] flex items-center gap-4 opacity-40">
                       <div className="w-10 h-10 border border-surface-border border-dashed rounded-[3px] rotate-45 shrink-0" />

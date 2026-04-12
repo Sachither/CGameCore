@@ -30,8 +30,7 @@ export default function CreateMatchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [inGameName, setInGameName] = useState("");
-  const [game, setGame] = useState<'CODM' | 'EFOOTBALL'>('CODM');
-  const [format, setFormat] = useState<'1v1' | 'FFA' | 'tournament' | 'br' | 'alcatraz' | 'league'>('1v1');
+  const [game, setGame] = useState<'CODM' | 'EFOOTBALL'>('CODM');  const [format, setFormat] = useState<'1v1' | 'FFA' | 'tournament' | 'br' | 'alcatraz'>('1v1');
   const [weaponClass, setWeaponClass] = useState<'ALL GUNS' | 'SHOTGUN' | 'SNIPER'>('ALL GUNS');
   const [duration, setDuration] = useState<'12m' | '15m'>('15m');
   const [maxPlayers, setMaxPlayers] = useState<number>(2);
@@ -221,11 +220,10 @@ export default function CreateMatchPage() {
         game === 'EFOOTBALL' ? duration : 'NONE',
         game === 'CODM' && format === 'FFA' ? maxPlayers : 2
       );
-      router.push(`/match/${matchId}`);
+      await router.push(`/match/${matchId}`);
     } catch (err: any) {
       console.error(err);
       setError(err.message || "Failed to create match lobby.");
-    } finally {
       setLoading(false);
     }
   };
