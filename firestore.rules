@@ -139,6 +139,7 @@ service cloud.firestore {
       );
       
       allow write: if false;
+    }
 
     // --- MESSAGES (MATCH CHAT) ---
     match /matches/{matchId}/messages/{messageId} {
@@ -295,3 +296,5 @@ service cloud.firestore {
       allow read: if false;
       allow write: if false; // Server-only via Admin SDK
     }
+  }
+}
