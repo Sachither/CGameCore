@@ -12,7 +12,8 @@ export default function ClientLayoutWrapper({ children }: { children: React.Reac
   const isDashboard = pathname?.startsWith("/dashboard");
   const isAdmin = pathname?.startsWith("/admin");
   const isMatch = pathname?.startsWith("/match");
-  const showChrome = !isAuthPage && !isDashboard && !isAdmin && !isMatch;
+  const isProfile = pathname?.startsWith("/profile");
+  const showChrome = !isAuthPage && !isDashboard && !isAdmin && !isMatch && !isProfile;
 
   return (
     <>

@@ -485,7 +485,8 @@ export async function submitMatchResultAction(
   kills?: number,
   // PHASE 2: Optional cryptographic proof (backward compatible)
   gameProofPlayerA?: SignedGameProof,
-  gameProofPlayerB?: SignedGameProof
+  gameProofPlayerB?: SignedGameProof,
+  requiresAdminReview?: boolean
 ) {
   const uid = await getVerifiedUid(idToken);
 
@@ -554,7 +555,8 @@ export async function submitMatchResultAction(
         ...(proofUrl && { [`players.${uid}.proofUrl`]: proofUrl }),
         ...(scoreFor !== undefined && { [`players.${uid}.scoreFor`]: scoreFor }),
         ...(scoreAgainst !== undefined && { [`players.${uid}.scoreAgainst`]: scoreAgainst }),
-        ...(kills !== undefined && { [`players.${uid}.kills`]: kills })
+        ...(kills !== undefined && { [`players.${uid}.kills`]: kills }),
+        ...(requiresAdminReview && { [`players.${uid}.requiresAdminReview`]: true })
       };
 
       const playerList = Object.values({ ...matchData.players, [uid]: { ...matchData.players[uid], claim } });

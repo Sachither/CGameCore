@@ -15,7 +15,7 @@ const RUBBISH_KEYWORDS = ["whatsapp", "youtube", "tiktok", "instagram", "battery
  * 
  * FIX R-004: Validate image before processing and reject on error
  */
-async function validateImageAI(file: File, username: string, inGameName: string, game: 'CODM' | 'EFOOTBALL'): Promise<{ success: boolean; error?: string }> {
+async function validateImageAI(file: File, username: string, inGameName: string, game: 'CODM' | 'EFOOTBALL'): Promise<{ success: boolean; error?: string; requiresAdminReview?: boolean; reason?: string }> {
   try {
     // FIX R-004: Validate image file first
     const maxSize = 5 * 1024 * 1024; // 5MB
@@ -64,9 +64,9 @@ async function validateImageAI(file: File, username: string, inGameName: string,
     return { success: true };
   } catch (ocrError: any) {
     if (ocrError.message === "SCAN_TIMEOUT") {
-       console.warn(`[AI Scanner] TIMEOUT for ${username}. Manual review required.`);
-       // FIX R-004: On scan timeout, flag for manual review instead of allowing through
-       return { success: false, error: "Scan timeout - evidence requires manual admin review. Please resubmit." };
+       console.warn(`[AI Scanner] TIMEOUT for ${username}. Evidence flagged for manual admin review.`);
+       // FIXED: Allow submission but flag for manual review instead of blocking
+       return { success: true, requiresAdminReview: true, reason: "Scan timeout" };
     } else {
        console.error("[AI Scanner] CRASHED during analysis:", ocrError);
        // FIX R-004: CRITICAL FIX - Don't allow through on error!
@@ -104,10 +104,16 @@ export async function submitResultWithDiscordAction(formData: FormData) {
   let finalProofUrl = "";
 
   // 1. AI Evidence Triage
+  let requiresAdminReview = false;
   if (file && file.size > 0 && claim === 'WIN') {
     const aiCheck = await validateImageAI(file, username, inGameName, game);
     if (!aiCheck.success) {
        return aiCheck;
+    }
+    // Track if evidence needs manual review (e.g., scan timeout)
+    if ((aiCheck as any).requiresAdminReview) {
+       requiresAdminReview = true;
+       console.log(`[Discord] Evidence marked for admin review: ${(aiCheck as any).reason}`);
     }
 
     let webhookUrl = process.env.DISCORD_WEBHOOK_URL;
@@ -158,7 +164,7 @@ export async function submitResultWithDiscordAction(formData: FormData) {
   }
 
   // 2. Delegate to the standard Firestore match resolution action
-  return await submitMatchResultAction(idToken, matchId, claim, finalProofUrl, scoreFor, scoreAgainst, kills);
+  return await submitMatchResultAction(idToken, matchId, claim, finalProofUrl, scoreFor, scoreAgainst, kills, undefined, undefined, requiresAdminReview);
 }
 
 /**

@@ -64,21 +64,71 @@ export default function LeaderboardView() {
   }, [user, profile]);
 
   useEffect(() => {
-    if (!user) return;
+    console.log("[Leaderboard] useEffect triggered - user:", (user as any)?.uid || 'null', "loading:", loading);
+    
+    if (!user) {
+      console.warn("[Leaderboard] ❌ NO USER AUTHENTICATED - Cannot query leaderboard");
+      console.log("[Leaderboard] user object is:", user);
+      console.log("[Leaderboard] user.uid might be:", (user as any)?.uid);
+      setLoading(false);
+      return;
+    }
 
-    // Rank by Skill (Total Wins) instead of Wealth (Balance)
+    console.log("[Leaderboard] ✅ User authenticated:", (user as any).uid);
+    console.log("[Leaderboard] Starting query for all users...");
+
+    // Query ALL users and sort by totalWins with default 0 for missing values
     const q = query(
       collection(db, "users"),
-      orderBy("totalWins", "desc"),
-      limit(100)
+      limit(500) // Get more users to ensure we have complete list
     );
 
+    let callbackFired = false;
+    
+    // Set a timeout to warn if no callback fires
+    const timeoutId = setTimeout(() => {
+      if (!callbackFired) {
+        console.error("[Leaderboard] ❌ TIMEOUT: onSnapshot callback did not fire within 5 seconds!");
+        console.error("[Leaderboard] This may indicate a Firestore rules issue or network problem");
+        setLeaderboardUsers([]);
+        setLoading(false);
+      }
+    }, 5000);
+
     const unsub = onSnapshot(q, async (snap) => {
-      let users = snap.docs.map((doc, index) => ({
-        id: doc.id,
-        rank: index + 1,
-        ...doc.data()
-      }));
+      callbackFired = true;
+      clearTimeout(timeoutId);
+      console.log("[Leaderboard] 🔔 onSnapshot callback triggered!");
+      console.log(`[Leaderboard] Query returned ${snap.docs.length} documents`);
+      
+      if (snap.docs.length === 0) {
+        console.warn("[Leaderboard] ⚠️ No users found in database!");
+        setLeaderboardUsers([]);
+        setLoading(false);
+        return;
+      }
+
+      console.log("[Leaderboard] ✅ Processing", snap.docs.length, "users...");
+
+      let users = snap.docs
+        .map((doc, index) => {
+          const data = doc.data();
+          console.log(`[Leaderboard] User ${doc.id}: username=${data.username}, wins=${data.totalWins || 0}`);
+          return {
+            id: doc.id,
+            totalWins: data.totalWins || 0, // Default to 0 if missing
+            totalMatches: data.totalMatches || 0,
+            ...data
+          };
+        })
+        .sort((a, b) => (b.totalWins || 0) - (a.totalWins || 0)) // Sort by wins descending
+        .map((user, index) => ({
+          ...user,
+          rank: index + 1
+        }))
+        .slice(0, 100); // Keep top 100 after sorting
+
+      console.log(`[Leaderboard] Top users after sorting: ${users.length}`);
 
       // Include users with active champion badges (even if not in top 100)
       try {
@@ -94,23 +144,34 @@ export default function LeaderboardView() {
           .map((doc, index) => ({
             id: doc.id,
             rank: users.length + index + 1,
+            totalWins: doc.data().totalWins || 0,
+            totalMatches: doc.data().totalMatches || 0,
             ...doc.data()
           }));
 
         // Add badge users to the list
         users = [...users, ...badgeUsers];
       } catch (error) {
-        console.error("Error fetching champion badge users:", error);
+        console.error("[Leaderboard] Error fetching champion badge users:", error);
       }
 
+      console.log(`[Leaderboard] Final user count to display: ${users.length}`);
       setLeaderboardUsers(users);
       setLoading(false);
     }, (err) => {
-      console.error("[Leaderboard] Global Sync Failure:", err);
+      callbackFired = true;
+      clearTimeout(timeoutId);
+      console.error("[Leaderboard] Query error:", err);
+      console.error("[Leaderboard] Error code:", err.code);
+      console.error("[Leaderboard] Error message:", err.message);
+      setLeaderboardUsers([]);
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      clearTimeout(timeoutId);
+      unsub();
+    };
   }, [user]);
 
   if (loading) {

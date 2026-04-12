@@ -81,19 +81,8 @@ service cloud.firestore {
 
     // --- USER PROFILES ---
     match /users/{userId} {
-      // FIX F-002: Restrict profile reads to owner or public fields only
-      function isPublicProfileField(field) {
-        return field in ['username', 'displayName', 'avatar', 'region', 'level', 'totalWins', 
-                         'totalMatches', 'tourneyBest', 'createdAt', 'bio'];
-      }
-      
-      allow read: if isSignedIn() && !isBanned() && (
-        isOwner(userId) || 
-        (isSignedIn() && !isBanned() && request.resource == null)  // Allow listing but not viewing sensitive data
-      );
-      
-      // Allow reading public profile fields for any authenticated non-banned user
-      allow read: if isSignedIn() && !isBanned() && !isOwner(userId);
+      // Allow any authenticated user to read user profiles (needed for leaderboard)
+      allow read: if isSignedIn();
       
       allow create: if isOwner(userId)
         && !('isAdmin' in request.resource.data)

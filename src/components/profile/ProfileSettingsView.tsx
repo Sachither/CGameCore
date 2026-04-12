@@ -10,12 +10,15 @@ import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { signOut, deleteUser } from "firebase/auth";
 import { useToast } from "@/context/ToastContext";
+import { DeleteAccountModal } from "./DeleteAccountModal";
 
 
 export default function ProfileSettingsView() {
   const { profile, user, refreshProfile } = useAuth();
   const toast = useToast();
   const router = useRouter();
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   
   // Form states initialized from profile
@@ -200,12 +203,7 @@ export default function ProfileSettingsView() {
   const handleDeleteAccount = async () => {
     if (!user) return;
     
-    // Safety check with browser confirm
-    const confirmed = window.confirm(
-      "CRITICAL WARNING: This action will permanently delete your account, balances, and match history. This action cannot be undone. Are you absolutely sure?"
-    );
-    
-    if (!confirmed) return;
+    setIsDeleting(true);
     
     try {
       // Note: If user hasn't logged in recently, Firebase requires re-authentication.
@@ -214,6 +212,7 @@ export default function ProfileSettingsView() {
       // Data cleanup in Firestore will be handled via Firebase Auth triggers 
       // or manual admin cleanup. Local session is wiped instantly.
       toast.success("Account Terminated", "Your account has been deleted.");
+      setIsDeleteModalOpen(false);
       router.push('/');
     } catch (err: any) {
       console.error("Delete account failed:", err);
@@ -222,6 +221,8 @@ export default function ProfileSettingsView() {
       } else {
          toast.error("System Error", err.message || "Failed to delete account.");
       }
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -371,7 +372,7 @@ export default function ProfileSettingsView() {
                 Logout
               </button>
               <button 
-                onClick={handleDeleteAccount} 
+                onClick={() => setIsDeleteModalOpen(true)} 
                 className="flex-1 bg-red-500/5 border border-red-500/20 hover:border-red-500 text-red-500 py-4 rounded-sm text-xs font-black uppercase tracking-widest transition-all"
               >
                 Delete Account
@@ -435,6 +436,14 @@ export default function ProfileSettingsView() {
             </div>
          </div>
       )}
+
+      {/* Delete Account Modal */}
+      <DeleteAccountModal
+        isOpen={isDeleteModalOpen}
+        onConfirm={handleDeleteAccount}
+        onCancel={() => setIsDeleteModalOpen(false)}
+        isLoading={isDeleting}
+      />
 
     </div>
   );
