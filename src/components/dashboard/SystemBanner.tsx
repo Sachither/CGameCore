@@ -68,20 +68,37 @@ export default function SystemBanner() {
     return () => unsub();
   }, [user]);
 
-  const handleDismiss = async () => {
-    if (!activeNotification || !user) return;
+  const handleDismiss = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    console.log("[SystemBanner] Dismiss clicked, notification:", activeNotification?.id);
+    
+    if (!activeNotification || !user) {
+      console.error("[SystemBanner] Missing notification or user");
+      return;
+    }
+    
     setIsDismissing(true);
+    
     try {
       const idToken = await user.getIdToken();
+      console.log("[SystemBanner] Calling markNotificationReadAction with ID:", activeNotification.id);
+      
       const result = await markNotificationReadAction(idToken, activeNotification.id);
+      console.log("[SystemBanner] markNotificationReadAction result:", result);
+      
       if (result.success) {
-        // Immediately clear the notification from UI
+        console.log("[SystemBanner] Notification marked as read, clearing UI");
         setActiveNotification(null);
+      } else {
+        console.error("[SystemBanner] Failed to mark as read:", result.error);
       }
     } catch (error) {
       console.error("[SystemBanner] Dismiss failed:", error);
+    } finally {
+      setIsDismissing(false);
     }
-    setIsDismissing(false);
   };
 
   if (!activeNotification) return null;
@@ -104,15 +121,15 @@ export default function SystemBanner() {
 
   return (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[90] w-full max-w-2xl px-4 animate-in slide-in-from-top-4 duration-500">
-      <div className={`relative flex items-center gap-4 p-4 rounded-sm border ${getStyles()} backdrop-blur-md overflow-hidden group`}>
+      <div className={`relative flex items-center gap-4 p-4 rounded-sm border ${getStyles()} backdrop-blur-md group`}>
         {/* Animated Background Pulse */}
-        <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-sm" />
         
-        <div className="shrink-0 flex items-center justify-center p-2 rounded-full bg-white/5 border border-white/5">
+        <div className="shrink-0 flex items-center justify-center p-2 rounded-full bg-white/5 border border-white/5 relative z-10">
            {getIcon()}
         </div>
 
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 relative z-10">
           <div className="flex items-center gap-2 mb-0.5">
             <span className="text-[10px] font-black uppercase tracking-[0.2em] italic opacity-80">{activeNotification.title}</span>
             <div className="h-px flex-1 bg-current opacity-10" />
@@ -125,7 +142,8 @@ export default function SystemBanner() {
         <button 
           onClick={handleDismiss}
           disabled={isDismissing}
-          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-sm bg-black/40 border border-white/5 hover:border-white/20 hover:bg-black transition-all disabled:opacity-50"
+          type="button"
+          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-sm bg-black/40 border border-white/5 hover:border-white/20 hover:bg-black transition-all disabled:opacity-50 hover:disabled:opacity-50 cursor-pointer relative z-20 pointer-events-auto"
         >
           {isDismissing ? (
             <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
@@ -135,7 +153,7 @@ export default function SystemBanner() {
         </button>
 
         {/* Tactical Scan Line */}
-        <div className="absolute top-0 left-0 w-1 h-full bg-current opacity-40 shadow-[0_0_10px_currentColor]" />
+        <div className="absolute top-0 left-0 w-1 h-full bg-current opacity-40 shadow-[0_0_10px_currentColor] pointer-events-none" />
       </div>
     </div>
   );

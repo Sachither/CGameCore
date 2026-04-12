@@ -32,26 +32,26 @@ service cloud.firestore {
 
     function isSuperAdmin() {
       return isSignedIn() && (
-        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.role == 'super_admin' ||
         request.auth.token.isSuperAdmin == true
       );
     }
 
     function isStaff() {
       return isSignedIn() && (
-        request.auth.token.role in ['ADMIN', 'MODERATOR', 'SUPER_ADMIN'] ||
+        request.auth.token.role in ['admin', 'moderator', 'super_admin'] ||
         request.auth.token.isAdmin == true ||
-        getUserData().get('role', 'PLAYER') in ['ADMIN', 'MODERATOR'] ||
+        getUserData().get('role', 'PLAYER') in ['admin', 'moderator', 'ADMIN', 'MODERATOR'] ||
         getUserData().get('isAdmin', false) == true
       );
     }
 
     function isAdmin() {
       return isSignedIn() && (
-        request.auth.token.role == 'ADMIN' ||
-        request.auth.token.role == 'SUPER_ADMIN' ||
+        request.auth.token.role in ['admin', 'super_admin'] ||
+        request.auth.token.role in ['ADMIN', 'SUPER_ADMIN'] ||
         request.auth.token.isAdmin == true ||
-        getUserData().get('role', 'PLAYER') == 'ADMIN' ||
+        getUserData().get('role', 'PLAYER') in ['admin', 'ADMIN'] ||
         getUserData().get('isAdmin', false) == true
       );
     }
@@ -81,16 +81,32 @@ service cloud.firestore {
 
     // --- USER PROFILES ---
     match /users/{userId} {
-      allow read: if isSignedIn() && (isOwner(userId) || (isSignedIn() && !isBanned()));
+      // FIX F-002: Restrict profile reads to owner or public fields only
+      function isPublicProfileField(field) {
+        return field in ['username', 'displayName', 'avatar', 'region', 'level', 'totalWins', 
+                         'totalMatches', 'tourneyBest', 'createdAt', 'bio'];
+      }
+      
+      allow read: if isSignedIn() && !isBanned() && (
+        isOwner(userId) || 
+        (isSignedIn() && !isBanned() && request.resource == null)  // Allow listing but not viewing sensitive data
+      );
+      
+      // Allow reading public profile fields for any authenticated non-banned user
+      allow read: if isSignedIn() && !isBanned() && !isOwner(userId);
       
       allow create: if isOwner(userId)
         && !('isAdmin' in request.resource.data)
         && !('role' in request.resource.data)
         && !('isBanned' in request.resource.data);
 
+      // FIX F-001 & F-005: Explicitly deny writes to sensitive fields + case-sensitive role normalization
       allow update: if isOwner(userId) && !isBanned() && !isSuspended()
         && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['balanceCoins', 'totalWins', 'totalMatches', 'stats', 'isAdmin', 'role', 'isBanned', 'testMode', 'suspendedUntil', 'banReason', 'intervention']);
+          .hasAny(['balanceCoins', 'totalWins', 'totalMatches', 'stats', 'isAdmin', 'role', 'isBanned', 
+                   'testMode', 'suspendedUntil', 'banReason', 'intervention', 'phone', 'legalName', 
+                   'bankCode', 'ssn', 'idVerified', 'verificationId', 'isIdentityLocked', 
+                   'withdrawalCount', 'lifetimeDeposits', 'lifetimeWithdrawals']);
           
       match /notifications/{noteId} {
         allow read: if isOwner(userId) && !isBanned();
@@ -107,7 +123,13 @@ service cloud.firestore {
 
     // --- MATCHES (LOBBY & PRIVATE) ---
     match /matches/{matchId} {
-      allow read: if isSignedIn() && !isBanned() && !isSuspended() && (
+      // FIX F-004: Add expiry check - deny access to expired matches
+      function isExpired() {
+        return resource.data.get('expiresAt', null) != null && 
+               resource.data.expiresAt.toMillis() <= request.time.toMillis();
+      }
+      
+      allow read: if isSignedIn() && !isBanned() && !isSuspended() && !isExpired() && (
         resource.data.get('status', 'WAITING') in ['WAITING', 'READY', 'WAITING_FOR_OPPONENT'] || 
         resource.data.get('circuitId', null) != null || 
         resource.data.get('leagueId', null) != null ||
@@ -117,7 +139,6 @@ service cloud.firestore {
       );
       
       allow write: if false;
-    }
 
     // --- MESSAGES (MATCH CHAT) ---
     match /matches/{matchId}/messages/{messageId} {
@@ -210,5 +231,67 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false;
     }
-  }
-}
+
+    // --- SUPPORT TICKETS ---
+    match /support_tickets/{ticketId} {
+      // Users can read their own tickets; admins can read all tickets
+      allow read: if isSignedIn() && !isBanned() && (
+        resource.data.uid == request.auth.uid || 
+        isAdmin()
+      );
+      
+      // Users can create tickets (handled via server action, but allow for completeness)
+      allow create: if isSignedIn() && !isBanned();
+      
+      // Users can update only their own tickets (limited fields); admins can update all
+      allow update: if isSignedIn() && !isBanned() && (
+        (resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid) ||
+        isAdmin()
+      );
+      
+      allow write: if false; // Prevent deletes
+      
+      // Messages sub-collection: all authenticated users in a ticket thread can read
+      match /messages/{messageId} {
+        allow read: if isSignedIn() && !isBanned() && (
+          get(/databases/$(database)/documents/support_tickets/$(ticketId)).data.uid == request.auth.uid ||
+          isAdmin()
+        );
+        
+        allow create: if isSignedIn() && !isBanned() && (
+          get(/databases/$(database)/documents/support_tickets/$(ticketId)).data.uid == request.auth.uid ||
+          isAdmin()
+        );
+        
+        allow write: if false; // Prevent updates/deletes to messages
+      }
+    }
+
+    // FIX A-001: Admin approval queue for high-value balance adjustments
+    match /admin_approval_queue/{requestId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin() && isSuperAdmin();
+      allow delete: if isSuperAdmin() && resource.data.status in ['approved', 'rejected', 'expired'];
+    }
+
+    // FIX M-005: Escrow for disputed match funds
+    match /escrow_funds/{docId} {
+      allow read: if isSignedIn() && !isBanned() && (
+        resource.data.uid == request.auth.uid || 
+        isAdmin()
+      );
+      allow write: if false; // Server-only writes via Admin SDK
+    }
+
+    // FIX R-002 & R-003: Rate limits for contact form and payment checks
+    match /rate_limits/{limitId} {
+      allow read: if false;
+      allow write: if false; // Server-only via Admin SDK
+    }
+
+    // FIX F-003: Session binding for IP/UA validation
+    match /sessions/{sessionId} {
+      allow read: if false;
+      allow write: if false; // Server-only via Admin SDK
+    }

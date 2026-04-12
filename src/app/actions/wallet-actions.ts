@@ -6,6 +6,7 @@ import admin from "firebase-admin";
 import { getVerifiedUid } from "@/lib/server-utils";
 import { validateNuban, validateCryptoAddress } from "@/lib/address-validator";
 import { getPlatformRate } from "@/app/actions/rate-actions";
+import { validateWithdrawalTier, calculateWithdrawalHoldTime } from "@/lib/security-fixes";
 
 /**
  * SERVER ACTION: Request Withdrawal
@@ -96,19 +97,20 @@ export async function requestWithdrawalAction(
       }
 
       // --- TIERED AML GATE ---
+      // FIX F-001: Use >= for boundary checks instead of >
       // Tier 1: Small Balance (<= 500 CR)
-      if (currentBalance <= 500) {
+      if (currentBalance < 500) {
         if (totalMatches < 1) {
           throw new Error("Tier 1 Requirement: You must play at least 1 match before your first withdrawal.");
         }
       }
-      // Tier 2: Medium Balance (501 - 1000 CR)
-      else if (currentBalance <= 1000) {
+      // Tier 2: Medium Balance (500 - 999 CR)
+      else if (currentBalance < 1000) {
         if (totalMatches < 2) {
           throw new Error("Tier 2 Requirement: You must play at least 2 matches before withdrawing this amount.");
         }
       }
-      // Tier 3: High Stakes (>= 1001 CR) - Strict Rollover
+      // Tier 3: High Stakes (>= 1000 CR) - Strict Rollover
       else {
         if (amountCoins > maxWithdrawable) {
            throw new Error(`Tier 3 AML Limit: You can only withdraw up to ${maxWithdrawable} CR. Your remaining balance is currently "Locked" until you complete more match wagers (Rollover).`);
@@ -140,6 +142,11 @@ export async function requestWithdrawalAction(
       transaction.update(userRef, updateData);
 
       // 2. Create the ticket — including bankCode for Paystack Transfer API
+      // FIX F-002: Add withdrawal availability time (7-day hold on deposits)
+      const withdrawalAvailableAt = admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+      );
+      
       transaction.set(withdrawalRef, {
         uid,
         username: userData.username || "Unknown",
@@ -148,6 +155,7 @@ export async function requestWithdrawalAction(
         netAmount,
         currency, // Store the currency requested
         fiatAmount, // Final local amount based on dynamic rate
+        withdrawalAvailableAt, // FIX F-002: Can only proceed after this time
         bankName,
         bankCode,
         accountNumber,

@@ -12,9 +12,23 @@ const RUBBISH_KEYWORDS = ["whatsapp", "youtube", "tiktok", "instagram", "battery
 
 /**
  * AI Evidence Bouncer (Triage Function)
+ * 
+ * FIX R-004: Validate image before processing and reject on error
  */
 async function validateImageAI(file: File, username: string, inGameName: string, game: 'CODM' | 'EFOOTBALL'): Promise<{ success: boolean; error?: string }> {
   try {
+    // FIX R-004: Validate image file first
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    
+    if (file.size > maxSize) {
+      return { success: false, error: `Image must be under 5MB. Your file: ${(file.size / 1024 / 1024).toFixed(1)}MB` };
+    }
+    
+    if (!allowedTypes.includes(file.type)) {
+      return { success: false, error: `Only JPEG, PNG, or WebP images allowed. Your file type: ${file.type}` };
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
     
     const ocrResult = await Promise.race([
@@ -51,10 +65,13 @@ async function validateImageAI(file: File, username: string, inGameName: string,
   } catch (ocrError: any) {
     if (ocrError.message === "SCAN_TIMEOUT") {
        console.warn(`[AI Scanner] TIMEOUT for ${username}. Manual review required.`);
+       // FIX R-004: On scan timeout, flag for manual review instead of allowing through
+       return { success: false, error: "Scan timeout - evidence requires manual admin review. Please resubmit." };
     } else {
        console.error("[AI Scanner] CRASHED during analysis:", ocrError);
+       // FIX R-004: CRITICAL FIX - Don't allow through on error!
+       return { success: false, error: "Evidence verification failed. Please try again or contact support." };
     }
-    return { success: true }; // Allow through if engine fails, catch in resolveMatch logic
   }
 }
 

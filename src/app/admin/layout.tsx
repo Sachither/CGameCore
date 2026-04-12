@@ -23,6 +23,7 @@ const navItems = [
   { href: "/admin/treasury", label: "Treasury", icon: Landmark },
   { href: "/admin/users", label: "Operators", icon: Users },
   { href: "/admin/messages", label: "Comms Link", icon: MessageSquare },
+  { href: "/admin/tickets", label: "Support Tickets", icon: AlertTriangle },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

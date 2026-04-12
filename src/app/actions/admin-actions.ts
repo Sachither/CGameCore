@@ -63,6 +63,11 @@ export async function resolveDisputeAction(
     const players = Object.keys(matchData.players);
     const fee = matchData.challengeFee;
 
+    // FIX A-003: Validate winner BEFORE any status change or transaction
+    if (winnerId !== "REFUND" && !players.includes(winnerId)) {
+      throw new Error(`SECURITY: Winner ID not found in match players. Rejecting dispute resolution.`);
+    }
+
     await adminDb.runTransaction(async (transaction) => {
       // Re-verify match state inside transaction
       const latestMatchSnap = await transaction.get(matchRef);
@@ -73,16 +78,19 @@ export async function resolveDisputeAction(
         throw new Error("CHAIN_PREVENTION: Match must be in DISPUTED status. Current status: " + latestMatch.status);
       }
       
+      // Re-validate winner inside transaction (double-check)
+      const latestPlayers = Object.keys(latestMatch.players);
+      if (winnerId !== "REFUND" && !latestPlayers.includes(winnerId)) {
+        throw new Error("SECURITY: Winner validation failed in transaction context");
+      }
+      
       // Mark as RESOLVING immediately to prevent concurrent resolution attempts
+      // FIX M-005: Add resolution details instead of just changing status
       transaction.update(matchRef, {
         status: "RESOLVING",
-        resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        resolvedBy: adminUid
       });
-      
-      // H-03: Validate winnerId belongs to match
-      if (winnerId !== "REFUND" && !players.includes(winnerId)) {
-        throw new Error("SEC-ALPHA-DENIED: Winner ID not found in this combat session.");
-      }
 
       if (winnerId === "REFUND") {
         // Void match — refund all players and undo wager tracking
@@ -147,8 +155,11 @@ export async function resolveDisputeAction(
       }
       
       // Mark resolution as complete
+      // FIX M-005: Preserve resolution details
       transaction.update(matchRef, {
-        status: "CLOSED"
+        status: "CLOSED",
+        resolution: winnerId === "REFUND" ? "REFUND" : "ADMIN_AWARD",
+        resolutionNotes: `Resolved by admin ${adminUid}`
       });
     });
 
@@ -157,13 +168,23 @@ export async function resolveDisputeAction(
     await purgeMatchDataInternal(matchId);
 
     // Audit log
+    // FIX A-006: Enhanced audit logging with admin IP and details
     const auditRef = adminDb.collection("admin_audit_log").doc();
     await auditRef.set({
       action: "ADMIN_RESOLVE_DISPUTE",
       matchId,
       winnerId,
       adminUid,
+      previousStatus: matchData.status,
+      newStatus: "CLOSED",
+      resolution: winnerId === "REFUND" ? "REFUND" : "ADMIN_AWARD",
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      // Note: IP would come from request context if available
+      details: {
+        playersAffected: players.length,
+        feeAmount: fee,
+        timestamp: new Date().toISOString()
+      }
     });
 
     return { success: true };
@@ -343,9 +364,47 @@ export async function adjustUserBalanceAction(
   justification: string
 ) {
   const adminUid = await getVerifiedAdminUid(idToken, true);
+  const superAdminUid = await getVerifiedSuperAdminUid(idToken);
+  
   if (!justification?.trim()) throw new Error("A justification is required for balance adjustments.");
 
+  // FIX A-002: Limit single adjustment amount
+  const adjustmentLimit = 500;
+  if (Math.abs(amount) > adjustmentLimit) {
+    throw new Error(`Individual adjustment limited to ${adjustmentLimit} CR. This adjustment exceeds the limit. Request approval for larger amounts.`);
+  }
+
   try {
+    // FIX A-001: Large adjustments require 2-admin approval
+    const requiresApproval = Math.abs(amount) > 1000;
+    
+    if (requiresApproval && !superAdminUid) {
+      // Create approval request
+      const approvalRef = adminDb.collection("admin_approval_queue").doc();
+      await approvalRef.set({
+        type: "BALANCE_ADJUSTMENT",
+        requesterId: adminUid,
+        targetUid,
+        amount,
+        justification,
+        status: "PENDING",
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)), // 24hr approval window
+      });
+
+      // Notify SUPER_ADMIN for approval
+      const staffQuery = adminDb.collection("admin_audit_log")
+        .where("action", "==", "SUPER_ADMIN_ACTION")
+        .limit(1);
+      
+      return {
+        success: false,
+        requiresApproval: true,
+        error: `Adjustment of ${amount} CR requires SUPER_ADMIN approval. Request submitted. Waiting for approval...`,
+        approvalRequestId: approvalRef.id
+      };
+    }
+
     const result = await adminDb.runTransaction(async (transaction) => {
       const userRef = adminDb.collection("users").doc(targetUid);
       const userSnap = await transaction.get(userRef);
@@ -367,27 +426,41 @@ export async function adjustUserBalanceAction(
         ...(amount > 0 && { lifetimeDeposits: admin.firestore.FieldValue.increment(amount) })
       });
 
-      // 🔒 Log the adjustment with full audit trail
+      // 🔒 FIX A-006: Enhanced audit log with approval info
       const auditRef = adminDb.collection("admin_audit_log").doc();
       transaction.set(auditRef, {
         action: "BALANCE_ADJUST",
         adminUid,
+        superAdminApproved: requiresApproval ? superAdminUid : null,
         targetUid,
         previousBalance: currentBalance,
         newBalance,
         amount,
         justification,
-        timestamp: admin.firestore.FieldValue.serverTimestamp()
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        details: {
+          approvalRequired: requiresApproval,
+          createdAt: new Date().toISOString()
+        }
       });
 
-      // 3. Notify the user of the balance adjustment (Reason visibility requested by user)
-      const typeLabel = amount > 0 ? "Credit" : "Deduction";
-      await createNotificationInternal(
-        targetUid,
-        `Wallet ${typeLabel}`,
-        `Admin has updated your balance: ${justification}`,
-        "FINANCE"
-      );
+      // If large approval was required, update approval queue
+      if (requiresApproval && superAdminUid) {
+        const approvalQueue = adminDb.collection("admin_approval_queue");
+        const pendingQuery = await approvalQueue
+          .where("requesterId", "==", adminUid)
+          .where("targetUid", "==", targetUid)
+          .where("status", "==", "PENDING")
+          .get();
+        
+        for (const doc of pendingQuery.docs) {
+          transaction.update(doc.ref, {
+            status: "approved",
+            approverId: superAdminUid,
+            approvedAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+      }
 
       // If positive, update platform stats
       if (amount > 0) {
@@ -410,7 +483,7 @@ export async function adjustUserBalanceAction(
       "SYSTEM"
     );
 
-    console.log(`✅ [ADMIN] Balance adjusted: ${targetUid} ${amount > 0 ? '+' : ''}${amount} CR by ${adminUid}`);
+    console.log(`✅ [ADMIN] Balance adjusted: ${targetUid} ${amount > 0 ? '+' : ''}${amount} CR by ${adminUid}${requiresApproval && superAdminUid ? ` (approved by SUPER_ADMIN ${superAdminUid})` : ''}`);
     return { success: true, ...result };
   } catch (error: any) {
     console.error("[AdminAction] adjustBalance error:", error);

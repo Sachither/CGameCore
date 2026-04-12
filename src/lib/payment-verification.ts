@@ -251,6 +251,7 @@ export async function verifyNowPaymentsAmount(
  * 1.2 FIX: Record webhook event with dual idempotency keys
  * 
  * Prevents replay attacks by tracking both event ID and reference.
+ * FIX P-002: Use payment gateway event ID as PRIMARY key to avoid clock skew issues
  */
 export async function recordWebhookEvent(
   eventId: string | null,
@@ -262,8 +263,10 @@ export async function recordWebhookEvent(
   eventDocId: string;
 }> {
   try {
-    const timestamp = Date.now();
-    const eventDocId = `${gateway}_${reference}_${timestamp}`;
+    // FIX P-002: Use gateway event ID as primary key (more reliable than timestamp)
+    // Fallback to reference if event ID not provided
+    const primaryEventId = eventId || reference;
+    const eventDocId = `${gateway}_${primaryEventId}`;
 
     // Check if this exact event was already processed
     const eventRef = adminDb.collection("webhook_events").doc(eventDocId);
@@ -276,8 +279,8 @@ export async function recordWebhookEvent(
       return { isNew: false, eventDocId };
     }
 
-    // Also check by event ID if available (e.g., Paystack event ID)
-    if (eventId) {
+    // Also check by reference as secondary key for cross-reference
+    if (reference !== primaryEventId) {
       const eventIdRef = adminDb
         .collection("webhook_events")
         .doc(`${gateway}_eventid_${eventId}`);

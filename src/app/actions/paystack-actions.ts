@@ -197,12 +197,33 @@ export async function verifyPaystackPaymentAction(
 
     const transactionUid = transactionSnap.exists ? t?.uid : uid;
     if (transactionUid && transactionUid !== uid) {
-      console.error(`🚨 UID MISMATCH ATTACK DETECTED: Transaction ${reference} belongs to ${transactionUid}, but verified user is ${uid}`);
-      return { success: false, error: "Transaction belongs to different user." };
+      // FIX P-001: CRITICAL - Throw error immediately, don't credit any coins
+      console.error(`🚨 UID MISMATCH ATTACK DETECTED: Transaction ${reference} belongs to ${transactionUid}, but verified user is ${uid}. REJECTING PAYMENT.`);
+      
+      // Log this attack to audit log for admin review
+      await adminDb.collection("security_incidents").add({
+        type: "payment_uid_mismatch",
+        reference,
+        storedUid: transactionUid,
+        requestingUid: uid,
+        gateway: "PAYSTACK",
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        severity: "CRITICAL"
+      });
+      
+      throw new Error(`SECURITY: Payment transaction belongs to different user. This incident has been logged.`);
     }
 
+    // FIX P-003: Take snapshot of transaction state BEFORE attempting fulfillment
+    const preVerificationSnapshot = {
+      status: t?.status,
+      uid: t?.uid,
+      fiatAmount: t?.fiatAmount,
+      version: t?.version
+    };
+
     // 5. SECURE TRANSACTION: Credit Coins
-    const result = await internalFulfillDeposit(reference, data.amount, uid);
+    const result = await internalFulfillDeposit(reference, data.amount, uid, preVerificationSnapshot);
     
     if (result.success) {
       console.log(`[PaystackAction] Successfully verified and fulfilled $${amountUsd} deposit for ${uid} (+${result.coinsAdded} CR)`);
@@ -227,7 +248,12 @@ export async function verifyPaystackPaymentAction(
   }
 }
 
-export async function internalFulfillDeposit(reference: string, amountKobo: number, requestingUid?: string) {
+export async function internalFulfillDeposit(
+  reference: string, 
+  amountKobo: number, 
+  requestingUid?: string,
+  snapshotBefore?: { status?: string; uid?: string; fiatAmount?: number; version?: number }
+) {
   try {
      const transactionRef = adminDb.collection("transactions").doc(reference);
      const transactionSnap = await transactionRef.get();
@@ -235,6 +261,20 @@ export async function internalFulfillDeposit(reference: string, amountKobo: numb
      const t = transactionSnap.data();
      if (transactionSnap.exists && t?.status === 'COMPLETED') {
         return { success: true, message: "Already fulfilled.", coinsAdded: t.amount };
+     }
+
+     // FIX P-003: Verify transaction hasn't changed since pre-verification snapshot
+     if (snapshotBefore) {
+       if (t?.status !== snapshotBefore.status) {
+         console.warn(`[P-003] Transaction status changed: was ${snapshotBefore.status}, now ${t?.status}`);
+         throw new Error("Transaction status changed during verification");
+       }
+       if (t?.uid !== snapshotBefore.uid) {
+         throw new Error("Transaction UID changed during verification");
+       }
+       if (Math.abs((t?.fiatAmount || 0) - (snapshotBefore.fiatAmount || 0)) > 0.01) {
+         throw new Error("Transaction amount changed during verification");
+       }
      }
 
      const amountLocal = Number(amountKobo) / 100;

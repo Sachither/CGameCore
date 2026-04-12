@@ -97,12 +97,14 @@ export async function checkRateLimit(
 
     return result;
   } catch (error) {
-    // On error, allow request but log it
-    console.error("[RateLimit] Error checking rate limit:", error);
+    // FIX M-009 & R-001: Fail closed for security operations
+    // On error with Firestore, deny request to prevent DOS/abuse
+    console.error("[RateLimit] Error checking rate limit (FAILING CLOSED):", error);
     return {
-      allowed: true, // Fail open to avoid blocking legitimate requests
-      remaining: maxRequests - 1,
+      allowed: false, // Fail closed - deny on error for security
+      remaining: 0,
       resetTime: now + windowMs,
+      retryAfter: 60, // Tell client to retry in 60 seconds
     };
   }
 }

@@ -15,6 +15,8 @@
 
 import { adminDb } from './firebase-admin';
 import { Match } from './match-service';
+import admin from 'firebase-admin';
+import { flagMatchForFraudReview } from './security-fixes';
 
 /**
  * Fraud score breakdown and reasoning
@@ -80,8 +82,31 @@ export async function analyzeMatchForFraud(
     const loserUid = playerIds.find((pid) => pid !== winnerUid) || '';
     const loserHistory = loserUid ? await getPlayerHistory(loserUid) : null;
 
+    // FIX H-010 & F-003: Flag matches with missing/incomplete history for manual review
     if (!winnerHistory || !loserHistory) {
-      return analysis; // Can't analyze without history
+      analysis.flagged = true;
+      analysis.reasons.push(
+        !winnerHistory 
+          ? "FRAUD_FLAG: Winner history missing or incomplete - requires manual review" 
+          : "FRAUD_FLAG: Loser history missing or incomplete - requires manual review"
+      );
+      // Flag for manual review
+      if (match.id) {
+        await flagMatchForFraudReview(match.id, "Missing player history", "medium");
+      }
+      return analysis;
+    }
+
+    // Also flag if winner is a brand new account
+    if (winnerHistory.totalMatches === 0 || (winnerHistory.accountAgeDays !== undefined && winnerHistory.accountAgeDays < 1)) {
+      analysis.flagged = true;
+      analysis.autoHold = true;
+      analysis.baseScore = 85;
+      analysis.reasons.push("FRAUD_FLAG: New account with first/early wins - AUTO HOLD for admin review");
+      if (match.id) {
+        await flagMatchForFraudReview(match.id, "New bot account suspected", "high");
+      }
+      return analysis;
     }
 
     // --- RISK FACTOR 1: Collusion Detection (0-30 points) ---

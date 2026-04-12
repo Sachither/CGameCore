@@ -1,23 +1,38 @@
 /**
  * Payment Status Monitor
  * Tracks payments in uncertain states and verifies them via webhook or periodic checks
+ * 
+ * FIX R-003: Added rate limiting to prevent enumeration attacks
  */
 
 import { adminDb } from "./firebase-admin";
 import admin from "firebase-admin";
 import { verifyPaystackTransactionWithSSLRecovery } from "./paystack-api";
+import { checkPaymentStatusRateLimit } from "./security-fixes";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 
 /**
  * Check status of a payment that failed network verification
  * Called by client to check if payment was eventually confirmed
+ * 
+ * FIX R-003: Rate limited to prevent payment enumeration attacks
  */
 export async function checkPaymentStatusAction(
   uid: string,
   reference: string
 ) {
   try {
+    // FIX R-003: Rate limit payment checks
+    const rateLimitCheck = await checkPaymentStatusRateLimit(uid);
+    if (!rateLimitCheck.allowed) {
+      return { 
+        status: "RATE_LIMITED", 
+        message: "Too many payment checks. Please try again later.",
+        retryAfter: 3600 // 1 hour
+      };
+    }
+
     const transactionRef = adminDb.collection("transactions").doc(reference);
     const transactionSnap = await transactionRef.get();
 
