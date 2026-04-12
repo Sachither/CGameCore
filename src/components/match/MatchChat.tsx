@@ -62,6 +62,7 @@ export default function MatchChat({ match }: { match: Match }) {
 2. DISPUTE: You MUST record gameplay to provide evidence.
 3. NO-SHOW: Failure to join within 5 mins = Disqualification.
 4. CONDUCT: Zero tolerance for harassment or toxic behavior.
+<<<CRITICAL_RED_START>>>5. SCREENSHOT REQUIRED: You MUST have a screenshot of your victory to claim/submit your win!<<<CRITICAL_RED_END>>>
 Secure the objective.`,
             senderUid: 'system',
             senderName: 'COMMAND CENTER',
@@ -196,7 +197,19 @@ Secure the objective.`,
               }`}>
                  {m.isSystem && <div className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-2 border-b border-blue-500/20 pb-2 flex items-center gap-2"><svg className="w-4 h-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> ADMIN TRANSMISSION</div>}
                  <p className={`whitespace-pre-wrap ${m.text.includes('ROOM ID') || m.text.includes('ID:') ? 'font-mono uppercase tracking-widest text-sm bg-black/50 p-2 border border-accent/20 rounded-sm' : ''} ${m.isSystem ? 'leading-loose' : 'leading-relaxed'}`}>
-                   {m.text}
+                   {m.isSystem && m.text.includes('<<<CRITICAL_RED_START>>>') 
+                     ? m.text.split('<<<CRITICAL_RED_START>>>').map((part, idx) => {
+                         if (idx === 0) return part;
+                         const [redPart, ...rest] = part.split('<<<CRITICAL_RED_END>>>');
+                         return (
+                           <span key={idx}>
+                             <span className="text-red-500 font-black text-sm">{redPart}</span>
+                             {rest.join('<<<CRITICAL_RED_END>>')}
+                           </span>
+                         );
+                       })
+                     : m.text
+                   }
                  </p>
               </div>
            </div>

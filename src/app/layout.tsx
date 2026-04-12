@@ -33,14 +33,14 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
-      { url: "/web-app-manifest-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: "/web-app-manifest-512x512.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon.svg?v=1", type: "image/svg+xml" },
+      { url: "/favicon.ico?v=1", sizes: "any" },
+      { url: "/favicon-96x96.png?v=1", sizes: "96x96", type: "image/png" },
+      { url: "/web-app-manifest-192x192.png?v=1", sizes: "192x192", type: "image/png" },
+      { url: "/web-app-manifest-512x512.png?v=1", sizes: "512x512", type: "image/png" },
     ],
-    apple: { url: "/apple-touch-icon.png", sizes: "180x180" },
-    shortcut: "/favicon.ico",
+    apple: { url: "/apple-touch-icon.png?v=1", sizes: "180x180" },
+    shortcut: "/favicon.ico?v=1",
   },
   other: {
     'mobile-web-app-capable': 'yes',

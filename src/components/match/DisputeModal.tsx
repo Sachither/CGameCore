@@ -31,10 +31,8 @@ export default function DisputeModal({ isOpen, onClose, matchId, username }: {
       setError("Please provide a detailed reason for the dispute.");
       return;
     }
-    if (!imageFile && !videoFile) {
-      setError("Evidence (Image or Video) is required for the Tribunal.");
-      return;
-    }
+    // Evidence is now optional - users can submit without screenshots/videos
+    // They can reach out to support even if they forgot to take evidence
 
     setIsSubmitting(true);
     setError(null);

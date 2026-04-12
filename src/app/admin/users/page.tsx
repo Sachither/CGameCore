@@ -172,6 +172,19 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
       setFeedback("✗ Please enter a positive adjustment amount.");
       return;
     }
+    
+    // Add Coins: Max 1000 limit
+    if (adjustMode === 'ADD' && rawAmount > 1000) {
+      setFeedback("✗ Maximum addition is 1000 coins.");
+      return;
+    }
+    
+    // Deduct Coins: Cannot exceed user's current balance
+    if (adjustMode === 'DEDUCT' && rawAmount > (u.balanceCoins || 0)) {
+      setFeedback(`✗ Cannot deduct more than user's balance (${u.balanceCoins || 0} coins).`);
+      return;
+    }
+    
     if (!balanceNote.trim()) {
       setFeedback("✗ Justification is required.");
       return;
@@ -260,9 +273,39 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
               <input 
                 type="number" 
                 min="1"
+                max={adjustMode === 'ADD' ? "1000" : String(u.balanceCoins || 0)}
                 value={balanceAmount} 
-                onChange={(e) => setBalanceAmount(e.target.value)} 
-                placeholder="Coins Amount (e.g. 500)" 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  const numVal = parseInt(val) || 0;
+                  
+                  // For ADD mode: enforce 1-1000 limit
+                  if (adjustMode === 'ADD') {
+                    if (numVal > 1000) {
+                      setBalanceAmount('1000');
+                    } else {
+                      setBalanceAmount(val);
+                    }
+                  }
+                  // For DEDUCT mode: enforce balance limit
+                  else {
+                    if (numVal > (u.balanceCoins || 0)) {
+                      setBalanceAmount(String(u.balanceCoins || 0));
+                    } else {
+                      setBalanceAmount(val);
+                    }
+                  }
+                }}
+                onBlur={(e) => {
+                  // Additional validation on blur to catch paste operations
+                  const numVal = parseInt(e.target.value) || 0;
+                  if (adjustMode === 'ADD' && numVal > 1000) {
+                    setBalanceAmount('1000');
+                  } else if (adjustMode === 'DEDUCT' && numVal > (u.balanceCoins || 0)) {
+                    setBalanceAmount(String(u.balanceCoins || 0));
+                  }
+                }}
+                placeholder={adjustMode === 'ADD' ? "Coins Amount (Max 1000)" : `Amount to Deduct (Max ${u.balanceCoins || 0})`}
                 className="w-full bg-black border border-white/10 focus:border-accent text-white px-4 py-2.5 text-sm font-bold rounded-sm outline-none transition-all placeholder-gray-700" 
               />
               <input type="text" value={balanceNote} onChange={(e) => setBalanceNote(e.target.value)} placeholder="Reason for change (User will see this)" className="w-full bg-black border border-white/10 focus:border-accent text-white px-4 py-2.5 text-sm font-bold rounded-sm outline-none transition-all placeholder-gray-700" />
