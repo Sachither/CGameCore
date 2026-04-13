@@ -258,7 +258,7 @@ export async function verifyPaystackPaymentAction(
     };
 
     // 5. SECURE TRANSACTION: Credit Coins
-    const result = await internalFulfillDeposit(reference, data.amount, uid, preVerificationSnapshot);
+    const result = await internalFulfillDeposit(lookupRef, data.amount, uid, preVerificationSnapshot);
 
     if (result.success) {
       console.log(`[PaystackAction] Successfully verified and fulfilled $${amountUsd} deposit for ${uid} (+${result.coinsAdded} CR)`);
