@@ -181,18 +181,30 @@ export async function verifyPaystackPaymentAction(
       if (!userSnap.exists) {
         return { success: false, error: "Operative profile not found." };
       }
+
+      // Fetch current rate to use for this fallback record
+      const fallbackRate = await getPlatformRate(userSnap.data()?.currency || "NGN", "DEPOSIT");
+
       await transactionRef.set({
         uid,
         username: userSnap.data()?.username || "Unknown",
         type: "DEPOSIT",
         amount: coinsToCredit,
         fiatAmount: amountUsd,
+        currency: userSnap.data()?.currency || "NGN",
+        exchangeRate: fallbackRate, // Store rate for coin calculation
         gateway: "PAYSTACK",
         reference,
         status: "PENDING",
+        version: 1,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         note: "Auto-created during verification: pre-auth record was missing"
       });
+
+      // RE-READ: Necessary to avoid the "status changed from undefined to PENDING" error
+      const refreshedSnap = await transactionRef.get();
+      const rt = refreshedSnap.data();
+      t = rt; // Update local 't' for the snapshot below
     }
 
     const transactionUid = transactionSnap.exists ? t?.uid : uid;
@@ -289,12 +301,13 @@ export async function internalFulfillDeposit(
     const amountUsd = amountLocal / handshakeRate;
     let coinsToCredit = Math.floor(amountUsd * 100);
 
-    // FIX: 98 Coins Rounding Discrepancy
-    // If the paid amount (USD) is within 1% of the stored fiatAmount,
+    // FIX: 98/102 Coins Rounding Discrepancy
+    // If the paid amount (USD) is within 3% of the stored fiatAmount,
     // we use the exact 'amount' (Coins) stored during pre-auth.
     if (t?.amount && t?.fiatAmount) {
        const diff = Math.abs(amountUsd - t.fiatAmount);
-       if (diff < (t.fiatAmount * 0.01)) {
+       // 3% margin covers the 2% safety buffer + rounding errors
+       if (diff < (t.fiatAmount * 0.03)) {
           console.log(`[P-COIN] Trusting pre-auth coin amount: ${t.amount} CR (Paid $${amountUsd.toFixed(4)})`);
           coinsToCredit = t.amount;
        }
