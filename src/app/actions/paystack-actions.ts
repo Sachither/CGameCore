@@ -299,18 +299,15 @@ export async function internalFulfillDeposit(
     const currency = t?.currency || "NGN";
     const handshakeRate = t?.exchangeRate || 1500;
     const amountUsd = amountLocal / handshakeRate;
-    let coinsToCredit = Math.floor(amountUsd * 100);
+    
+    // PRIMARY SOURCE OF TRUTH: Use the coins stored in the record during the "Pending" step
+    // FALLBACK: If record was missing (auto-created), calculate from local currency math
+    const coinsToCredit = t?.amount || Math.floor(amountUsd * 100);
 
-    // FIX: 98/102 Coins Rounding Discrepancy
-    // If the paid amount (USD) is within 3% of the stored fiatAmount,
-    // we use the exact 'amount' (Coins) stored during pre-auth.
-    if (t?.amount && t?.fiatAmount) {
-       const diff = Math.abs(amountUsd - t.fiatAmount);
-       // 3% margin covers the 2% safety buffer + rounding errors
-       if (diff < (t.fiatAmount * 0.03)) {
-          console.log(`[P-COIN] Trusting pre-auth coin amount: ${t.amount} CR (Paid $${amountUsd.toFixed(4)})`);
-          coinsToCredit = t.amount;
-       }
+    if (t?.amount) {
+       console.log(`[P-COIN] Trusting ledger amount: ${t.amount} CR (Paid $${amountUsd.toFixed(4)})`);
+    } else {
+       console.log(`[P-COIN] Auto-calculating from payout: ${coinsToCredit} CR ($${amountUsd.toFixed(4)})`);
     }
 
     const uid = t?.uid;
