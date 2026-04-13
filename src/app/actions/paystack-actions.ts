@@ -153,7 +153,19 @@ export async function verifyPaystackPaymentAction(
 
     // 3.1 FIX: Verify amount against stored record AND Paystack API before fulfilling
     const amountKobo = Number(data.amount);
-    const verification = await verifyPaystackAmount(reference, amountKobo, true);
+    
+    // Ensure we have a valid rate if the record is missing (Auto-creation scenario)
+    let manualRate: number | undefined = undefined;
+    let userSnap: any = null;
+
+    if (!transactionSnap.exists) {
+      userSnap = await adminDb.collection("users").doc(uid).get();
+      const currency = userSnap.data()?.currency || "NGN";
+      const rateResponse = await getPlatformRate(currency, 'DEPOSIT');
+      manualRate = rateResponse;
+    }
+
+    const verification = await verifyPaystackAmount(reference, amountKobo, true, manualRate);
 
     if (!verification.verified) {
       console.error(
@@ -177,13 +189,11 @@ export async function verifyPaystackPaymentAction(
 
     if (!transactionSnap.exists) {
       console.warn(`[PaystackAction] ⚠️ Pre-auth ledger record missing for ${reference}. Paystack confirmed payment.`);
-      const userSnap = await adminDb.collection("users").doc(uid).get();
-      if (!userSnap.exists) {
+      
+      // We already fetched userSnap and rateResponse earlier for verification!
+      if (!userSnap || !userSnap.exists) {
         return { success: false, error: "Operative profile not found." };
       }
-
-      // Fetch current rate to use for this fallback record
-      const fallbackRate = await getPlatformRate(userSnap.data()?.currency || "NGN", "DEPOSIT");
 
       await transactionRef.set({
         uid,
@@ -192,7 +202,7 @@ export async function verifyPaystackPaymentAction(
         amount: coinsToCredit,
         fiatAmount: amountUsd,
         currency: userSnap.data()?.currency || "NGN",
-        exchangeRate: fallbackRate, // Store rate for coin calculation
+        exchangeRate: manualRate || 1500, // Reuse the same rate used for verification
         gateway: "PAYSTACK",
         reference,
         status: "PENDING",

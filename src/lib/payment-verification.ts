@@ -40,7 +40,8 @@ export interface PaymentVerificationResult {
 export async function verifyPaystackAmount(
   reference: string,
   webhookAmountKobo: number,
-  verifyAgainstApi: boolean = true
+  verifyAgainstApi: boolean = true,
+  manualExchangeRate?: number
 ): Promise<PaymentVerificationResult> {
   try {
     // Step 1: Get the stored transaction record
@@ -48,8 +49,8 @@ export async function verifyPaystackAmount(
     const transactionSnap = await transactionRef.get();
 
     const storedData = transactionSnap.exists ? transactionSnap.data() : null;
-    // Use the stored exchange rate (which includes any platform discount), fall back to hardcoded rate
-    const exchangeRate = storedData?.exchangeRate || INTERNAL_USD_TO_NGN_RATE;
+    // Layered Rate Selection: Stored Record > Manual Override > Library Fallback
+    const exchangeRate = storedData?.exchangeRate || manualExchangeRate || INTERNAL_USD_TO_NGN_RATE;
 
     const storedAmountKobo = storedData
       ? (storedData?.fiatAmount || 0) * exchangeRate * 100
