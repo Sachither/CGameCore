@@ -94,7 +94,7 @@ export async function verifyPaystackPaymentAction(
     // 2. Check Local Ledger for Idempotency
     const transactionRef = adminDb.collection("transactions").doc(reference);
     const transactionSnap = await transactionRef.get();
-    const t = transactionSnap.data();
+    let t = transactionSnap.data();
 
     if (transactionSnap.exists && t?.status === 'COMPLETED') {
       return { success: true, message: "Transaction already fulfilled." };
