@@ -877,20 +877,24 @@ export async function registerChallengeInterestAction(
         const userData = userSnap.data()!;
         const queueData = (queueSnap.exists ? queueSnap.data() : { playerIds: [], players: [] }) as any;
 
+        const currentBalance = Number(userData.balanceCoins || 0);
+        const requiredFee = Number(fee);
+
         // 1. Check for Duplicate Entry
         if (queueData.playerIds.includes(uid)) {
            return { matchCreated: false, alreadyRegistered: true };
         }
 
-        // 2. Validate Balance
-        if ((userData.balanceCoins || 0) < fee) {
-           throw new Error(`Insufficient Credits. 500 CR required for High-Stake Secure Vaulting.`);
+        // 2. Validate Balance (Strictly)
+        if (currentBalance < requiredFee) {
+           throw new Error(`Insufficient Credits. 500 CR required for High-Stake Secure Vaulting. Your current balance: ${currentBalance} CR.`);
         }
 
         // 3. Vault the Credits
         transaction.update(userRef, {
-           balanceCoins: admin.firestore.FieldValue.increment(-fee),
-           lifetimeWagered: admin.firestore.FieldValue.increment(fee)
+           balanceCoins: admin.firestore.FieldValue.increment(-requiredFee),
+           lifetimeWagered: admin.firestore.FieldValue.increment(requiredFee),
+           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
         if (queueData.playerIds.length + 1 >= target) {

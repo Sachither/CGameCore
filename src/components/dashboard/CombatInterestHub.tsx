@@ -53,6 +53,13 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
   const handleRegister = async () => {
     if (!user || !profile) return;
     
+    // Final balance check before sending to server
+    if ((profile.balanceCoins || 0) < 500) {
+      setError(`ABORTED: You need 500 CR to vault. Current balance: ${profile.balanceCoins || 0} CR.`);
+      setShowConfirm(false);
+      return;
+    }
+
     const finalInGameName = hasTag ? profileTag : localTagName;
     if (!finalInGameName || finalInGameName.length < 3) {
       setError("MISSION ABORTED: Valid In-Game ID required (min 3 chars).");
