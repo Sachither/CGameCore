@@ -2,7 +2,7 @@
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
-import { Match, MatchPlayer, Circuit, CircuitTie } from "@/lib/match-service";
+import { Match, MatchPlayer, Circuit, CircuitTie } from "@/lib/match-schema";
 import { getVerifiedUid, getVerifiedIdentity, getVerifiedAdminUid } from "@/lib/server-utils";
 import { sanitize } from "@/lib/validation-utils";
 import { checkRateLimit } from "@/lib/rate-limiter";

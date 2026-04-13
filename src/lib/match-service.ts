@@ -16,7 +16,15 @@ import {
   QuerySnapshot
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { EngineCircuit as Circuit, EngineTie as CircuitTie } from "./match-engine/types";
+import { 
+  Match, 
+  MatchPlayer, 
+  ChallengeInterest,
+  Circuit,
+  CircuitTie
+} from "./match-schema";
+
+export type { Match, MatchPlayer, ChallengeInterest, Circuit, CircuitTie };
 import { 
   createMatchAction, 
   joinMatchAction, 
@@ -28,60 +36,6 @@ import {
   respondToHostRoleAction,
   updateRoomCodeAction
 } from "@/app/actions/match-actions";
-
-export interface MatchPlayer {
-  uid: string;
-  username: string;
-  avatarId: number;
-  ready: boolean;
-  team: 'alpha' | 'bravo';
-  points?: number;
-  wins?: number;
-  draws?: number;
-  losses?: number;
-  goalsFor?: number;
-  goalsAgainst?: number;
-  claim?: 'WIN' | 'LOSS';
-  proofUrl?: string;
-  isHostCandidate?: boolean;
-  isHost?: boolean;
-  played?: number;
-  inGameName?: string;
-  scoreFor?: number;
-  scoreAgainst?: number;
-  kills?: number;
-}
-
-export interface Match {
-  id?: string;
-  game: 'CODM' | 'EFOOTBALL';
-  format: '1v1' | 'br' | 'FFA' | 'ffa' | 'alcatraz' | 'tournament' | 'league'; 
-  duration?: '12m' | '15m' | 'NONE'; 
-  challengeFee: number;
-  status: 'WAITING' | 'READY' | 'IN_PROGRESS' | 'WAITING_FOR_OPPONENT' | 'COMPLETED' | 'DISPUTED' | 'RESOLVING' | 'CLOSED';
-  playerIds: string[]; // Added for efficient querying
-  players: { [uid: string]: MatchPlayer };
-  championUid: string | null;
-  resolutionEndTime?: any; // Marks when the countdown expires
-  hostUid?: string | null; // The player responsible for creating the in-game room
-  creatorId: string;
-  createdAt: any;
-  weaponClass?: 'ALL GUNS' | 'SHOTGUN' | 'SNIPER' | 'NONE'; // For CODM tactical duels
-  maxPlayers?: number; // For FFA (3-8)
-  rewardAmount?: number; // The payout credited to the winner
-  resolvedAt?: any;     // When the match was finalized and paid out
-  roomCode?: string;    // The in-game room code for joining
-  circuitId?: string;   // If this match belongs to a tournament/league
-  leagueId?: string;    // If this match belongs to a league specifically
-  round?: 'QR1' | 'QR2' | 'QF' | 'SF' | 'FINAL' | 'NONE' | 'QF TIE-BREAKER' | 'SF TIE-BREAKER'; // Round of 16, Quarters, Semis, Final, Tie-Breakers
-  group?: 'A' | 'B' | 'C' | 'D' | 'NONE';
-  expiresAt?: any;     // Absolute deadline for match extraction/cleanup
-  leg?: 1 | 2 | 3 | 'NONE'; // For Home/Away knockout ties (3 is tie-breaker)
-  adminAlert?: boolean;
-  adminAlertAt?: any;
-}
-
-export type { Circuit, CircuitTie };
 
 /**
  * Get the current user's active match (if any)
@@ -329,17 +283,6 @@ export const disputeMatch = async (matchId: string) => {
 /**
  * --- COMBAT INTEREST (HIGH-STAKES WAITLIST) ---
  */
-
-export interface ChallengeInterest {
-  id?: string;
-  uid: string;
-  username: string;
-  avatarId: number;
-  game: 'CODM' | 'EFOOTBALL';
-  segment: '1v1' | 'br' | 'ffa' | 'tournament' | 'alcatraz';
-  fee: number;
-  expiresAt: any;
-}
 
 /**
  * Register interest in a high-stakes challenge (SERVER-SIDE)
