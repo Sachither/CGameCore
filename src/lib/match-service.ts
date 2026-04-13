@@ -32,6 +32,7 @@ import {
   submitMatchResultAction, 
   executeMatchClosureAction,
   registerChallengeInterestAction,
+  unregisterChallengeInterestAction,
   setReadyStatusAction,
   respondToHostRoleAction,
   updateRoomCodeAction
@@ -301,18 +302,39 @@ export const registerChallengeInterest = async (
   return result; // Return the full result including matchId if created
 };
 
+/**
+ * Unregister from a high-stakes challenge (SERVER-SIDE)
+ */
+export const unregisterChallengeInterest = async (
+  idToken: string,
+  game: 'CODM' | 'EFOOTBALL', 
+  segment: '1v1' | 'br' | 'ffa' | 'tournament' | 'alcatraz', 
+  fee: number = 500
+) => {
+  const result = await unregisterChallengeInterestAction(idToken, game, segment, fee);
+  if (!result.success) throw new Error(result.error);
+  return result;
+};
+
 
 
 /**
- * Get current waitlist count
+ * Get current waitlist count and optionally check if user is registered
  */
-export const getChallengeInterestCount = async (game: string, segment: string) => {
+export const getChallengeInterestCount = async (game: string, segment: string, uid?: string) => {
   const queueId = `${game.toLowerCase()}_${segment}`;
   const queueRef = doc(db, "queues", queueId);
   const snap = await getDoc(queueRef);
   
-  if (!snap.exists()) return 0;
-  return (snap.data()?.playerIds || []).length;
+  if (!snap.exists()) return { count: 0, isRegistered: false };
+  
+  const data = snap.data();
+  const playerIds = data?.playerIds || [];
+  
+  return { 
+    count: playerIds.length, 
+    isRegistered: uid ? playerIds.includes(uid) : false 
+  };
 };
 
 /**

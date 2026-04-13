@@ -1,8 +1,8 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { getChallengeInterestCount, registerChallengeInterest } from "@/lib/match-service";
+import { getChallengeInterestCount, registerChallengeInterest, unregisterChallengeInterest } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Loader2, Users, Swords, Trophy, ShieldCheck, User, Lock } from "lucide-react";
+import { Loader2, Users, Swords, Trophy, ShieldCheck, User, Lock, ArrowLeftRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -21,6 +21,7 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
   const { user, profile } = useAuth();
   const router = useRouter();
   const [count, setCount] = useState<number>(0);
+  const [isRegistered, setIsRegistered] = useState(false);
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -32,20 +33,22 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
 
   useEffect(() => {
     const fetchCount = async () => {
+      if (loading) return;
       setLoading(true);
       try {
-        const c = await getChallengeInterestCount(game, segment);
-        setCount(c);
+        const result = await getChallengeInterestCount(game, segment, user?.uid);
+        setCount(result.count);
+        setIsRegistered(result.isRegistered);
       } catch (err) {
         console.error("Failed to fetch count:", err);
       }
       setLoading(false);
     };
     fetchCount();
-    // Poll every 30 seconds for live feel for MVP (Real-time listener better for prod)
+    // Poll every 30 seconds for live feel for MVP
     const interval = setInterval(fetchCount, 30000);
     return () => clearInterval(interval);
-  }, [game, segment]);
+  }, [game, segment, user?.uid]);
 
   const handleRegister = async () => {
     if (!user || !profile) return;
@@ -70,19 +73,36 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
         finalInGameName
       );
       
-      // If a match was spawned, redirect immediately
       if (result.matchCreated && result.matchId) {
         router.push(`/match/${result.matchId}`);
         return;
       }
 
-      // Refresh count immediately
-      const c = await getChallengeInterestCount(game, segment);
-      setCount(c);
+      const fresh = await getChallengeInterestCount(game, segment, user.uid);
+      setCount(fresh.count);
+      setIsRegistered(fresh.isRegistered);
       setShowConfirm(false);
       onRegistered();
     } catch (err: any) {
       setError(err.message || "Failed to register interest.");
+    }
+    setRegistering(false);
+  };
+
+  const handleUnregister = async () => {
+    if (!user || registering) return;
+    setRegistering(true);
+    setError("");
+    try {
+      const idToken = await user.getIdToken();
+      await unregisterChallengeInterest(idToken, game, segment, 500);
+      
+      const fresh = await getChallengeInterestCount(game, segment, user.uid);
+      setCount(fresh.count);
+      setIsRegistered(fresh.isRegistered);
+      onRegistered();
+    } catch (err: any) {
+      setError(err.message || "Failed to leave queue.");
     }
     setRegistering(false);
   };
@@ -112,10 +132,15 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
       <div className="relative z-10">
         <h3 className="text-base font-black italic uppercase text-white tracking-tight mb-1">{title}</h3>
         <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{game} Edition</p>
-        {weekendOnly && (
+        {weekendOnly ? (
           <span className="inline-flex items-center gap-1 mt-1.5 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-[2px] bg-orange-500/10 text-orange-400 border border-orange-500/20">
             <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse inline-block" />
             Fri – Sun Only
+          </span>
+        ) : isRegistered && (
+          <span className="inline-flex items-center gap-1 mt-1.5 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-[2px] bg-accent/10 text-accent border border-accent/20">
+             <ShieldCheck className="w-2.5 h-2.5" />
+             Credits Vaulted
           </span>
         )}
       </div>
@@ -147,8 +172,26 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
             <span className="w-1.5 h-1.5 rounded-full bg-orange-500/40 inline-block" />
             Opens Friday
           </div>
+        ) : isRegistered ? (
+          <div className="space-y-2">
+            <div className="w-full bg-accent/10 border border-accent/20 py-2.5 rounded-sm text-[10px] font-black uppercase tracking-widest text-center text-accent flex items-center justify-center gap-2">
+               <ShieldCheck className="w-3 h-3" />
+               In Queue (Vaulted)
+            </div>
+            <button 
+              onClick={handleUnregister}
+              disabled={registering}
+              className="w-full text-center text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-red-500 transition-colors flex items-center justify-center gap-1.5"
+            >
+              {registering ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : (
+                <>
+                  <ArrowLeftRight className="w-2.5 h-2.5" />
+                  Leave Queue & Return Credits
+                </>
+              )}
+            </button>
+          </div>
         ) : !showConfirm ? (
-
           <button 
             onClick={() => {
               setError("");

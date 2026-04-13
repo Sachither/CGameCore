@@ -863,23 +863,45 @@ export async function registerChallengeInterestAction(
   inGameName?: string
 ) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
+  const userRef = adminDb.collection("users").doc(uid);
   const queueRef = adminDb.collection("queues").doc(`${game.toLowerCase()}_${segment}`);
   const quotaMap: Record<string, number> = { 'tournament': 16, 'alcatraz': 20, 'ffa': 8 };
   const target = quotaMap[segment] || 2;
 
   try {
      const result = await adminDb.runTransaction(async (transaction) => {
+        const userSnap = await transaction.get(userRef);
         const queueSnap = await transaction.get(queueRef);
+
+        if (!userSnap.exists) throw new Error("Operative profile not found.");
+        const userData = userSnap.data()!;
         const queueData = (queueSnap.exists ? queueSnap.data() : { playerIds: [], players: [] }) as any;
 
+        // 1. Check for Duplicate Entry
+        if (queueData.playerIds.includes(uid)) {
+           return { matchCreated: false, alreadyRegistered: true };
+        }
+
+        // 2. Validate Balance
+        if ((userData.balanceCoins || 0) < fee) {
+           throw new Error(`Insufficient Credits. 500 CR required for High-Stake Secure Vaulting.`);
+        }
+
+        // 3. Vault the Credits
+        transaction.update(userRef, {
+           balanceCoins: admin.firestore.FieldValue.increment(-fee),
+           lifetimeWagered: admin.firestore.FieldValue.increment(fee)
+        });
+
         if (queueData.playerIds.length + 1 >= target) {
-           const allPlayers = [...queueData.players, { uid, username: profile.username, avatarId: profile.avatarId, inGameName }];
+           const currentRegistered = { uid, username: profile.username, avatarId: profile.avatarId, inGameName: inGameName || "Unknown" };
+           const allPlayers = [...queueData.players, currentRegistered];
 
            // --- ALCATRAZ WEEKEND BLITZ: Spawn a standard 20-player BR match ---
            if (segment === 'alcatraz') {
              const matchRef = adminDb.collection("matches").doc();
              const playersMap: Record<string, any> = {};
-             allPlayers.forEach((p: any, i: number) => {
+             allPlayers.forEach((p: any) => {
                playersMap[p.uid] = { ...p, ready: false, team: 'alpha' };
              });
              transaction.set(matchRef, {
@@ -928,9 +950,7 @@ export async function registerChallengeInterestAction(
             transaction.delete(queueRef);
             return { matchCreated: true, circuitId };
         } else {
-           if (queueData.playerIds.includes(uid)) {
-             return { matchCreated: false, alreadyRegistered: true };
-           }
+           // Standard Add to Queue
            transaction.set(queueRef, {
              playerIds: admin.firestore.FieldValue.arrayUnion(uid),
              players: admin.firestore.FieldValue.arrayUnion({ uid, username: profile.username, avatarId: profile.avatarId, inGameName }),
@@ -941,6 +961,63 @@ export async function registerChallengeInterestAction(
      });
      return { success: true, ...result };
   } catch (error: any) {
+    console.error("[CombatQueue] Register Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: LEAVE CHALLENGE QUEUE
+ * Withdraws from the vault and refunds the fee.
+ */
+export async function unregisterChallengeInterestAction(
+  idToken: string,
+  game: 'CODM' | 'EFOOTBALL',
+  segment: '1v1' | '5v5' | 'br' | 'ffa' | 'tournament' | 'alcatraz',
+  fee: number = 500
+) {
+  const { uid } = await getVerifiedIdentity(idToken);
+  const userRef = adminDb.collection("users").doc(uid);
+  const queueId = `${game.toLowerCase()}_${segment}`;
+  const queueRef = adminDb.collection("queues").doc(queueId);
+
+  try {
+     await adminDb.runTransaction(async (transaction) => {
+        const queueSnap = await transaction.get(queueRef);
+        if (!queueSnap.exists) throw new Error("Queue not found or already closed.");
+        
+        const queueData = queueSnap.data()!;
+        const playerIds = queueData.playerIds || [];
+        const players = queueData.players || [];
+
+        if (!playerIds.includes(uid)) {
+           throw new Error("You are not registered in this combat queue.");
+        }
+
+        // 1. Remove from Queue
+        const newPlayerIds = playerIds.filter((pid: string) => pid !== uid);
+        const newPlayers = players.filter((p: any) => p.uid !== uid);
+
+        if (newPlayerIds.length === 0) {
+           transaction.delete(queueRef);
+        } else {
+           transaction.update(queueRef, {
+              playerIds: newPlayerIds,
+              players: newPlayers,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           });
+        }
+
+        // 2. Refund User
+        transaction.update(userRef, {
+           balanceCoins: admin.firestore.FieldValue.increment(fee),
+           lifetimeWagered: admin.firestore.FieldValue.increment(-fee)
+        });
+     });
+
+     return { success: true };
+  } catch (error: any) {
+    console.error("[CombatQueue] Leave Error:", error);
     return { success: false, error: error.message };
   }
 }
