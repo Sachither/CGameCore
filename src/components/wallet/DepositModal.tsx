@@ -77,7 +77,8 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
           },
           callback: function(response: any) {
             (async () => {
-              const result = await verifyPaystackPaymentAction(idToken, response.reference);
+              // We pass BOTH references so the backend can link them if Paystack used its own internal ID
+              const result = await verifyPaystackPaymentAction(idToken, response.reference, reference);
               if (result.success) {
                 setSuccess(true);
                 await refreshProfile();

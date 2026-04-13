@@ -75,8 +75,9 @@ export async function createPendingDepositAction(
  */
 export async function verifyPaystackPaymentAction(
   idToken: string,
-  reference: string
-) {
+  reference: string,
+  originalReference?: string
+): Promise<{ success: boolean; message?: string; error?: string; isAbandoned?: boolean; isPending?: boolean; retryAfterSeconds?: number; coinsAdded?: number }> {
   if (!idToken || !reference) {
     return { success: false, error: "Missing authentication or transaction reference." };
   }
@@ -92,9 +93,17 @@ export async function verifyPaystackPaymentAction(
     }
 
     // 2. Check Local Ledger for Idempotency
-    const transactionRef = adminDb.collection("transactions").doc(reference);
+    // We prioritize looking up the original record if provided
+    const lookupRef = originalReference || reference;
+    const transactionRef = adminDb.collection("transactions").doc(lookupRef);
     const transactionSnap = await transactionRef.get();
     let t = transactionSnap.data();
+
+    // If Paystack returned a different ID (e.g. #T...) but our #DEP- record exists
+    // we bridge them here to avoid creating a double entry.
+    if (!transactionSnap.exists && originalReference && originalReference !== reference) {
+      console.log(`[PaystackAction] Ref mismatch: Got ${reference}, binding to original ${originalReference}`);
+    }
 
     if (transactionSnap.exists && t?.status === 'COMPLETED') {
       return { success: true, message: "Transaction already fulfilled." };
@@ -188,7 +197,7 @@ export async function verifyPaystackPaymentAction(
     }
 
     if (!transactionSnap.exists) {
-      console.warn(`[PaystackAction] ⚠️ Pre-auth ledger record missing for ${reference}. Paystack confirmed payment.`);
+      console.warn(`[PaystackAction] ⚠️ Pre-auth ledger record missing for ${lookupRef}. Paystack confirmed payment.`);
       
       // We already fetched userSnap and rateResponse earlier for verification!
       if (!userSnap || !userSnap.exists) {
@@ -202,19 +211,23 @@ export async function verifyPaystackPaymentAction(
         amount: coinsToCredit,
         fiatAmount: amountUsd,
         currency: userSnap.data()?.currency || "NGN",
-        exchangeRate: manualRate || 1500, // Reuse the same rate used for verification
+        exchangeRate: manualRate || 1500, // Reverted fallback to 1500
         gateway: "PAYSTACK",
-        reference,
+        reference: lookupRef, 
+        gatewayInternalRef: reference !== lookupRef ? reference : null,
         status: "PENDING",
         version: 1,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        note: "Auto-created during verification: pre-auth record was missing"
+        note: `Auto-created during verification: ${reference !== lookupRef ? 'linked to ' + reference : 'ledger record missing'}`
       });
 
       // RE-READ: Necessary to avoid the "status changed from undefined to PENDING" error
       const refreshedSnap = await transactionRef.get();
       const rt = refreshedSnap.data();
       t = rt; // Update local 't' for the snapshot below
+    } else if (originalReference && originalReference !== reference) {
+      // Record already exists but we have a new internal reference from Paystack
+      await transactionRef.update({ gatewayInternalRef: reference });
     }
 
     const transactionUid = transactionSnap.exists ? t?.uid : uid;

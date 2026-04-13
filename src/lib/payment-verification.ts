@@ -49,8 +49,16 @@ export async function verifyPaystackAmount(
     const transactionSnap = await transactionRef.get();
 
     const storedData = transactionSnap.exists ? transactionSnap.data() : null;
+    
     // Layered Rate Selection: Stored Record > Manual Override > Library Fallback
-    const exchangeRate = storedData?.exchangeRate || manualExchangeRate || INTERNAL_USD_TO_NGN_RATE;
+    // FIX: Optimized fallback to use specific country defaults
+    const currency = storedData?.currency || "NGN";
+    const countryFallback = 
+      currency === 'GHS' ? 14.5 : 
+      currency === 'ZAR' ? 18.8 : 
+      currency === 'KES' ? 130 : 1500;
+
+    const exchangeRate = storedData?.exchangeRate || manualExchangeRate || countryFallback;
 
     const storedAmountKobo = storedData
       ? (storedData?.fiatAmount || 0) * exchangeRate * 100

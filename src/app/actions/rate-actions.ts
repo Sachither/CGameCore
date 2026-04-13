@@ -16,7 +16,7 @@ export async function syncPlatformRatesAction(idToken: string) {
     const decoded = await adminAuth.verifyIdToken(idToken);
     const userSnap = await adminDb.collection("users").doc(decoded.uid).get();
     const profile = userSnap.data();
-    
+
     const isSuperAdmin = profile?.role === 'SUPER_ADMIN' || profile?.isSuperAdmin === true;
     if (!isSuperAdmin) throw new Error("Forbidden: Super-Admin clearance required.");
 
@@ -77,7 +77,7 @@ export async function syncPlatformRatesAction(idToken: string) {
 export async function getPlatformRate(currency: string, type: 'DEPOSIT' | 'WITHDRAWAL'): Promise<number> {
   const configSnap = await adminDb.collection("system").doc("config").get();
   const data = configSnap.data();
-  
+
   // Base rates fallback logic
   const rates = data?.rates || {
     NGN: 1500,
@@ -86,8 +86,14 @@ export async function getPlatformRate(currency: string, type: 'DEPOSIT' | 'WITHD
     KES: 130
   };
 
-  const baseRate = rates[currency] || rates['NGN'] || 1500;
-  
+  // Use the currency's specific rate, or its specific failsafe default
+  const baseRate = rates[currency] || (
+    currency === 'GHS' ? 14.5 :
+    currency === 'ZAR' ? 18.8 :
+    currency === 'KES' ? 130 : 
+    1500 // Default to NGN rate if all else fails
+  );
+
   // Apply 2% Safety Buffer
   // Deposits and Withdrawals now use 1:1 market rate parity for maximum price transparency.
   if (type === 'DEPOSIT') {
