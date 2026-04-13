@@ -194,6 +194,60 @@ export async function resolveDisputeAction(
   }
 }
 
+/**
+ * ADMIN ACTION: WIPE COMBAT QUEUE & MASS REFUND
+ * Resets a stuck queue and restores credits to all participants.
+ */
+export async function wipeCombatQueueAction(
+  idToken: string,
+  queueId: string
+) {
+  const adminUid = await getVerifiedAdminUid(idToken);
+  const queueRef = adminDb.collection("queues").doc(queueId);
+
+  try {
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const queueSnap = await transaction.get(queueRef);
+      if (!queueSnap.exists) throw new Error("Queue not found or already empty.");
+
+      const queueData = queueSnap.data()!;
+      const playerIds = (queueData.playerIds || []) as string[];
+      const fee = 500; // Standard High-Stake Fee
+
+      // 1. Mass Refund
+      for (const uid of playerIds) {
+        const userRef = adminDb.collection("users").doc(uid);
+        transaction.update(userRef, {
+          balanceCoins: admin.firestore.FieldValue.increment(fee),
+          lifetimeWagered: admin.firestore.FieldValue.increment(-fee)
+        });
+      }
+
+      // 2. Wipe the Queue Document
+      transaction.delete(queueRef);
+
+      // 3. Audit Log
+      const auditRef = adminDb.collection("admin_audit_log").doc();
+      transaction.set(auditRef, {
+        action: "WIPE_COMBAT_QUEUE",
+        adminUid,
+        targetQueue: queueId,
+        playersRefunded: playerIds.length,
+        totalRefundAmount: playerIds.length * fee,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return { refundedCount: playerIds.length };
+    });
+
+    console.log(`🧹 [ADMIN-WIPE] Queue ${queueId} reset by ${adminUid}. ${result.refundedCount} players refunded.`);
+    return { success: true, ...result };
+  } catch (error: any) {
+    console.error("[AdminAction] wipeQueue error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
 // ─── USER MANAGEMENT ─────────────────────────────────────────────────────────
 
 /**

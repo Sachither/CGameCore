@@ -890,24 +890,28 @@ export async function registerChallengeInterestAction(
            throw new Error(`Insufficient Credits. 500 CR required for High-Stake Secure Vaulting. Your current balance: ${currentBalance} CR.`);
         }
 
-        // 3. Vault the Credits
+        // 3. Vault the Credits & Save Profile Tag
+        const tagField = game === 'CODM' ? 'codTag' : 'efootballTag';
         transaction.update(userRef, {
            balanceCoins: admin.firestore.FieldValue.increment(-requiredFee),
            lifetimeWagered: admin.firestore.FieldValue.increment(requiredFee),
+           [tagField]: inGameName || (userData[tagField] || "Unknown"), // Persist to profile
            updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
         if (queueData.playerIds.length + 1 >= target) {
-           const currentRegistered = { uid, username: profile.username, avatarId: profile.avatarId, inGameName: inGameName || "Unknown" };
+           const currentRegistered = { uid, username: profile.username, avatarId: profile.avatarId, inGameName: inGameName || (userData[tagField] || "Unknown") };
            const allPlayers = [...queueData.players, currentRegistered];
+
+           // Shared players map for all types
+           const playersMap: Record<string, any> = {};
+           allPlayers.forEach((p: any) => {
+             playersMap[p.uid] = { ...p, ready: false, team: 'alpha' };
+           });
 
            // --- ALCATRAZ WEEKEND BLITZ: Spawn a standard 20-player BR match ---
            if (segment === 'alcatraz') {
              const matchRef = adminDb.collection("matches").doc();
-             const playersMap: Record<string, any> = {};
-             allPlayers.forEach((p: any) => {
-               playersMap[p.uid] = { ...p, ready: false, team: 'alpha' };
-             });
              transaction.set(matchRef, {
                game,
                format: 'alcatraz',
@@ -928,10 +932,6 @@ export async function registerChallengeInterestAction(
             // --- FREE FOR ALL: Spawn a single FFA match ---
             if (segment === 'ffa') {
               const matchRef = adminDb.collection("matches").doc();
-              const playersMap: Record<string, any> = {};
-              allPlayers.forEach((p: any) => {
-                playersMap[p.uid] = { ...p, ready: false, team: 'alpha' };
-              });
               transaction.set(matchRef, {
                 game,
                 format: 'FFA',
@@ -950,14 +950,21 @@ export async function registerChallengeInterestAction(
             }
 
             // --- ELITE TOURNAMENT: Spawn a full bracket circuit ---
-            const circuitId = await initializeCircuit(transaction, adminDb.collection("circuits").doc(), { game, format: '16_TOURNAMENT', challengeFee: fee } as any, allPlayers as EnginePlayer[], uid);
+            const circuitRef = adminDb.collection("circuits").doc();
+            const circuitId = await initializeCircuit(
+              transaction, 
+              circuitRef, 
+              { game, format: '16_TOURNAMENT', challengeFee: fee, players: playersMap } as any, 
+              allPlayers as EnginePlayer[], 
+              uid
+            );
             transaction.delete(queueRef);
             return { matchCreated: true, circuitId };
         } else {
            // Standard Add to Queue
            transaction.set(queueRef, {
              playerIds: admin.firestore.FieldValue.arrayUnion(uid),
-             players: admin.firestore.FieldValue.arrayUnion({ uid, username: profile.username, avatarId: profile.avatarId, inGameName }),
+             players: admin.firestore.FieldValue.arrayUnion({ uid, username: profile.username, avatarId: profile.avatarId, inGameName: inGameName || (userData[tagField] || "Unknown") }),
              updatedAt: admin.firestore.FieldValue.serverTimestamp()
            }, { merge: true });
            return { matchCreated: false };

@@ -1,8 +1,8 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { getPlatformStatsAction } from "@/app/actions/admin-actions";
-import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink } from "lucide-react";
+import { getPlatformStatsAction, wipeCombatQueueAction } from "@/app/actions/admin-actions";
+import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink, RefreshCw, Eraser, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 
 interface Stats {
@@ -46,6 +46,79 @@ function StatCard({
       <p className="text-3xl font-black text-white italic tracking-tighter mb-1">{value}</p>
       <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{label}</p>
     </div>
+  );
+}
+
+function WipeButton({ queueId, label, icon: Icon }: { queueId: string; label: string; icon: any }) {
+  const { user } = useAuth();
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleWipe = async () => {
+    if (!user) return;
+    setLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const res: any = await wipeCombatQueueAction(idToken, queueId);
+      if (res.success) {
+        alert(`SUCCESS: Queue ${label} wiped. ${res.refundedCount} players refunded.`);
+        setShowConfirm(false);
+      } else {
+        alert("WIPE FAILED: " + res.error);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <>
+      <button 
+        onClick={() => setShowConfirm(true)}
+        className="bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/50 px-4 py-3 rounded-sm text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-red-400 transition-all flex items-center gap-2 group/btn"
+      >
+        <Eraser className="w-3 h-3 group-hover/btn:rotate-12 transition-transform" />
+        {label}
+      </button>
+
+      {showConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="max-w-md w-full bg-[#0a0a0a] border border-red-500 shadow-[0_0_50px_rgba(239,68,68,0.2)] p-10 rounded-sm relative overflow-hidden">
+             {/* Red Alert Background Glow */}
+             <div className="absolute inset-0 bg-red-500/5 pointer-events-none" />
+             
+             <div className="relative z-10 text-center">
+                <div className="w-16 h-16 bg-red-500/10 border border-red-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                   <ShieldAlert className="w-8 h-8 text-red-500" />
+                </div>
+                
+                <h3 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-4">Confirm Command Reset?</h3>
+                <p className="text-[11px] text-gray-400 font-bold uppercase tracking-widest leading-relaxed mb-8">
+                   You are about to <span className="text-red-500 font-black">WIPE</span> the <span className="text-white">{label}</span> queue. All registered players will be <span className="text-accent underline font-black">REFUNDED 500 CR</span> automatically.
+                </p>
+
+                <div className="flex gap-4">
+                   <button 
+                     onClick={() => setShowConfirm(false)}
+                     disabled={loading}
+                     className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 text-gray-400 py-4 rounded-sm text-[11px] font-black uppercase tracking-widest transition-all"
+                   >
+                     Abort Reset
+                   </button>
+                   <button 
+                     onClick={handleWipe}
+                     disabled={loading}
+                     className="flex-1 bg-red-500 hover:bg-red-600 text-black py-4 rounded-sm text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all"
+                   >
+                     {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Authorize Wipe"}
+                   </button>
+                </div>
+             </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -298,8 +371,39 @@ export default function AdminOverviewPage() {
         </div>
       )}
 
+      {/* COMBAT OPERATIONS COMMAND */}
+      <div className="bg-[#0a0a0a] border border-accent/20 p-8 rounded-sm mb-10 relative overflow-hidden group shadow-[0_0_40px_rgba(0,255,102,0.05)]">
+        {/* Background Grid Pattern */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
+        
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-accent/10 border border-accent/20 rounded-sm text-accent">
+              <RefreshCw className="w-8 h-8 animate-spin-slow" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">Combat Operations</h2>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest flex items-center gap-2">
+                <span className="w-1 h-1 rounded-full bg-accent animate-pulse" />
+                Live Matchmaking Control & Reset Protocol
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'efootball_tournament', label: 'Elite Tournament', icon: Trophy },
+              { id: 'codm_ffa', label: 'COD FFA', icon: Users },
+              { id: 'codm_br', label: 'COD BR', icon: Activity },
+            ].map(q => (
+              <WipeButton key={q.id} queueId={q.id} label={q.label} icon={q.icon} />
+            ))}
+          </div>
+        </div>
+      </div>
+
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 pb-20">
         <Link
           href="/admin/disputes"
           className="bg-[#0a0a0a] border border-red-500/20 hover:border-red-500/50 p-6 rounded-sm group transition-all"

@@ -29,39 +29,46 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
   const [error, setError] = useState("");
 
   const profileTag = game === 'CODM' ? profile?.codTag : profile?.efootballTag;
-  const hasTag = !!profileTag;
+  const hasTag = !!profileTag && profileTag !== "Unknown";
 
   useEffect(() => {
-    const fetchCount = async () => {
-      if (loading) return;
-      setLoading(true);
-      try {
-        const result = await getChallengeInterestCount(game, segment, user?.uid);
-        setCount(result.count);
-        setIsRegistered(result.isRegistered);
-      } catch (err) {
-        console.error("Failed to fetch count:", err);
+    if (!user?.uid) return;
+
+    const queueId = `${game.toLowerCase()}_${segment}`;
+    const unsub = onSnapshot(doc(db, "queues", queueId), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        const playerIds = data.playerIds || [];
+        setCount(playerIds.length);
+        setIsRegistered(playerIds.includes(user.uid));
+      } else {
+        setCount(0);
+        setIsRegistered(false);
       }
       setLoading(false);
-    };
-    fetchCount();
-    // Poll every 30 seconds for live feel for MVP
-    const interval = setInterval(fetchCount, 30000);
-    return () => clearInterval(interval);
+    });
+
+    return () => unsub();
   }, [game, segment, user?.uid]);
+
+  useEffect(() => {
+    if (hasTag) {
+      setLocalTagName(profileTag);
+    }
+  }, [hasTag, profileTag]);
 
   const handleRegister = async () => {
     if (!user || !profile) return;
     
     // Final balance check before sending to server
-    if ((profile.balanceCoins || 0) < 500) {
+    if ((profile.balanceCoins || 0) < 500 && !isRegistered) {
       setError(`ABORTED: You need 500 CR to vault. Current balance: ${profile.balanceCoins || 0} CR.`);
       setShowConfirm(false);
       return;
     }
 
     const finalInGameName = hasTag ? profileTag : localTagName;
-    if (!finalInGameName || finalInGameName.length < 3) {
+    if (!finalInGameName || finalInGameName.length < 3 || finalInGameName === "Unknown") {
       setError("MISSION ABORTED: Valid In-Game ID required (min 3 chars).");
       return;
     }
@@ -80,14 +87,15 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
         finalInGameName
       );
       
-      if (result.matchCreated && result.matchId) {
-        router.push(`/match/${result.matchId}`);
+      if (result.matchCreated) {
+        if (result.matchId) {
+          router.push(`/match/${result.matchId}`);
+        } else if (result.circuitId) {
+          router.push(`/dashboard/tournaments/view/${result.circuitId}`);
+        }
         return;
       }
 
-      const fresh = await getChallengeInterestCount(game, segment, user.uid);
-      setCount(fresh.count);
-      setIsRegistered(fresh.isRegistered);
       setShowConfirm(false);
       onRegistered();
     } catch (err: any) {
