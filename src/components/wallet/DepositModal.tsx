@@ -218,7 +218,18 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
                  <input 
                    type="number" 
                    value={amountUsd}
-                   onChange={(e) => setAmountUsd(e.target.value)}
+                   min="0"
+                   onKeyDown={(e) => {
+                     if (['e', 'E', '-', '+'].includes(e.key)) {
+                       e.preventDefault();
+                     }
+                   }}
+                   onChange={(e) => {
+                     const val = e.target.value;
+                     if (val === '' || Number(val) >= 0) {
+                       setAmountUsd(val);
+                     }
+                   }}
                    placeholder="1.00" 
                    disabled={isProcessing}
                    className={`w-full bg-black border ${isInvalid ? 'border-red-500/50' : 'border-surface-border focus:border-white'} text-white font-black text-2xl pl-10 pr-4 py-4 rounded-[3px] outline-none transition-all placeholder-gray-800 disabled:opacity-50`}

@@ -31,11 +31,11 @@ export async function createPendingDepositAction(
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     const uid = decodedToken.uid;
     const userSnap = await adminDb.collection("users").doc(uid).get();
-    
+
     if (!userSnap.exists) return { success: false, error: "Profile not found." };
     const userData = userSnap.data();
     const currency = userData?.currency || "NGN";
-    
+
     // Fetch dynamic rate for this specific user's region
     const rate = await getPlatformRate(currency, 'DEPOSIT');
     const localAmount = Math.ceil(amountUsd * rate);
@@ -97,7 +97,7 @@ export async function verifyPaystackPaymentAction(
     const t = transactionSnap.data();
 
     if (transactionSnap.exists && t?.status === 'COMPLETED') {
-        return { success: true, message: "Transaction already fulfilled." };
+      return { success: true, message: "Transaction already fulfilled." };
     }
 
     // 3. Verify with Paystack API (with SSL error recovery)
@@ -106,7 +106,7 @@ export async function verifyPaystackPaymentAction(
     if (verificationResult.networkFailed) {
       // Critical: Network failed but payment might have gone through
       console.error(`[PaystackAction] CRITICAL: Network failure verifying ${reference}. Payment status unknown.`);
-      
+
       // Update transaction to PENDING_VERIFICATION (waiting for webhook)
       if (transactionSnap.exists) {
         await transactionRef.update({
@@ -118,8 +118,8 @@ export async function verifyPaystackPaymentAction(
       }
 
       // Tell user their payment is being verified
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: "Network issue - your payment is being verified. You will receive a confirmation shortly.",
         isPending: true,
         retryAfterSeconds: 30,
@@ -128,20 +128,20 @@ export async function verifyPaystackPaymentAction(
 
     if (!verificationResult.verified) {
       const isNotFound = verificationResult.error?.toLowerCase().includes("not found");
-      
+
       if (isNotFound && transactionSnap.exists) {
         const createdAt = t?.createdAt?.toDate ? t.createdAt.toDate().getTime() : 0;
         const now = Date.now();
         const ageMinutes = (now - createdAt) / 60000;
 
         if (ageMinutes > 10 && t?.status === "PENDING") {
-           await transactionRef.update({
-             status: "ABANDONED",
-             abandonedAt: admin.firestore.FieldValue.serverTimestamp(),
-             abandonReason: "Paystack Reference Not Found (Timeout)"
-           });
-           console.log(`[PaystackAction] Marked phantom transaction ${reference} as ABANDONED.`);
-           return { success: false, error: "Transaction Abandoned: Reference not found on gateway.", isAbandoned: true };
+          await transactionRef.update({
+            status: "ABANDONED",
+            abandonedAt: admin.firestore.FieldValue.serverTimestamp(),
+            abandonReason: "Paystack Reference Not Found (Timeout)"
+          });
+          console.log(`[PaystackAction] Marked phantom transaction ${reference} as ABANDONED.`);
+          return { success: false, error: "Transaction Abandoned: Reference not found on gateway.", isAbandoned: true };
         }
       }
 
@@ -150,7 +150,7 @@ export async function verifyPaystackPaymentAction(
 
     // Payment verified successfully
     const data = verificationResult.data;
-    
+
     // 3.1 FIX: Verify amount against stored record AND Paystack API before fulfilling
     const amountKobo = Number(data.amount);
     const verification = await verifyPaystackAmount(reference, amountKobo, true);
@@ -199,7 +199,7 @@ export async function verifyPaystackPaymentAction(
     if (transactionUid && transactionUid !== uid) {
       // FIX P-001: CRITICAL - Throw error immediately, don't credit any coins
       console.error(`🚨 UID MISMATCH ATTACK DETECTED: Transaction ${reference} belongs to ${transactionUid}, but verified user is ${uid}. REJECTING PAYMENT.`);
-      
+
       // Log this attack to audit log for admin review
       await adminDb.collection("security_incidents").add({
         type: "payment_uid_mismatch",
@@ -210,7 +210,7 @@ export async function verifyPaystackPaymentAction(
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         severity: "CRITICAL"
       });
-      
+
       throw new Error(`SECURITY: Payment transaction belongs to different user. This incident has been logged.`);
     }
 
@@ -224,7 +224,7 @@ export async function verifyPaystackPaymentAction(
 
     // 5. SECURE TRANSACTION: Credit Coins
     const result = await internalFulfillDeposit(reference, data.amount, uid, preVerificationSnapshot);
-    
+
     if (result.success) {
       console.log(`[PaystackAction] Successfully verified and fulfilled $${amountUsd} deposit for ${uid} (+${result.coinsAdded} CR)`);
       return { success: true, coinsAdded: result.coinsAdded };
@@ -234,149 +234,152 @@ export async function verifyPaystackPaymentAction(
 
   } catch (error: any) {
     console.error("[PaystackAction] Integration Error:", error);
-    
+
     // Generic error - payment status unknown
     if (error?.message?.includes('SSL') || error?.message?.includes('ERR_')) {
-      return { 
-        success: false, 
+      return {
+        success: false,
         error: "Network connectivity issue. Your payment is being verified. Check your account shortly.",
         isPending: true,
       };
     }
-    
+
     return { success: false, error: error.message || "Paystack link severed." };
   }
 }
 
 export async function internalFulfillDeposit(
-  reference: string, 
-  amountKobo: number, 
+  reference: string,
+  amountKobo: number,
   requestingUid?: string,
   snapshotBefore?: { status?: string; uid?: string; fiatAmount?: number; version?: number }
 ) {
   try {
-     const transactionRef = adminDb.collection("transactions").doc(reference);
-     const transactionSnap = await transactionRef.get();
+    const transactionRef = adminDb.collection("transactions").doc(reference);
+    const source = snapshotBefore ? "CLIENT_ACTION" : "WEBHOOK_EVENT";
+    console.log(`[InternalFulfill] Resolving ${reference} via ${source}...`);
+    const transactionSnap = await transactionRef.get();
 
-     const t = transactionSnap.data();
-     if (transactionSnap.exists && t?.status === 'COMPLETED') {
-        return { success: true, message: "Already fulfilled.", coinsAdded: t.amount };
-     }
+    const t = transactionSnap.data();
+    if (transactionSnap.exists && t?.status === 'COMPLETED') {
+      return { success: true, message: "Already fulfilled.", coinsAdded: t.amount };
+    }
 
-     // FIX P-003: Verify transaction hasn't changed since pre-verification snapshot
-     if (snapshotBefore) {
-       if (t?.status !== snapshotBefore.status) {
-         console.warn(`[P-003] Transaction status changed: was ${snapshotBefore.status}, now ${t?.status}`);
-         throw new Error("Transaction status changed during verification");
-       }
-       if (t?.uid !== snapshotBefore.uid) {
-         throw new Error("Transaction UID changed during verification");
-       }
-       if (Math.abs((t?.fiatAmount || 0) - (snapshotBefore.fiatAmount || 0)) > 0.01) {
-         throw new Error("Transaction amount changed during verification");
-       }
-     }
+    // FIX P-003: Verify transaction hasn't changed since pre-verification snapshot
+    if (snapshotBefore) {
+      if (t?.status !== snapshotBefore.status) {
+        const errorMsg = `Transaction status changed during verification: was ${snapshotBefore.status}, now ${t?.status}`;
+        console.warn(`[P-003] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      if (t?.uid !== snapshotBefore.uid) {
+        throw new Error("Transaction UID changed during verification");
+      }
+      if (Math.abs((t?.fiatAmount || 0) - (snapshotBefore.fiatAmount || 0)) > 0.01) {
+        throw new Error("Transaction amount changed during verification");
+      }
+    }
 
-     const amountLocal = Number(amountKobo) / 100;
-     
-     // 🚀 MULTI-COUNTRY UPGRADE: Calculate amount based on stored handshake rate
-     // This protects both user and platform from intraday volatility between handshake and fulfillment.
-     const currency = t?.currency || "NGN";
-     const handshakeRate = t?.exchangeRate || 1500;
-     const amountUsd = amountLocal / handshakeRate;
-     const coinsToCredit = Math.floor(amountUsd * 100);
-     
-     const uid = t?.uid;
-     
-     if (requestingUid && uid && requestingUid !== uid) {
-       console.error(`🚨 FULFILL UID MISMATCH: ${requestingUid} trying to fulfill ${uid}'s transaction`);
-       return { success: false, error: "UID mismatch on transaction fulfillment" };
-     }
+    const amountLocal = Number(amountKobo) / 100;
 
-     if (!uid) {
-        return { success: false, error: "Critical: Reference mapping to User Identity failed." };
-     }
+    // 🚀 MULTI-COUNTRY UPGRADE: Calculate amount based on stored handshake rate
+    // This protects both user and platform from intraday volatility between handshake and fulfillment.
+    const currency = t?.currency || "NGN";
+    const handshakeRate = t?.exchangeRate || 1500;
+    const amountUsd = amountLocal / handshakeRate;
+    const coinsToCredit = Math.floor(amountUsd * 100);
 
-     const userRef = adminDb.collection("users").doc(uid);
-     const statsRef = adminDb.collection("stats").doc("platform_finances");
+    const uid = t?.uid;
 
-     // 1.4 FIX: Use optimistic locking with version field to prevent concurrent execution
-     // Only increment coins if transaction is still PENDING and version matches
-     const currentVersion = t?.version || 0;
-     const expectedVersion = currentVersion;
+    if (requestingUid && uid && requestingUid !== uid) {
+      console.error(`🚨 FULFILL UID MISMATCH: ${requestingUid} trying to fulfill ${uid}'s transaction`);
+      return { success: false, error: "UID mismatch on transaction fulfillment" };
+    }
 
-     await adminDb.runTransaction(async (transaction) => {
-       const userSnap = await transaction.get(userRef);
-       if (!userSnap.exists) throw new Error("Operative profile not found.");
+    if (!uid) {
+      return { success: false, error: "Critical: Reference mapping to User Identity failed." };
+    }
 
-       const localTransSnap = await transaction.get(transactionRef);
-       if (!localTransSnap.exists) {
-          const localT = localTransSnap.data();
-          if (localT?.status === 'COMPLETED') {
-             return; // Already completed by another concurrent request
-          }
-       }
+    const userRef = adminDb.collection("users").doc(uid);
+    const statsRef = adminDb.collection("stats").doc("platform_finances");
 
-       const localT = localTransSnap.data();
-       const localVersion = localT?.version || 0;
+    // 1.4 FIX: Use optimistic locking with version field to prevent concurrent execution
+    // Only increment coins if transaction is still PENDING and version matches
+    const currentVersion = t?.version || 0;
+    const expectedVersion = currentVersion;
 
-       // Version mismatch means this already executed (due to transaction retry)
-       // Return successfully (idempotent operation)
-       if (localVersion !== expectedVersion) {
-          if (localT?.status === 'COMPLETED') {
-             return; // Already completed, just return success
-          }
-          // Otherwise, this is a stale/conflicting attempt - abort
-          throw new Error("Transaction version conflict - retry aborted");
-       }
+    await adminDb.runTransaction(async (transaction) => {
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) throw new Error("Operative profile not found.");
 
-       if (localT?.status === 'COMPLETED') {
-          return; // Already completed by another attempt
-       }
+      const localTransSnap = await transaction.get(transactionRef);
+      if (!localTransSnap.exists) {
+        const localT = localTransSnap.data();
+        if (localT?.status === 'COMPLETED') {
+          return; // Already completed by another concurrent request
+        }
+      }
 
-       if (!localTransSnap.exists) {
-          transaction.set(transactionRef, {
-             uid,
-             username: userSnap.data()?.username || "Unknown",
-             type: "DEPOSIT",
-             amount: coinsToCredit,
-             fiatAmount: amountUsd,
-             gateway: "PAYSTACK",
-             reference,
-             status: "PENDING",
-             version: 1,
-             createdAt: admin.firestore.FieldValue.serverTimestamp(),
-             note: "Atomic Auto-Creation: Ledger record missing during handshake"
-          });
-       }
+      const localT = localTransSnap.data();
+      const localVersion = localT?.version || 0;
 
-       transaction.update(userRef, {
-         balanceCoins: admin.firestore.FieldValue.increment(coinsToCredit),
-         lifetimeDeposits: admin.firestore.FieldValue.increment(coinsToCredit)
-       });
+      // Version mismatch means this already executed (due to transaction retry)
+      // Return successfully (idempotent operation)
+      if (localVersion !== expectedVersion) {
+        if (localT?.status === 'COMPLETED') {
+          return; // Already completed, just return success
+        }
+        // Otherwise, this is a stale/conflicting attempt - abort
+        throw new Error("Transaction version conflict - retry aborted");
+      }
 
-       // Increment version and mark as COMPLETED
-       transaction.set(transactionRef, {
-         amount: coinsToCredit,
-         fiatAmount: amountUsd,
-         status: "COMPLETED",
-         version: expectedVersion + 1, // Increment version to prevent re-execution
-         processedAt: admin.firestore.FieldValue.serverTimestamp()
-       }, { merge: true });
+      if (localT?.status === 'COMPLETED') {
+        return; // Already completed by another attempt
+      }
 
-       transaction.set(statsRef, {
-         totalDeposits: admin.firestore.FieldValue.increment(coinsToCredit),
-         updatedAt: admin.firestore.FieldValue.serverTimestamp()
-       }, { merge: true });
-     });
+      if (!localTransSnap.exists) {
+        transaction.set(transactionRef, {
+          uid,
+          username: userSnap.data()?.username || "Unknown",
+          type: "DEPOSIT",
+          amount: coinsToCredit,
+          fiatAmount: amountUsd,
+          gateway: "PAYSTACK",
+          reference,
+          status: "PENDING",
+          version: 1,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          note: "Atomic Auto-Creation: Ledger record missing during handshake"
+        });
+      }
 
-     return { success: true, coinsAdded: coinsToCredit };
+      transaction.update(userRef, {
+        balanceCoins: admin.firestore.FieldValue.increment(coinsToCredit),
+        lifetimeDeposits: admin.firestore.FieldValue.increment(coinsToCredit)
+      });
+
+      // Increment version and mark as COMPLETED
+      transaction.set(transactionRef, {
+        amount: coinsToCredit,
+        fiatAmount: amountUsd,
+        status: "COMPLETED",
+        version: expectedVersion + 1, // Increment version to prevent re-execution
+        processedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      transaction.set(statsRef, {
+        totalDeposits: admin.firestore.FieldValue.increment(coinsToCredit),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    });
+
+    return { success: true, coinsAdded: coinsToCredit };
   } catch (err: any) {
-     // Distinguish between version conflict (safe retry) and real error
-     if (err.message?.includes("version conflict")) {
-        console.warn("[InternalFulfill] Version conflict (safe - will retry):", err.message);
-     }
-     console.error("[InternalFulfill] Pulse Error:", err);
-     return { success: false, error: err.message };
+    // Distinguish between version conflict (safe retry) and real error
+    if (err.message?.includes("version conflict")) {
+      console.warn("[InternalFulfill] Version conflict (safe - will retry):", err.message);
+    }
+    console.error("[InternalFulfill] Pulse Error:", err);
+    return { success: false, error: err.message };
   }
 }
