@@ -70,7 +70,16 @@ export async function callPaystackAPI(
           return callPaystackAPI(endpoint, secretKey, method, retryCount + 1);
         }
 
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Try to parse error message from Paystack
+        let errorData;
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // Fallback if not JSON
+        }
+        
+        const errorMessage = errorData?.message || response.statusText;
+        throw new Error(`HTTP ${response.status}: ${errorMessage}`);
       }
 
       const data: PaystackAPIResponse = await response.json();

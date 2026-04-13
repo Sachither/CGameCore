@@ -287,7 +287,18 @@ export async function internalFulfillDeposit(
     const currency = t?.currency || "NGN";
     const handshakeRate = t?.exchangeRate || 1500;
     const amountUsd = amountLocal / handshakeRate;
-    const coinsToCredit = Math.floor(amountUsd * 100);
+    let coinsToCredit = Math.floor(amountUsd * 100);
+
+    // FIX: 98 Coins Rounding Discrepancy
+    // If the paid amount (USD) is within 1% of the stored fiatAmount,
+    // we use the exact 'amount' (Coins) stored during pre-auth.
+    if (t?.amount && t?.fiatAmount) {
+       const diff = Math.abs(amountUsd - t.fiatAmount);
+       if (diff < (t.fiatAmount * 0.01)) {
+          console.log(`[P-COIN] Trusting pre-auth coin amount: ${t.amount} CR (Paid $${amountUsd.toFixed(4)})`);
+          coinsToCredit = t.amount;
+       }
+    }
 
     const uid = t?.uid;
 

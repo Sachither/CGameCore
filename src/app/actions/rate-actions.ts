@@ -89,12 +89,12 @@ export async function getPlatformRate(currency: string, type: 'DEPOSIT' | 'WITHD
   const baseRate = rates[currency] || rates['NGN'] || 1500;
   
   // Apply 2% Safety Buffer
-  // Deposits: $1 costs LESS local currency than market (buffer for us)
-  // Withdrawals: $1 costs MORE local currency than market (buffer for us)
+  // Deposits: User pays 2% MORE local currency than market to guarantee the $1 deposit value.
+  // Withdrawals: User receives 2% LESS local currency than market as a service fee.
   if (type === 'DEPOSIT') {
-    return baseRate * 0.98; // -2%
+    return baseRate * 1.02; // +2% Safety Buffer
   } else {
-    return baseRate * 1.02; // +2%
+    return baseRate * 0.98; // -2% Safety Buffer
   }
 }
 /**
