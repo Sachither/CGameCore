@@ -280,7 +280,12 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                if (typeof window !== 'undefined') {
                   sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
                }
-               router.push('/dashboard');
+               const targetId = (match as any)?.circuitId || (match as any)?.leagueId || lastKnownCircuitId;
+               if (targetId) {
+                  router.push(`/dashboard/tournaments/view/${targetId}`);
+               } else {
+                  router.push('/dashboard');
+               }
             }}
          />
 
