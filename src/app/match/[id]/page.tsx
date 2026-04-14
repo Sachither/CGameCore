@@ -113,12 +113,15 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                </p>
 
                <div className="pt-8 flex flex-col sm:flex-row gap-4 justify-center">
-                  <button
-                     onClick={() => router.push('/dashboard')}
-                     className="bg-accent hover:bg-accent-hover text-black px-10 py-5 rounded-sm text-xs font-black uppercase tracking-widest transition-all hover:-translate-y-1 shadow-[0_0_30px_rgba(0,255,102,0.1)]"
-                  >
-                     Return to Basecamp
-                  </button>
+                   <button
+                      onClick={() => {
+                         sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
+                         router.push('/dashboard');
+                      }}
+                      className="bg-accent hover:bg-accent-hover text-black px-10 py-5 rounded-sm text-xs font-black uppercase tracking-widest transition-all hover:-translate-y-1 shadow-[0_0_30px_rgba(0,255,102,0.1)]"
+                   >
+                      Return to Basecamp
+                   </button>
                </div>
             </div>
          </div>
@@ -231,7 +234,10 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
          <LeaveMatchModal
             isOpen={isLeaveModalOpen}
             onClose={() => setIsLeaveModalOpen(false)}
-            onConfirm={() => router.push('/dashboard')}
+            onConfirm={() => {
+               sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
+               router.push('/dashboard');
+            }}
          />
 
          {/* EXTRACTION OVERLAY */}

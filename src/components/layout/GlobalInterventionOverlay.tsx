@@ -15,15 +15,20 @@ export default function GlobalInterventionOverlay() {
   const [isHalted, setIsHalted] = useState(false);
   const [isDismissing, setIsDismissing] = useState(false);
 
+  // Derived state
+  const activeIntervention = profile?.intervention?.active;
+  const matchId = profile?.intervention?.matchId;
+
   // Check session storage on mount to see if user previously halted this session
   useEffect(() => {
     const halted = sessionStorage.getItem('cgame_intervention_halted');
     if (halted === 'true') setIsHalted(true);
-  }, []);
-
-  // Derived state
-  const activeIntervention = profile?.intervention?.active;
-  const matchId = profile?.intervention?.matchId;
+    
+    // PHASE 2: Check if THIS specific intervention match has been acknowledged as "left"
+    if (matchId && sessionStorage.getItem(`match_ready_ack_${matchId}`) === 'true') {
+       setIsHalted(true);
+    }
+  }, [matchId]);
 
   // 1. handleDismiss MUST be defined before it is used in any useEffect or handler
   const handleDismiss = async () => {
