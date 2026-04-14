@@ -57,15 +57,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
          // Check if user has explicitly acknowledged leaving this match
          const hasUserLeft = typeof window !== 'undefined' && sessionStorage.getItem(`match_ready_ack_${id}`) === 'true';
 
-         // If user has explicitly left, ignore further updates and redirect ONCE
-         if (hasUserLeft && !hasRedirected) {
-            hasRedirected = true;
-            if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
-            router.push("/dashboard");
-            return;
-         }
-
-         // Don't process updates if user has already left
+         // If user has explicitly left, don't process any updates - they're gone
          if (hasUserLeft) {
             return;
          }
@@ -84,7 +76,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                hasRedirected = true;
                if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
                router.push("/dashboard");
-            } else if (!lastMatchRef.current && !autoRedirectTimeoutId) {
+            } else if (!lastMatchRef.current && !autoRedirectTimeoutId && !hasRedirected) {
                // Match never existed from the start - show error with manual escape button
                // Auto-redirect after 60 seconds of showing the error page as a safety net
                autoRedirectTimeoutId = setTimeout(() => {
@@ -167,7 +159,6 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                       onClick={async () => {
                          if (typeof window !== 'undefined') {
                             sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
-                            sessionStorage.setItem('cgame_intervention_halted', 'true');
                          }
                          try {
                             router.push('/dashboard');
@@ -297,7 +288,6 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             onConfirm={() => {
                if (typeof window !== 'undefined') {
                   sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
-                  sessionStorage.setItem('cgame_intervention_halted', 'true');
                }
                router.push('/dashboard');
             }}

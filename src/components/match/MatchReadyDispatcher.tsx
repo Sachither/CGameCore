@@ -20,27 +20,11 @@ export default function MatchReadyDispatcher() {
       return;
     }
 
-    // Check if user has globally halted interventions - if so, don't monitor for matches at all
-    const interventionHalted = typeof window !== 'undefined' && sessionStorage.getItem('cgame_intervention_halted') === 'true';
-    if (interventionHalted) {
-      setActiveMatch(null);
-      setIsVisible(false);
-      return;
-    }
-
     let timeoutId: any = null;
+    let isMounted = true;
 
     // Subscribe to real-time match updates
     const unsubscribe = subscribeToUserActiveMatch(user.uid, (match) => {
-      // Check halted flag again (it might have changed)
-      const currentHalted = typeof window !== 'undefined' && sessionStorage.getItem('cgame_intervention_halted') === 'true';
-      if (currentHalted) {
-        if (timeoutId) clearTimeout(timeoutId);
-        setActiveMatch(null);
-        setIsVisible(false);
-        return;
-      }
-
       // --- THE ELITE SHIELD (PRIMARY) ---
       // Hard-Termination: If this is NOT a High-Stake match (500+ CR), 
       // we immediately kill all alerts and exit. No timers, no flashes.
@@ -48,8 +32,10 @@ export default function MatchReadyDispatcher() {
       
       if (!match || !isHighStake) {
         if (timeoutId) clearTimeout(timeoutId);
-        setIsVisible(false);
-        setActiveMatch(null);
+        if (isMounted) {
+          setIsVisible(false);
+          setActiveMatch(null);
+        }
         return;
       }
 
@@ -61,18 +47,24 @@ export default function MatchReadyDispatcher() {
         
         // Check if we are already there
         if (pathname === matchPath) {
-          setIsVisible(false);
+          if (isMounted) {
+            setIsVisible(false);
+          }
           return;
         }
 
-        // Check if user has already exited this session (TRIPLE CHECK)
+        // Check if user has already exited THIS SPECIFIC match
         const acknowledged = sessionStorage.getItem(`match_ready_ack_${matchId}`);
         if (acknowledged) {
-          setIsVisible(false);
+          if (isMounted) {
+            setIsVisible(false);
+          }
           return;
         }
 
-        setActiveMatch(match);
+        if (isMounted) {
+          setActiveMatch(match);
+        }
         
         // --- TACTICAL GRACE PERIOD ---
         // Prevent "flashing" during redirects: Wait 1.5 seconds.
@@ -80,20 +72,21 @@ export default function MatchReadyDispatcher() {
         // cleans up and the notification never appears.
         if (timeoutId) clearTimeout(timeoutId);
         timeoutId = setTimeout(() => {
-          // Final check before showing: is the halted flag set?
-          const finalCheckHalted = typeof window !== 'undefined' && sessionStorage.getItem('cgame_intervention_halted') === 'true';
-          if (!finalCheckHalted) {
+          if (isMounted) {
             setIsVisible(true);
           }
         }, 1500);
       } else {
         // Match exists and is High Stake, but not in a 'Ready' state
         if (timeoutId) clearTimeout(timeoutId);
-        setIsVisible(false);
+        if (isMounted) {
+          setIsVisible(false);
+        }
       }
     });
 
     return () => {
+      isMounted = false;
       if (timeoutId) clearTimeout(timeoutId);
       unsubscribe();
     };
