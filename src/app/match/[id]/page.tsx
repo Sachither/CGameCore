@@ -57,7 +57,19 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
          // Check if user has explicitly acknowledged leaving this match
          const hasUserLeft = typeof window !== 'undefined' && sessionStorage.getItem(`match_ready_ack_${id}`) === 'true';
 
-         // If user has explicitly left, don't process any updates - they're gone
+         // If user has explicitly left, redirect to dashboard (only once)
+         if (hasUserLeft && !hasRedirected) {
+            hasRedirected = true;
+            if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
+            setLoading(false);
+            // Small delay to ensure router works properly
+            setTimeout(() => {
+               router.push("/dashboard");
+            }, 100);
+            return;
+         }
+
+         // Don't process further updates if user already left
          if (hasUserLeft) {
             return;
          }
@@ -75,7 +87,10 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                // Redirect immediately back to the dashboard (only once)
                hasRedirected = true;
                if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
-               router.push("/dashboard");
+               setLoading(false);
+               setTimeout(() => {
+                  router.push("/dashboard");
+               }, 100);
             } else if (!lastMatchRef.current && !autoRedirectTimeoutId && !hasRedirected) {
                // Match never existed from the start - show error with manual escape button
                // Auto-redirect after 60 seconds of showing the error page as a safety net

@@ -25,6 +25,19 @@ export default function MatchReadyDispatcher() {
 
     // Subscribe to real-time match updates
     const unsubscribe = subscribeToUserActiveMatch(user.uid, (match) => {
+      // GUARD: Check if user has exited this specific match
+      const matchId = match?.id || "";
+      const hasUserExitedThisMatch = typeof window !== 'undefined' && sessionStorage.getItem(`match_ready_ack_${matchId}`) === 'true';
+      if (hasUserExitedThisMatch) {
+        // User has explicitly exited this match - don't show modal
+        if (timeoutId) clearTimeout(timeoutId);
+        if (isMounted) {
+          setIsVisible(false);
+          setActiveMatch(null);
+        }
+        return;
+      }
+
       // --- THE ELITE SHIELD (PRIMARY) ---
       // Hard-Termination: If this is NOT a High-Stake match (500+ CR), 
       // we immediately kill all alerts and exit. No timers, no flashes.
@@ -42,7 +55,6 @@ export default function MatchReadyDispatcher() {
       // Logic: Only alert for High Stakes that are READY or WAITING_FOR_OPPONENT
       // and if the user is NOT already on the match page.
       if (match.status === 'READY' || match.status === 'WAITING_FOR_OPPONENT') {
-        const matchId = match.id || "";
         const matchPath = `/match/${matchId}`;
         
         // Check if we are already there
@@ -53,7 +65,7 @@ export default function MatchReadyDispatcher() {
           return;
         }
 
-        // Check if user has already exited THIS SPECIFIC match
+        // Check if user has already exited THIS SPECIFIC match (redundant check)
         const acknowledged = sessionStorage.getItem(`match_ready_ack_${matchId}`);
         if (acknowledged) {
           if (isMounted) {
