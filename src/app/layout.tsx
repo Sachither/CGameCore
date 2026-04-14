@@ -22,7 +22,6 @@ export const metadata: Metadata = {
   title: "CGameCore | High Stakes Mobile Gaming",
   description: "Play CODM and eFootball for real money. Skill-based matchmaking with automated Escrow.",
   manifest: "/manifest.json",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -55,8 +54,9 @@ export const metadata: Metadata = {
 export const viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({

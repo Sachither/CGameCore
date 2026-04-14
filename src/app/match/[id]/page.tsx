@@ -135,8 +135,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
 
    // If user has already exited, don't show de-sync page - redirect immediately
    if (typeof window !== 'undefined') {
-      const hasUserExited = sessionStorage.getItem(`match_ready_ack_${id}`) === 'true' || 
-                            sessionStorage.getItem('cgame_intervention_halted') === 'true';
+      const hasUserExited = sessionStorage.getItem(`match_ready_ack_${id}`) === 'true';
       if (hasUserExited) {
          // Don't render anything, let the router handle the redirect
          // The listener will catch this and redirect
