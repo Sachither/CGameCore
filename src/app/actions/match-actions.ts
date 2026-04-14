@@ -983,6 +983,12 @@ export async function registerChallengeInterestAction(
               uid
             );
 
+            // 1.3 FIX: Update the match status to COMPLETED so the UI knows to show brackets
+            transaction.set(matchRef, {
+               status: 'COMPLETED',
+               circuitId
+            }, { merge: true });
+
             // Notify all 16 players via the queue document before it is reset by the next user
             transaction.set(queueRef, { 
               matchId: matchRef.id, 

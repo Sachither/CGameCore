@@ -220,7 +220,7 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
               setError("");
               setShowConfirm(true);
             }}
-            className="w-full bg-main hover:bg-main-hover text-black py-2.5 rounded-sm text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95"
+            className="w-full bg-accent hover:bg-accent/80 text-black py-2.5 rounded-sm text-xs font-black uppercase tracking-widest transition-all hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(var(--accent-rgb),0.2)] hover:shadow-[0_0_30px_rgba(var(--accent-rgb),0.4)]"
           >
             Register Interest
           </button>
