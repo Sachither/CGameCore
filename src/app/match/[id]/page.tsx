@@ -51,6 +51,15 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       // Connect to real-time Match Document in Firebase
       const matchRef = doc(db, "matches", id as string);
       const unsub = onSnapshot(matchRef, (snap) => {
+         // Check if user has explicitly acknowledged leaving this match
+         const hasUserLeft = typeof window !== 'undefined' && sessionStorage.getItem(`match_ready_ack_${id}`) === 'true';
+
+         // If user has explicitly left, ignore further updates and redirect
+         if (hasUserLeft) {
+            router.push("/dashboard");
+            return;
+         }
+
          if (snap.exists()) {
             const data = { id: snap.id, ...snap.data() } as Match;
             setMatch(data);
@@ -60,7 +69,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             // Document was Nuked/Deleted
             if (lastMatchRef.current) { 
                // If we HAD a match and it disappeared, it's purged.
-               // Redirect immediately back to the dashboard.
+               // Redirect immediately back to the dashboard
                router.push("/dashboard");
             }
             lastMatchRef.current = null;
@@ -81,7 +90,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       });
 
       return () => unsub();
-   }, [id]);
+   }, [id, router]);
 
    if (loading) {
       return (
