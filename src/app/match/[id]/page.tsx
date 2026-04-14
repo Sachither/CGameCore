@@ -105,6 +105,17 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       };
    }, [id, router]);
 
+   // --- NATIVE NAVIGATION FIX ---
+   // Automatically acknowledge the match if the user leaves the page via native browser back buttons or gestures.
+   // This guarantees MatchReadyDispatcher won't trap them in a loop when returning to the dashboard.
+   useEffect(() => {
+      return () => {
+         if (typeof window !== 'undefined' && id) {
+            sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
+         }
+      };
+   }, [id]);
+
    if (loading) {
       return (
          <div className="w-full min-h-screen bg-black flex flex-col items-center justify-center">
