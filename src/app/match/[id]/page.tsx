@@ -54,26 +54,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       // Connect to real-time Match Document in Firebase
       const matchRef = doc(db, "matches", id as string);
       const unsub = onSnapshot(matchRef, (snap) => {
-         // Check if user has explicitly acknowledged leaving this match
-         const hasUserLeft = typeof window !== 'undefined' && sessionStorage.getItem(`match_ready_ack_${id}`) === 'true';
-
-         // If user has explicitly left, redirect to dashboard (only once)
-         if (hasUserLeft && !hasRedirected) {
-            hasRedirected = true;
-            if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
-            setLoading(false);
-            // Small delay to ensure router works properly
-            setTimeout(() => {
-               router.push("/dashboard");
-            }, 100);
-            return;
-         }
-
-         // Don't process further updates if user already left
-         if (hasUserLeft) {
-            return;
-         }
-
+         // Ensure we handle the match sync cleanly
          if (snap.exists()) {
             const data = { id: snap.id, ...snap.data() } as Match;
             setMatch(data);
@@ -131,21 +112,6 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             <p className="text-[10px] font-black uppercase text-gray-500 tracking-[0.4em]">Establishing Neural Link...</p>
          </div>
       );
-   }
-
-   // If user has already exited, don't show de-sync page - redirect immediately
-   if (typeof window !== 'undefined') {
-      const hasUserExited = sessionStorage.getItem(`match_ready_ack_${id}`) === 'true';
-      if (hasUserExited) {
-         // Don't render anything, let the router handle the redirect
-         // The listener will catch this and redirect
-         return (
-            <div className="w-full min-h-screen bg-black flex flex-col items-center justify-center">
-               <Loader2 className="w-8 h-8 text-accent animate-spin mb-4" />
-               <p className="text-[10px] font-black uppercase text-gray-500 tracking-[0.4em]">Exiting Combat Zone...</p>
-            </div>
-         );
-      }
    }
 
    // If match still null, show professional 'Not Found' state
