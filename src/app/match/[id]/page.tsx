@@ -49,6 +49,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       if (!id) return;
 
       let autoRedirectTimeoutId: NodeJS.Timeout | null = null;
+      let hasRedirected = false; // Prevent multiple redirects
 
       // Connect to real-time Match Document in Firebase
       const matchRef = doc(db, "matches", id as string);
@@ -56,10 +57,16 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
          // Check if user has explicitly acknowledged leaving this match
          const hasUserLeft = typeof window !== 'undefined' && sessionStorage.getItem(`match_ready_ack_${id}`) === 'true';
 
-         // If user has explicitly left, ignore further updates and redirect
-         if (hasUserLeft) {
+         // If user has explicitly left, ignore further updates and redirect ONCE
+         if (hasUserLeft && !hasRedirected) {
+            hasRedirected = true;
             if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
             router.push("/dashboard");
+            return;
+         }
+
+         // Don't process updates if user has already left
+         if (hasUserLeft) {
             return;
          }
 
@@ -71,19 +78,21 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
          } else {
             // Document was Nuked/Deleted
-            if (lastMatchRef.current) { 
+            if (lastMatchRef.current && !hasRedirected) { 
                // If we HAD a match and it disappeared, it's purged.
-               // Redirect immediately back to the dashboard
+               // Redirect immediately back to the dashboard (only once)
+               hasRedirected = true;
                if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
                router.push("/dashboard");
-            } else {
+            } else if (!lastMatchRef.current && !autoRedirectTimeoutId) {
                // Match never existed from the start - show error with manual escape button
                // Auto-redirect after 60 seconds of showing the error page as a safety net
-               if (!autoRedirectTimeoutId) {
-                  autoRedirectTimeoutId = setTimeout(() => {
+               autoRedirectTimeoutId = setTimeout(() => {
+                  if (!hasRedirected) {
+                     hasRedirected = true;
                      router.push("/dashboard");
-                  }, 60000);
-               }
+                  }
+               }, 60000);
             }
             lastMatchRef.current = null;
             setMatch(null);
@@ -115,6 +124,22 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             <p className="text-[10px] font-black uppercase text-gray-500 tracking-[0.4em]">Establishing Neural Link...</p>
          </div>
       );
+   }
+
+   // If user has already exited, don't show de-sync page - redirect immediately
+   if (typeof window !== 'undefined') {
+      const hasUserExited = sessionStorage.getItem(`match_ready_ack_${id}`) === 'true' || 
+                            sessionStorage.getItem('cgame_intervention_halted') === 'true';
+      if (hasUserExited) {
+         // Don't render anything, let the router handle the redirect
+         // The listener will catch this and redirect
+         return (
+            <div className="w-full min-h-screen bg-black flex flex-col items-center justify-center">
+               <Loader2 className="w-8 h-8 text-accent animate-spin mb-4" />
+               <p className="text-[10px] font-black uppercase text-gray-500 tracking-[0.4em]">Exiting Combat Zone...</p>
+            </div>
+         );
+      }
    }
 
    // If match still null, show professional 'Not Found' state
