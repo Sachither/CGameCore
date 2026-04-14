@@ -3,7 +3,7 @@ export default function HowItWorksSection() {
     {
       num: "01",
       title: "Deposit & Queue",
-      desc: "Buy CGame Coins via Paystack ($1.00 USD = 100 Coins). Join a 'Sit & Go' queue for your favorite game mode. Your entry fee is locked securely in Escrow."
+      desc: "Buy CGame Coins via Crypto ($1.00 USD = 100 Coins). Join a 'Sit & Go' queue for your favorite game mode. Your entry fee is locked securely in Escrow."
     },
     {
       num: "02",

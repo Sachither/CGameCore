@@ -16,7 +16,7 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
   const [success, setSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   
-  const fiatSupported = ["NG", "GH", "KE", "ZA"].includes(profile?.country || "");
+  const fiatSupported = false; // ["NG", "GH", "KE", "ZA"].includes(profile?.country || "");
 
   // 🔒 REGIONAL GATE: Force Crypto for non-fiat regions
   React.useEffect(() => {

@@ -22,7 +22,7 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const { user, profile } = useAuth();
-  const fiatSupported = ["NG", "GH", "KE", "ZA"].includes(profile?.country || "");
+  const fiatSupported = false; // ["NG", "GH", "KE", "ZA"].includes(profile?.country || "");
   
   const [gatewayType, setGatewayType] = useState<'BANK' | 'CRYPTO'>(fiatSupported ? 'BANK' : 'CRYPTO');
   const [withdrawalRate, setWithdrawalRate] = useState(1500);

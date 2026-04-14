@@ -60,7 +60,7 @@ export default function AdminTreasuryPage() {
     const idToken = await user.getIdToken();
     const result = await adminApproveWithdrawalAction(idToken, ticketToApprove.id);
     if (result.success) {
-      setFeedback("✓ Automatic payout initiated via Paystack. Ticket Approved & Closed.");
+      setFeedback("✓ Automatic payout initiated. Ticket Approved & Closed.");
       await fetchData();
     } else {
       setFeedback(`✗ Error: ${result.error}`);
@@ -160,9 +160,9 @@ export default function AdminTreasuryPage() {
           <div className="bg-yellow-500/10 border-2 border-yellow-500/30 p-5 rounded-sm shadow-[0_0_30px_rgba(234,179,8,0.15)] mb-8 flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
             <div>
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-yellow-500 mb-1">Automated Transfer APi Active</h3>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-yellow-500 mb-1">Automated Payout APi Active</h3>
               <p className="text-[11px] font-bold text-gray-400 leading-relaxed max-w-3xl">
-                Clicking <span className="text-green-400 font-black">APPROVE</span> will automatically trigger a real fiat transfer via the <span className="text-white font-black">Paystack Transfer API</span> directly to the user's bank account. Clicking <span className="text-red-400 font-black">REJECT</span> will automatically refund the coins back into their app wallet for them to play with again.
+                Clicking <span className="text-green-400 font-black">APPROVE</span> will automatically trigger a real transfer via the <span className="text-white font-black">Designated Payout API</span> directly to the user's destination account. Clicking <span className="text-red-400 font-black">REJECT</span> will automatically refund the coins back into their app wallet for them to play with again.
               </p>
             </div>
           </div>
@@ -550,7 +550,7 @@ export default function AdminTreasuryPage() {
              </div>
              <h3 className="text-xl font-black italic uppercase text-center text-white mb-2 tracking-tighter">Execute Automated Payout?</h3>
              <p className="text-xs text-gray-400 text-center uppercase tracking-widest font-bold leading-relaxed mb-6">
-                You are about to initiate an automatic fiat transfer of <span className="text-white">$ {(ticketToApprove.amountCoins / 100).toFixed(2)} USD</span> to <span className="text-white">{ticketToApprove.accountNumber}</span> via Paystack.
+                You are about to initiate an automatic transfer of <span className="text-white">$ {(ticketToApprove.amountCoins / 100).toFixed(2)} USD</span> to <span className="text-white">{ticketToApprove.accountNumber}</span>.
              </p>
              <div className="flex gap-3">
                 <button 
