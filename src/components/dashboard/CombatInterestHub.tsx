@@ -39,12 +39,8 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
       if (snapshot.exists()) {
         const data = snapshot.data();
         
-        // --- AUTO-TELEPORTATION ---
-        // If the Main Room has been materialized, redirect ALL participants instantly.
-        if (data.matchId) {
-          router.push(`/match/${data.matchId}`);
-          return;
-        }
+        // Match creation relies on backend response for the active user, 
+        // and MatchReadyDispatcher for passive waiting users.
 
         const playerIds = data.playerIds || [];
         setCount(playerIds.length);
