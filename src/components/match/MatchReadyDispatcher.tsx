@@ -48,20 +48,24 @@ export default function MatchReadyDispatcher() {
           return;
         }
 
-        // Check if we already acknowledged this match in this session
+        // Check if user has already exited this session
+        const interventionHalted = sessionStorage.getItem('cgame_intervention_halted') === 'true';
         const acknowledged = sessionStorage.getItem(`match_ready_ack_${matchId}`);
-        if (!acknowledged) {
-          setActiveMatch(match);
-          
-          // --- TACTICAL GRACE PERIOD ---
-          // Prevent "flashing" during redirects: Wait 1.5 seconds.
-          // If the user navigates to the match page in this time, the effect 
-          // cleans up and the notification never appears.
-          if (timeoutId) clearTimeout(timeoutId);
-          timeoutId = setTimeout(() => {
-            setIsVisible(true);
-          }, 1500);
+        if (acknowledged || interventionHalted) {
+          setIsVisible(false);
+          return;
         }
+
+        setActiveMatch(match);
+        
+        // --- TACTICAL GRACE PERIOD ---
+        // Prevent "flashing" during redirects: Wait 1.5 seconds.
+        // If the user navigates to the match page in this time, the effect 
+        // cleans up and the notification never appears.
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(() => {
+          setIsVisible(true);
+        }, 1500);
       } else {
         // Match exists and is High Stake, but not in a 'Ready' state
         if (timeoutId) clearTimeout(timeoutId);

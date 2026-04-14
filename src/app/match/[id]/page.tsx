@@ -48,6 +48,8 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
    useEffect(() => {
       if (!id) return;
 
+      let autoRedirectTimeoutId: NodeJS.Timeout | null = null;
+
       // Connect to real-time Match Document in Firebase
       const matchRef = doc(db, "matches", id as string);
       const unsub = onSnapshot(matchRef, (snap) => {
@@ -56,6 +58,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
 
          // If user has explicitly left, ignore further updates and redirect
          if (hasUserLeft) {
+            if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
             router.push("/dashboard");
             return;
          }
@@ -65,12 +68,22 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             setMatch(data);
             lastMatchRef.current = data;
             if ((data as any).circuitId) setLastKnownCircuitId((data as any).circuitId);
+            if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
          } else {
             // Document was Nuked/Deleted
             if (lastMatchRef.current) { 
                // If we HAD a match and it disappeared, it's purged.
                // Redirect immediately back to the dashboard
+               if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
                router.push("/dashboard");
+            } else {
+               // Match never existed from the start - show error with manual escape button
+               // Auto-redirect after 60 seconds of showing the error page as a safety net
+               if (!autoRedirectTimeoutId) {
+                  autoRedirectTimeoutId = setTimeout(() => {
+                     router.push("/dashboard");
+                  }, 60000);
+               }
             }
             lastMatchRef.current = null;
             setMatch(null);
@@ -89,7 +102,10 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
          }
       });
 
-      return () => unsub();
+      return () => {
+         if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
+         unsub();
+      };
    }, [id, router]);
 
    if (loading) {
@@ -104,7 +120,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
    // If match still null, show professional 'Not Found' state
    if (!match) {
       return (
-         <div className="w-full min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center">
+         <div className="w-full min-h-screen bg-black flex flex-col items-center justify-center p-6 text-center relative z-50">
             <div className="relative mb-10 group">
                <div className="absolute inset-0 bg-red-500/20 blur-3xl rounded-full scale-150 animate-pulse" />
                <div className="w-24 h-24 bg-surface border-2 border-red-500/30 rounded-sm flex items-center justify-center rotate-45 relative z-10 transition-transform group-hover:scale-110">
@@ -123,11 +139,21 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
 
                <div className="pt-8 flex flex-col sm:flex-row gap-4 justify-center">
                    <button
-                      onClick={() => {
-                         sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
-                         router.push('/dashboard');
+                      onClick={async () => {
+                         if (typeof window !== 'undefined') {
+                            sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
+                            sessionStorage.setItem('cgame_intervention_halted', 'true');
+                         }
+                         try {
+                            router.push('/dashboard');
+                         } catch (e) {
+                            console.error("Router failed, using window.location:", e);
+                            if (typeof window !== 'undefined') {
+                               window.location.href = '/dashboard';
+                            }
+                         }
                       }}
-                      className="bg-accent hover:bg-accent-hover text-black px-10 py-5 rounded-sm text-xs font-black uppercase tracking-widest transition-all hover:-translate-y-1 shadow-[0_0_30px_rgba(0,255,102,0.1)]"
+                      className="relative z-50 bg-accent hover:bg-accent-hover text-black px-10 py-5 rounded-sm text-xs font-black uppercase tracking-widest transition-all hover:-translate-y-1 shadow-[0_0_30px_rgba(0,255,102,0.1)] cursor-pointer active:scale-95"
                    >
                       Return to Basecamp
                    </button>
