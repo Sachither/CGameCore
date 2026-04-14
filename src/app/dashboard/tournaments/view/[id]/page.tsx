@@ -363,7 +363,7 @@ export default function WarRoomPage() {
          <div className="flex items-center justify-between mb-12 border-b border-surface-border pb-8">
             <div className="flex items-center gap-6">
                <button 
-                 onClick={() => router.push('/dashboard')}
+                 onClick={() => router.push(`/dashboard/tournaments/${id}`)}
                  className="p-3 bg-surface border border-surface-border rounded-sm hover:border-accent group transition-all cursor-pointer shadow-xl"
                >
                   <ChevronLeft className="w-5 h-5 text-gray-500 group-hover:text-accent transition-colors" />
