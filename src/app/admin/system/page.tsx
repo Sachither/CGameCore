@@ -191,44 +191,50 @@ export default function SuperAdminSystemPage() {
             <div className="flex items-center gap-3">
               <History className="w-6 h-6 text-blue-400" />
               <div>
-                <h2 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">Global Audit Logs</h2>
-                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Monitor Admin & Moderator Activity</p>
+                <h2 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">Tactical Intelligence</h2>
+                <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Global Audit Log · Monitor Admin Activity</p>
               </div>
             </div>
             <button 
               onClick={handleLoadGlobalAudit}
-              className="px-6 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-sm hover:bg-blue-500/20 transition-all font-black text-[9px] uppercase tracking-widest"
+              className="px-6 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-sm hover:bg-blue-500/20 transition-all font-black text-[9px] uppercase tracking-widest flex items-center gap-2"
             >
-              Fetch Latest Logs
+               {globalAuditView ? "Secure Archive" : "Decrypt Logs"}
+               {lockdownLoading && <Loader2 className="w-3 h-3 animate-spin" />}
             </button>
           </div>
           
           {globalAuditView && (
-            <div className="mt-6 max-h-96 overflow-y-auto custom-scrollbar border border-white/5 rounded-sm bg-black p-4">
+            <div className="mt-6 max-h-[500px] overflow-y-auto custom-scrollbar border border-white/5 bg-black p-4 space-y-1">
                {globalAuditData.length === 0 ? (
-                  <p className="text-[10px] text-center text-gray-500 py-8 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
-                     <AlertTriangle className="w-4 h-4" /> No records found
+                  <p className="text-[10px] text-center text-gray-500 py-20 font-bold uppercase tracking-widest flex items-center justify-center gap-2">
+                     <AlertTriangle className="w-4 h-4" /> Intercepting Data Stream...
                   </p>
                ) : (
                   <div className="divide-y divide-white/5">
                      {globalAuditData.map((log) => (
-                        <div key={log.id} className="py-3 flex items-start gap-4 hover:bg-white/[0.02] transition-colors rounded-sm px-2">
+                        <div key={log.id} className="py-3 px-4 flex items-start gap-4 hover:bg-white/[0.02] transition-colors border-l-2 border-transparent hover:border-blue-500/50">
                            <div className="text-[9px] text-gray-500 font-mono shrink-0 pt-0.5 w-[140px]">
                               {new Date(log.timestamp).toLocaleString()}
                            </div>
                            <div className="flex-1">
-                              <p className="text-white text-[11px] font-black uppercase tracking-widest mb-1">
-                                 <span className="text-accent">{log.adminUid ? `${log.adminUid.slice(0,6)}...` : "System"}</span> executed <span className="text-blue-400">{log.action.replace(/_/g, ' ')}</span>
+                              <p className="text-white text-[11px] font-black uppercase tracking-widest mb-1 leading-none">
+                                 <span className="text-blue-400">{log.adminUsername || log.adminUid?.slice(0, 6)}</span> executed <span className="text-accent">{log.action.replace(/_/g, ' ')}</span>
                               </p>
                               {log.targetUid && (
-                                 <p className="text-[9px] text-gray-500 font-bold tracking-widest">TARGET PROFILE: {log.targetUid}</p>
+                                 <p className="text-[9px] text-gray-500 font-bold tracking-widest leading-none mb-1">TARGET: {log.targetUid}</p>
                               )}
-                              {log.details && log.details !== "N/A" && (
-                                 <p className="text-[9px] text-gray-400 italic mt-1 bg-white/5 p-2 border-l-2 border-blue-500/50 rounded-sm">
-                                    "{log.details}"
-                                 </p>
+                              {log.details && (
+                                <div className="text-[9px] text-gray-400 italic mt-1 bg-white/5 p-2 border border-white/5 rounded-sm">
+                                  {typeof log.details === 'string' ? `"${log.details}"` : JSON.stringify(log.details)}
+                                </div>
                               )}
                            </div>
+                           {log.severity === 'CRITICAL' && (
+                             <div className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 text-red-500 text-[8px] font-black uppercase tracking-widest rounded-sm">
+                               Critical
+                             </div>
+                           )}
                         </div>
                      ))}
                   </div>

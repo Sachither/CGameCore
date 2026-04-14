@@ -1391,16 +1391,43 @@ export async function toggleSystemLockdownAction(idToken: string, active: boolea
 
 /**
  * SUPER ADMIN: GET AUDIT LOGS
+ * Resolves adminUid into a human-readable username.
  */
 export async function getAuditLogsAction(idToken: string, limit: number = 100) {
   try {
-    await getVerifiedAdminUid(idToken, true); // Require Admin clearance (Regular or Super)
+    const superAdminUid = await getVerifiedSuperAdminUid(idToken);
     const snap = await adminDb
       .collection("admin_audit_log")
       .orderBy("timestamp", "desc")
       .limit(limit)
       .get();
-    return { success: true, logs: snap.docs.map((d) => sanitizeData({ id: d.id, ...d.data() })) };
+    
+    const logs = snap.docs.map((d) => sanitizeData({ id: d.id, ...d.data() }));
+
+    // --- IDENTITY RESOLUTION ---
+    // Extract unique UIDs that performed actions
+    const uniqueAdminUids = Array.from(new Set(logs.map(log => log.adminUid).filter(Boolean)));
+    
+    if (uniqueAdminUids.length > 0) {
+      // Fetch corresponding usernames in one batch
+      // Note: Firestore 'in' queries are capped at 30 items per batch.
+      // 100 logs usually only has a few active admins, so this is likely <30.
+      const usersSnap = await adminDb.collection("users")
+        .where(admin.firestore.FieldPath.documentId(), "in", uniqueAdminUids.slice(0, 30))
+        .get();
+      
+      const usernameMap: Record<string, string> = {};
+      usersSnap.forEach(uDoc => {
+        usernameMap[uDoc.id] = uDoc.data().username || "Unknown Operator";
+      });
+
+      // Inject usernames into logs
+      logs.forEach(log => {
+        log.adminUsername = usernameMap[log.adminUid] || `ID: ${log.adminUid?.slice(0, 4)}...`;
+      });
+    }
+
+    return { success: true, logs };
   } catch (error: any) {
     console.error("[AdminAction] getAuditLogs error:", error);
     return { success: false, error: error.message, logs: [] };
