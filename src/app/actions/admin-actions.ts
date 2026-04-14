@@ -1393,8 +1393,8 @@ export async function toggleSystemLockdownAction(idToken: string, active: boolea
  * SUPER ADMIN: GET AUDIT LOGS
  */
 export async function getAuditLogsAction(idToken: string, limit: number = 100) {
-  await getVerifiedSuperAdminUid(idToken);
   try {
+    await getVerifiedAdminUid(idToken, true); // Require Admin clearance (Regular or Super)
     const snap = await adminDb
       .collection("admin_audit_log")
       .orderBy("timestamp", "desc")
@@ -1402,6 +1402,7 @@ export async function getAuditLogsAction(idToken: string, limit: number = 100) {
       .get();
     return { success: true, logs: snap.docs.map((d) => sanitizeData({ id: d.id, ...d.data() })) };
   } catch (error: any) {
+    console.error("[AdminAction] getAuditLogs error:", error);
     return { success: false, error: error.message, logs: [] };
   }
 }
