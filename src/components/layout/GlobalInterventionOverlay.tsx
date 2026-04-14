@@ -11,22 +11,31 @@ export default function GlobalInterventionOverlay() {
   const router = useRouter();
   const pathname = usePathname();
   
-  // Local/Session state to kill the loop if it flickers
-  const [isHalted, setIsHalted] = useState(false);
-  const [isDismissing, setIsDismissing] = useState(false);
-
   // Derived state
   const activeIntervention = profile?.intervention?.active;
   const matchId = profile?.intervention?.matchId;
 
-  // Check session storage on mount to see if user previously halted this session
-  useEffect(() => {
+  // Synchronous initial check for Next.js Client Comp
+  const getInitialHaltState = () => {
+    if (typeof window === 'undefined') return false;
     const halted = sessionStorage.getItem('cgame_intervention_halted');
-    if (halted === 'true') setIsHalted(true);
-    
-    // PHASE 2: Check if THIS specific intervention match has been acknowledged as "left"
-    if (matchId && sessionStorage.getItem(`match_ready_ack_${matchId}`) === 'true') {
-       setIsHalted(true);
+    if (halted === 'true') return true;
+    if (matchId && sessionStorage.getItem(`match_ready_ack_${matchId}`) === 'true') return true;
+    return false;
+  };
+
+  // Local/Session state to kill the loop if it flickers
+  const [isHalted, setIsHalted] = useState(getInitialHaltState);
+  const [isDismissing, setIsDismissing] = useState(false);
+
+  // Check again on matchId change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+       const halted = sessionStorage.getItem('cgame_intervention_halted');
+       if (halted === 'true') setIsHalted(true);
+       if (matchId && sessionStorage.getItem(`match_ready_ack_${matchId}`) === 'true') {
+          setIsHalted(true);
+       }
     }
   }, [matchId]);
 

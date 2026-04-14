@@ -235,7 +235,10 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             isOpen={isLeaveModalOpen}
             onClose={() => setIsLeaveModalOpen(false)}
             onConfirm={() => {
-               sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
+               if (typeof window !== 'undefined') {
+                  sessionStorage.setItem(`match_ready_ack_${id}`, 'true');
+                  sessionStorage.setItem('cgame_intervention_halted', 'true');
+               }
                router.push('/dashboard');
             }}
          />
