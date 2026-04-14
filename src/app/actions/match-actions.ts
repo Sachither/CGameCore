@@ -877,11 +877,17 @@ export async function registerChallengeInterestAction(
         const userData = userSnap.data()!;
         const queueData = (queueSnap.exists ? queueSnap.data() : { playerIds: [], players: [] }) as any;
 
+        // --- GHOST QUEUE CLEANUP ---
+        // If the queue was recently materialized (completed), reset it for the new operative.
+        const isMaterialized = queueData.status === 'MATERIALIZED';
+        const effectivePlayerIds = isMaterialized ? [] : (queueData.playerIds || []);
+        const effectivePlayers = isMaterialized ? [] : (queueData.players || []);
+
         const currentBalance = Number(userData.balanceCoins || 0);
         const requiredFee = Number(fee);
 
         // 1. Check for Duplicate Entry
-        if (queueData.playerIds.includes(uid)) {
+        if (effectivePlayerIds.includes(uid)) {
            return { matchCreated: false, alreadyRegistered: true };
         }
 
@@ -899,9 +905,9 @@ export async function registerChallengeInterestAction(
            updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        if (queueData.playerIds.length + 1 >= target) {
+        if (effectivePlayerIds.length + 1 >= target) {
            const currentRegistered = { uid, username: profile.username, avatarId: profile.avatarId, inGameName: inGameName || (userData[tagField] || "Unknown") };
-           const allPlayers = [...queueData.players, currentRegistered];
+           const allPlayers = [...effectivePlayers, currentRegistered];
 
            // Shared players map for all types
            const playersMap: Record<string, any> = {};
@@ -925,7 +931,7 @@ export async function registerChallengeInterestAction(
                createdAt: admin.firestore.FieldValue.serverTimestamp(),
                expiresAt: new Date(Date.now() + 6 * 3600 * 1000), // 6h window
              });
-             transaction.delete(queueRef);
+             transaction.set(queueRef, { matchId: matchRef.id, status: 'MATERIALIZED', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
              return { matchCreated: true, matchId: matchRef.id };
            }
 
@@ -945,26 +951,52 @@ export async function registerChallengeInterestAction(
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 expiresAt: new Date(Date.now() + 6 * 3600 * 1000), // 6h window
               });
-              transaction.delete(queueRef);
+              transaction.set(queueRef, { matchId: matchRef.id, status: 'MATERIALIZED', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
               return { matchCreated: true, matchId: matchRef.id };
             }
 
-            // --- ELITE TOURNAMENT: Spawn a full bracket circuit ---
-            const circuitRef = adminDb.collection("circuits").doc();
+            // --- ELITE TOURNAMENT: Auto-Materialize the Main Room ---
+            const matchRef = adminDb.collection("matches").doc();
+            const matchData: any = {
+              game,
+              format: 'tournament',
+              challengeFee: fee,
+              status: 'WAITING',
+              maxPlayers: 16,
+              playerIds: allPlayers.map((p: any) => p.uid),
+              players: playersMap,
+              championUid: null,
+              creatorId: uid,
+              hostUid: uid,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            };
+
+            // Set the match doc FIRST so initializeCircuit has a reference
+            transaction.set(matchRef, matchData);
+
+            // AUTO-INITIALIZE: The "Normal Way" immediately converts full lobbies into circuits
             const circuitId = await initializeCircuit(
               transaction, 
-              circuitRef, 
-              { game, format: '16_TOURNAMENT', challengeFee: fee, players: playersMap } as any, 
+              matchRef, 
+              matchData as any, 
               allPlayers as EnginePlayer[], 
               uid
             );
-            transaction.delete(queueRef);
-            return { matchCreated: true, circuitId };
+
+            // Notify all 16 players via the queue document before it is reset by the next user
+            transaction.set(queueRef, { 
+              matchId: matchRef.id, 
+              status: 'MATERIALIZED',
+              updatedAt: admin.firestore.FieldValue.serverTimestamp() 
+            });
+
+            return { matchCreated: true, matchId: matchRef.id };
         } else {
            // Standard Add to Queue
            transaction.set(queueRef, {
              playerIds: admin.firestore.FieldValue.arrayUnion(uid),
              players: admin.firestore.FieldValue.arrayUnion({ uid, username: profile.username, avatarId: profile.avatarId, inGameName: inGameName || (userData[tagField] || "Unknown") }),
+             status: 'OPEN',
              updatedAt: admin.firestore.FieldValue.serverTimestamp()
            }, { merge: true });
            return { matchCreated: false };

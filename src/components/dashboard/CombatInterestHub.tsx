@@ -38,6 +38,14 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
     const unsub = onSnapshot(doc(db, "queues", queueId), (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
+        
+        // --- AUTO-TELEPORTATION ---
+        // If the Main Room has been materialized, redirect ALL participants instantly.
+        if (data.matchId) {
+          router.push(`/match/${data.matchId}`);
+          return;
+        }
+
         const playerIds = data.playerIds || [];
         setCount(playerIds.length);
         setIsRegistered(playerIds.includes(user.uid));
