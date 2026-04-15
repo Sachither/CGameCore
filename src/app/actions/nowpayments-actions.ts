@@ -145,24 +145,30 @@ export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: 
       success: false, 
       error: error?.message || "Crypto gateway error. Please try again." 
     };
-    return { success: false, error: "System failure initializing Gateway." };
   }
 }
 
 export async function internalFulfillCryptoDeposit(reference: string, amountUsd: number) {
   try {
-     const transactionRef = adminDb.collection("transactions").doc(reference);
-     const transactionSnap = await transactionRef.get();
+    const transactionRef = adminDb.collection("transactions").doc(reference);
+    const transactionSnap = await transactionRef.get();
 
-     const t = transactionSnap.data();
-     if (transactionSnap.exists && t?.status === 'COMPLETED') {
+    if (!transactionSnap.exists) {
+      console.error(`[NowPayments Fulfillment] Transaction not found: ${reference}`);
+      return { success: false, error: "Transaction record not found." };
+    }
+
+    const t = transactionSnap.data();
+    const uid = t?.uid || t?.userId; // Fallback for legacy records
+
+    if (!uid) {
+      console.error(`[NowPayments Fulfillment] No UID found in transaction: ${reference}`);
+      return { success: false, error: "User ID not found in transaction record." };
+    }
+
+    if (t?.status === 'COMPLETED') {
         return { success: true, message: "Already fulfilled." };
-     }
-
-     const uid = t?.uid;
-     if (!uid) {
-        return { success: false, error: "Critical: Reference mapping to User Identity failed." };
-     }
+    }
 
      // 1.4 FIX: Verify amount to prevent webhook manipulation
      const verification = await verifyNowPaymentsAmount(reference, amountUsd);
