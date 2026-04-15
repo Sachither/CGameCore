@@ -2,6 +2,7 @@
 
 import { adminDb, adminAuth } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
+import { headers } from "next/headers";
 import {
   verifyNowPaymentsAmount,
   recordWebhookEvent,
@@ -85,14 +86,20 @@ export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: 
     // 1. Generate unique reference for our database
     const reference = `CG-CRYPTO-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
+    // 1.5 FIX: Dynamic Base URL for redirects (support Vercel/Production)
+    const headersList = await headers();
+    const host = headersList.get("host") || "cgamecore.com";
+    const protocol = host.includes("localhost") ? "http" : "https";
+    const baseUrl = `${protocol}://${host}`;
+    
     // 2. Call NowPayments to create an invoice (with retry logic)
     const invoicePayload = {
       price_amount: amountUsd,
       price_currency: "usd",
       order_id: reference,
       order_description: `Deposit $${amountUsd} USD equivalent for CGameCore Coins`,
-      success_url: `https://cgamecore.com/dashboard/wallet?success=true`,
-      cancel_url: `https://cgamecore.com/dashboard/wallet?cancel=true`
+      success_url: `${baseUrl}/dashboard/wallet?success=true`,
+      cancel_url: `${baseUrl}/dashboard/wallet?cancel=true`
     };
 
     const apiResult = await callNowPaymentsAPI("https://api.nowpayments.io/v1/invoice", "POST", invoicePayload);
@@ -171,8 +178,9 @@ export async function internalFulfillCryptoDeposit(reference: string, amountUsd:
        };
      }
 
-     // Calculate strictly based on the USD peg (100 Coins = $1.00 USD)
-     const coinsToCredit = Math.floor(amountUsd * 100);
+    // 2.3 FIX: Honor the original requested coin amount (t.amount) 
+    // This ensures users get exactly 100 coins for $1.00 even if gateway takes a fee.
+    const coinsToCredit = t?.amount || Math.floor(amountUsd * 100);
 
      const userRef = adminDb.collection("users").doc(uid);
      const statsRef = adminDb.collection("stats").doc("platform_finances");

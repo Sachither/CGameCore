@@ -224,11 +224,18 @@ export async function verifyNowPaymentsAmount(
     const storedData = transactionSnap.data();
     const storedAmountUsd = storedData?.fiatAmount || 0;
 
-    // Step 2: Compare amounts
-    if (Math.abs(storedAmountUsd - claimedAmountUsd) > 0.01) {
+    // Step 2: Compare amounts with a small tolerance for gateway/network fees
+    // Some gateways deduct fees from the reported price_amount.
+    // We allow up to a 15% difference for small deposits.
+    const difference = Math.abs(storedAmountUsd - claimedAmountUsd);
+    const tolerance = Math.max(0.01, storedAmountUsd * 0.15);
+
+    if (difference > tolerance) {
       await logPaymentVerificationFailure(reference, "amount_mismatch_nowpayments", {
         storedUsd: storedAmountUsd,
         claimedUsd: claimedAmountUsd,
+        difference,
+        tolerance
       });
 
       return {
@@ -236,7 +243,7 @@ export async function verifyNowPaymentsAmount(
         storedAmountUsd,
         claimedAmountUsd,
         mismatch: true,
-        reason: "NowPayments amount does not match stored transaction",
+        reason: `Amount mismatch exceeds tolerance (Diff: ${difference.toFixed(2)}, Max: ${tolerance.toFixed(2)})`,
       };
     }
 

@@ -19,7 +19,7 @@ const NOWPAYMENTS_IPN_SECRET = process.env.NOWPAYMENTS_IPN_SECRET;
 export async function POST(req: Request) {
   try {
     if (!NOWPAYMENTS_IPN_SECRET) {
-      console.error("[NowPayments Webhook] Critical: IPN Secret is missing.");
+      console.error("[NowPayments Webhook] CRITICAL: NOWPAYMENTS_IPN_SECRET is missing from environment variables.");
       return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
     }
 
@@ -30,9 +30,11 @@ export async function POST(req: Request) {
     const isValid = verifyNowPaymentsSignature(payload, signature, NOWPAYMENTS_IPN_SECRET);
 
     if (!isValid) {
-       console.error("[NowPayments Webhook] Invalid Signature.");
+       console.error("[NowPayments Webhook] SECURITY: Invalid Signature detected. Check IPN Secret match.");
        return NextResponse.json({ error: "Invalid Signature" }, { status: 401 });
     }
+    
+    console.log(`[NowPayments Webhook] INFO: Received valid webhook for Order: ${payload.order_id}, Status: ${payload.payment_status}`);
 
     // Extract payment details
     const { payment_status, order_id, price_amount } = payload;
