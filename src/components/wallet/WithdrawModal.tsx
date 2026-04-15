@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { requestWithdrawalAction } from '@/app/actions/wallet-actions';
 import { validate, sanitize } from '@/lib/validation-utils';
-import { validateNuban, validateCryptoAddress, validateCryptoAddressByNetwork } from '@/lib/address-validator';
+import { validateNuban, validateCryptoAddressByNetwork } from '@/lib/address-validator';
+import { getWithdrawalFee, isCryptoWithdrawalNetwork } from '@/lib/withdrawal-fees';
 import { getEffectiveRateAction } from '@/app/actions/rate-actions';
 import { Landmark, Smartphone, Zap, Globe } from 'lucide-react';
 
@@ -74,20 +75,15 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
     }
   }, [isOpen, profile?.currency, profile?.country, fiatSupported]);
 
-  // FEE LOGIC - Updated for all crypto networks
+  // FEE LOGIC - Shared network fee map
   const isCrypto = gatewayType === 'CRYPTO';
-  const withdrawalFeeMap: Record<string, number> = {
-    'USDT_TRC20': 100,   // Tron - slower, cheaper  
-    'USDC_SOL': 10,      // Solana - fastest, cheapest ✓
-    'USDT_POLYGON': 50,  // Polygon - medium speed/cost
-    'USDT_ETH': 200,     // Ethereum - expensive but secure
-    'BTC': 500,          // Bitcoin - premium fee
-    'ETH': 300           // Ethereum - medium premium
-  };
-  const withdrawalFee = isCrypto ? (withdrawalFeeMap[bankCode] || 100) : 10; // 10 for fiat
+  const withdrawalFee = getWithdrawalFee(bankCode);
+  const isSupportedCryptoNetwork = isCrypto && isCryptoWithdrawalNetwork(bankCode);
 
   // INSTANT VALIDATION - Per-network crypto validation
-  const cryptoValidation = isCrypto ? validateCryptoAddressByNetwork(accountNumber, bankCode) : { isValid: true, format: '' };
+  const cryptoValidation = isSupportedCryptoNetwork
+    ? validateCryptoAddressByNetwork(accountNumber, bankCode)
+    : { isValid: !isCrypto, format: isCrypto ? 'Select a valid crypto network' : '' };
   const isValidAddress = isCrypto 
     ? cryptoValidation.isValid
     : validateNuban(accountNumber, bankCode);

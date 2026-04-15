@@ -4,9 +4,10 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 
 import { getVerifiedUid } from "@/lib/server-utils";
-import { validateNuban, validateCryptoAddress } from "@/lib/address-validator";
+import { validateNuban, validateCryptoAddressByNetwork } from "@/lib/address-validator";
 import { getPlatformRate } from "@/app/actions/rate-actions";
 import { validateWithdrawalTier, calculateWithdrawalHoldTime } from "@/lib/security-fixes";
+import { getWithdrawalFee, isCryptoWithdrawalNetwork } from "@/lib/withdrawal-fees";
 
 /**
  * SERVER ACTION: Request Withdrawal
@@ -24,7 +25,7 @@ export async function requestWithdrawalAction(
   
   if (amountCoins < 100) return { success: false, error: "Minimum withdrawal is 100 Coins." };
   
-  const isCrypto = bankCode.startsWith("USDT") || bankCode.startsWith("USDC");
+  const isCrypto = isCryptoWithdrawalNetwork(bankCode);
   const isSolana = bankCode === "USDC_SOL";
   
   // 🌍 REGIONAL VALIDATION: Ensure user has a region set
@@ -42,16 +43,16 @@ export async function requestWithdrawalAction(
   if (!isCrypto) {
     // NG: Strict 10-digit NUBAN
     if (country === 'NG' && !validateNuban(accountNumber, bankCode)) {
-      return { success: false, error: "Invalid account number. A standard 10-digit NUBAN with a valid checksum is required." };
+      return { success: false, error: "Invalid account number. A standard 10-digit NUBAN is required." };
     }
     // GH/KE/ZA: Generic sanity check for now (9-16 digits)
     if (country !== 'NG' && (accountNumber.length < 9 || accountNumber.length > 16)) {
       return { success: false, error: `Invalid account/wallet number for ${country}. Please verify your details.` };
     }
   } else {
-    const isValidCrypto = validateCryptoAddress(accountNumber, isSolana ? 'SOL' : 'TRC20');
-    if (!isValidCrypto) {
-       return { success: false, error: "Invalid Crypto Address. Please provide a full TRC20 or SOL wallet address." };
+    const cryptoValidation = validateCryptoAddressByNetwork(accountNumber, bankCode);
+    if (!cryptoValidation.isValid) {
+       return { success: false, error: `Invalid wallet address for ${bankCode}. Expected format: ${cryptoValidation.format}` };
     }
   }
 
@@ -59,8 +60,7 @@ export async function requestWithdrawalAction(
     return { success: false, error: "Incomplete details provided." };
   }
 
-  // FEE LOGIC: 10 Coins for Fiat/SOL, 100 Coins for TRC20 (Gas)
-  const withdrawalFee = isCrypto ? (isSolana ? 10 : 100) : 10;
+  const withdrawalFee = getWithdrawalFee(bankCode);
   const netAmount = Math.max(0, amountCoins - withdrawalFee);
 
   const withdrawalRef = adminDb.collection("withdrawals").doc();
