@@ -2,8 +2,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { verifyPaystackPaymentAction, createPendingDepositAction } from '@/app/actions/paystack-actions';
-import { createNowPaymentInvoiceAction } from '@/app/actions/nowpayments-actions';
-import { Globe, AlertTriangle } from 'lucide-react';
+import { createNowPaymentInvoiceAction, checkNowPaymentStatusAction } from '@/app/actions/nowpayments-actions';
+import { Globe, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
 
 // Tactical Paystack Integration (Inline popup)
 const PAYSTACK_PUB_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
@@ -15,6 +15,9 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
   const [isProcessing, setIsProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isCheckingStatus, setIsCheckingStatus] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [orderReference, setOrderReference] = useState<string | null>(null);
   
   const fiatSupported = false; // ["NG", "GH", "KE", "ZA"].includes(profile?.country || "");
 
@@ -99,6 +102,7 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
         // --- CRYPTO FLOW (NowPayments) ---
         const result = await createNowPaymentInvoiceAction(idToken, numericUsd);
         if (result.success && result.invoice_url) {
+           setOrderReference(result.reference || null);
            // Redirect strictly to NowPayments Secure Invoice
            window.location.href = result.invoice_url;
         } else {
@@ -112,6 +116,42 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
       setIsProcessing(false);
     }
   };
+
+  const handleManualCheck = async () => {
+    if (!user || !orderReference) return;
+    setIsCheckingStatus(true);
+    setStatusMessage("Checking with NowPayments API...");
+    
+    try {
+      const idToken = await user.getIdToken();
+      const result = await checkNowPaymentStatusAction(idToken, orderReference);
+      
+      if (result.success && result.status === 'COMPLETED') {
+        setStatusMessage("Confirmed! Balance updated.");
+        await refreshProfile();
+        // Give a bit of time for the user to see the message
+        setTimeout(() => setStatusMessage(""), 3000);
+      } else {
+        setStatusMessage(result.message || result.error || "Payment still processing.");
+        setTimeout(() => setStatusMessage(""), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Check failed. Please try again.");
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
+  // Auto-check on mount if we came back with success=true
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true' && isOpen) {
+       setSuccess(true);
+       // We can't know the reference from URL easily without passing it back, 
+       // but if the user keeps the tab open, orderReference might be set.
+    }
+  }, [isOpen]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -152,7 +192,33 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
                    <svg className="w-10 h-10 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                 </div>
                 <h3 className="text-2xl font-black text-white italic uppercase tracking-tighter mb-2">${numericUsd.toFixed(2)} Deposited</h3>
-                <p className="text-[10px] text-accent font-bold uppercase tracking-widest">+ {coinsGenerated.toLocaleString()} Coins added to vault</p>
+                <p className="text-[10px] text-accent font-bold uppercase tracking-widest mb-6">+ {coinsGenerated.toLocaleString()} Coins added to vault</p>
+                
+                <div className="flex flex-col items-center gap-3 w-full max-w-[200px]">
+                   <button 
+                      onClick={handleManualCheck}
+                      disabled={isCheckingStatus}
+                      className="w-full h-10 bg-accent/20 hover:bg-accent/30 border border-accent/40 rounded-full flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50"
+                   >
+                      {isCheckingStatus ? (
+                        <Loader2 className="w-4 h-4 text-accent animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-4 h-4 text-accent" />
+                      )}
+                      <span className="text-[9px] font-black text-white uppercase tracking-widest">Verify Status</span>
+                   </button>
+                   
+                   {statusMessage && (
+                     <p className="text-[8px] text-gray-400 font-bold uppercase tracking-widest animate-pulse text-center">{statusMessage}</p>
+                   )}
+
+                   <button 
+                      onClick={onClose}
+                      className="text-[9px] font-black text-gray-500 hover:text-white uppercase tracking-widest mt-2"
+                   >
+                      Close Window
+                   </button>
+                </div>
              </div>
            )}
 

@@ -246,3 +246,65 @@ export async function internalFulfillCryptoDeposit(reference: string, amountUsd:
   }
 }
 
+/**
+ * SERVER ACTION: Check NowPayments status manually (Fail-safe)
+ * Called by the UI when the webhook is delayed.
+ */
+export async function checkNowPaymentStatusAction(idToken: string, reference: string) {
+  if (!idToken || !reference) return { success: false, error: "Authentication or reference missing." };
+
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+
+    const transactionRef = adminDb.collection("transactions").doc(reference);
+    const snap = await transactionRef.get();
+
+    if (!snap.exists) return { success: false, error: "Transaction record not found." };
+    const t = snap.data();
+
+    if (t?.uid !== uid) return { success: false, error: "Unauthorized access to transaction." };
+    if (t?.status === 'COMPLETED') return { success: true, status: 'COMPLETED', alreadyFulfilled: true };
+
+    const apiResult = await callNowPaymentsAPI(
+      `https://api.nowpayments.io/v1/payment?order_id=${reference}&limit=1`, 
+      "GET"
+    );
+
+    if (!apiResult.success || !apiResult.data?.data?.[0]) {
+      return { 
+        success: false, 
+        error: "Gateway hasn't confirmed this payment on their side yet. Please wait 1-2 minutes.",
+        data: apiResult.data
+      };
+    }
+
+    const paymentData = apiResult.data.data[0];
+    const { payment_status, price_amount } = paymentData;
+
+    console.log(`[NowPayments Manual Check] Ref: ${reference}, API Status: ${payment_status}`);
+
+    if (payment_status === "finished" || payment_status === "confirmed") {
+       const amountUsd = Number(price_amount);
+       const fulfillResult = await internalFulfillCryptoDeposit(reference, amountUsd);
+       
+       if (fulfillResult.success) {
+         return { success: true, status: 'COMPLETED', coinsAdded: fulfillResult.coinsAdded };
+       } else {
+         return { success: false, error: fulfillResult.error };
+       }
+    }
+
+    return { 
+      success: true, 
+      status: payment_status, 
+      message: `Payment is currently '${payment_status}'. Please wait for confirmation.` 
+    };
+
+  } catch (err: any) {
+    console.error("[NowPayments Status Check] Error:", err);
+    return { success: false, error: err.message };
+  }
+}
+
+

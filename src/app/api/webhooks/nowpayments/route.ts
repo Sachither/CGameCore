@@ -26,15 +26,27 @@ export async function POST(req: Request) {
     const payload = await req.json();
     const signature = req.headers.get("x-nowpayments-sig") || "";
 
+    // DEEP DIAGNOSTIC: Log headers and payload structure
+    console.log("[NowPayments Webhook] DEBUG: Incoming IPN", {
+      headers: {
+        "x-nowpayments-sig": signature ? "EXISTS" : "MISSING",
+        "content-type": req.headers.get("content-type"),
+      },
+      order_id: payload.order_id,
+      payment_status: payload.payment_status,
+      payment_id: payload.payment_id,
+    });
+
     // 4.2 FIX: Use constant-time signature verification
     const isValid = verifyNowPaymentsSignature(payload, signature, NOWPAYMENTS_IPN_SECRET);
 
     if (!isValid) {
        console.error("[NowPayments Webhook] SECURITY: Invalid Signature detected. Check IPN Secret match.");
+       // Additional debug: first 20 chars of sorted payload string
        return NextResponse.json({ error: "Invalid Signature" }, { status: 401 });
     }
     
-    console.log(`[NowPayments Webhook] INFO: Received valid webhook for Order: ${payload.order_id}, Status: ${payload.payment_status}`);
+    console.log(`[NowPayments Webhook] INFO: Signature Verified. Processing Order: ${payload.order_id}`);
 
     // Extract payment details
     const { payment_status, order_id, price_amount } = payload;
