@@ -5,13 +5,12 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, deleteDoc, updateDoc, increment } from "firebase/firestore";
 import { validate, sanitize } from "@/lib/validation-utils";
-import { updateGameTagAction } from "@/app/actions/user-actions";
+import { updateGameTagAction, cleanupDeletedUserAccountAction } from "@/app/actions/user-actions";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { signOut, deleteUser } from "firebase/auth";
 import { useToast } from "@/context/ToastContext";
 import { DeleteAccountModal } from "./DeleteAccountModal";
-import { cleanupDeletedUserAccount } from "@/lib/cleanup-utils";
 
 
 export default function ProfileSettingsView() {
@@ -208,12 +207,10 @@ export default function ProfileSettingsView() {
     
     try {
       // Note: If user hasn't logged in recently, Firebase requires re-authentication.
-      // Usually "auth/requires-recent-login" is thrown. 
+      // Usually "auth/requires-recent-login" is thrown.
+      const idToken = await user.getIdToken();
+      await cleanupDeletedUserAccountAction(idToken);
       await deleteUser(user);
-      
-      // Clean up Firestore data and free up username/phone reservations
-      await cleanupDeletedUserAccount(user.uid);
-      
       toast.success("Account Terminated", "Your account has been deleted and all data cleaned up.");
       setIsDeleteModalOpen(false);
       router.push('/');

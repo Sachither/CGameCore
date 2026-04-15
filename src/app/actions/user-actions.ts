@@ -2,6 +2,7 @@
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
+import { cleanupDeletedUserAccount } from "@/lib/cleanup-utils";
 
 /**
  * Gets the verified UID from the ID Token.
@@ -142,6 +143,20 @@ export async function markNotificationReadAction(idToken: string, notificationId
     return { success: true };
   } catch (error: any) {
     console.error("[UserAction] markNotificationRead error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function cleanupDeletedUserAccountAction(idToken: string) {
+  const uid = await getVerifiedUid(idToken);
+  try {
+    const success = await cleanupDeletedUserAccount(uid);
+    if (!success) {
+      return { success: false, error: "Failed to cleanup deleted account data." };
+    }
+    return { success: true };
+  } catch (error: any) {
+    console.error("[UserAction] cleanupDeletedUserAccountAction error:", error);
     return { success: false, error: error.message };
   }
 }
