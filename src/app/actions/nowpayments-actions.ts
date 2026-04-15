@@ -66,8 +66,8 @@ async function callNowPaymentsAPI(
 
 // Fixed peg: 100 Coins = $1.00 USD
 export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: number) {
-  if (!idToken || amountUsd < 3) {
-    return { success: false, error: "Invalid amount or authentication. Minimum crypto deposit is $3.00 USD." };
+  if (!idToken || amountUsd < 1) {
+    return { success: false, error: "Invalid amount or authentication. Minimum crypto deposit is $1.00 USD." };
   }
 
   if (!NOWPAYMENTS_API_KEY) {

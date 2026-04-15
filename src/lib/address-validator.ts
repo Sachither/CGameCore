@@ -15,13 +15,25 @@ export function validateNuban(accountNumber: string, bankCode: string): boolean 
 
 // Network-specific crypto address validators
 const cryptoValidators: Record<string, { validate: (addr: string) => boolean; format: string }> = {
-  'USDT_TRC20': {
-    validate: (addr) => /^T[a-zA-Z0-9]{33}$/.test(addr),
-    format: 'Start with "T" + 33 alphanumeric chars (34 total)'
-  },
   'USDC_SOL': {
     validate: (addr) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr),
-    format: 'Base58 encoded address (32-44 chars, no 0/O/I/l)'
+    format: 'Base58 Solana address (32-44 chars)'
+  },
+  'USDT_SOL': {
+    validate: (addr) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr),
+    format: 'Base58 Solana address (32-44 chars)'
+  },
+  'SOL': {
+    validate: (addr) => /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr),
+    format: 'Base58 Solana address (32-44 chars)'
+  },
+  'LTC': {
+    validate: (addr) => /^[LM3][a-km-zA-HJ-NP-Z1-9]{26,33}$|^ltc1[a-z0-9]{39,59}$/.test(addr),
+    format: 'Start with L, M, 3, or ltc1 (Litecoin Network)'
+  },
+  'USDT_TRC20': {
+    validate: (addr) => /^T[a-zA-Z0-9]{33}$/.test(addr),
+    format: 'Start with "T" (Tron Network)'
   },
   'USDT_POLYGON': {
     validate: (addr) => /^0x[a-fA-F0-9]{40}$/.test(addr),

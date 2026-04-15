@@ -70,8 +70,8 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
     // 🔒 REGIONAL GATE: Force Crypto for International users
     if (profile?.country && !fiatSupported) {
        setGatewayType('CRYPTO');
-       setBankCode('USDT_TRC20');
-       setBankName('USDT (TRC20)');
+       setBankCode('USDT_SOL');
+       setBankName('USDT (Solana)');
     }
   }, [isOpen, profile?.currency, profile?.country, fiatSupported]);
 
@@ -356,7 +356,7 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
                             {profile?.country === 'GH' || profile?.country === 'KE' ? 'Mobile Money' : 'Bank Transfer'}
                          </button>
                          <button 
-                           onClick={() => { setGatewayType('CRYPTO'); setBankCode('USDT_TRC20'); }}
+                           onClick={() => { setGatewayType('CRYPTO'); setBankCode('USDT_SOL'); }}
                            className={`py-3 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2 ${gatewayType === 'CRYPTO' ? 'bg-[#F2A900] text-black shadow-[0_0_15px_rgba(242,169,0,0.3)]' : 'text-gray-500 hover:text-white'}`}
                          >
                             <Zap className="w-3.5 h-3.5" />
@@ -422,14 +422,12 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
                          }}
                          className="w-full bg-black border border-surface-border focus:border-[#F2A900] text-white font-bold p-3.5 rounded-[3px] outline-none transition-all appearance-none cursor-pointer"
                       >
-                         <option value="USDT_TRC20">USDT (Tron/TRC20) - 100 Fee</option>
+                         <option value="USDT_SOL">USDT (Solana) - 10 Fee</option>
                          <option value="USDC_SOL">USDC (Solana) - 10 Fee</option>
-                         <option value="USDT_POLYGON">USDT (Polygon) - 50 Fee</option>
-                         <option value="USDT_ETH">USDT (Ethereum) - 200 Fee</option>
-                         <option value="BTC">Bitcoin - 500 Fee</option>
-                         <option value="ETH">Ethereum - 300 Fee</option>
+                         <option value="SOL">Solana (SOL) - 10 Fee</option>
+                         <option value="LTC">Litecoin (LTC) - 10 Fee</option>
                       </select>
-                      <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-2">⚡ Best Value: Solana (USDC) - Best fees + fastest settlement</p>
+                      <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-2">⚡ Best Value: Solana (USDT/USDC/SOL) - Near-zero fees + instant checkout</p>
                     </div>
                   )}
 

@@ -1,12 +1,10 @@
 export const DEFAULT_FIAT_WITHDRAWAL_FEE = 10;
 
 export const WITHDRAWAL_CRYPTO_FEE_MAP: Record<string, number> = {
-  'USDT_TRC20': 100,
+  'USDT_SOL': 10,
   'USDC_SOL': 10,
-  'USDT_POLYGON': 50,
-  'USDT_ETH': 200,
-  'BTC': 500,
-  'ETH': 300
+  'SOL': 10,
+  'LTC': 10
 };
 
 export const SUPPORTED_CRYPTO_NETWORKS = new Set(Object.keys(WITHDRAWAL_CRYPTO_FEE_MAP));

@@ -29,7 +29,7 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
 
   const numericUsd = Number(amountUsd) || 0;
   const coinsGenerated = Math.floor(numericUsd * 100);
-  const minRequired = paymentMethod === 'CRYPTO' ? 3 : 1;
+  const minRequired = paymentMethod === 'CRYPTO' ? 1 : 1; // Testing: Reduced to $1.00 for SOL/LTC
   const isInvalid = numericUsd > 0 && numericUsd < minRequired;
 
   const loadPaystack = () => {
@@ -202,7 +202,7 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
                    </p>
                    <div className="mt-3 pt-3 border-t border-[#F2A900]/20">
                       <p className="text-[9px] text-white font-black uppercase tracking-widest">
-                        Recommended: Use <span className="text-[#F2A900]">TRX (Tron)</span> or <span className="text-[#F2A900]">LTC (Litecoin)</span> to keep fees under $0.10.
+                        Recommended: Use <span className="text-[#F2A900]">USDT/USDC/SOL (Solana)</span> or <span className="text-[#F2A900]">LTC (Litecoin)</span> for near-zero fees.
                       </p>
                    </div>
                 </div>
