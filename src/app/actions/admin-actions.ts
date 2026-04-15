@@ -776,7 +776,18 @@ export async function getPendingWithdrawalsAction(idToken: string) {
       .get();
     
     // Sort manually in JS to avoid index requirement for simple POC/initial phase
-    const tickets = snap.docs.map((d) => sanitizeData({ id: d.id, ...d.data() }));
+    const tickets = snap.docs.map((d) => {
+      const data = d.data();
+      // Decrypt account number for admin display
+      let accountNumber = '';
+      try {
+        accountNumber = data.encryptedAccountNumber ? decryptData(data.encryptedAccountNumber) : data.accountNumber || '';
+      } catch (decryptError) {
+        console.error(`Failed to decrypt account number for withdrawal ${d.id}:`, decryptError);
+        accountNumber = '[DECRYPTION_FAILED]';
+      }
+      return sanitizeData({ id: d.id, ...data, accountNumber });
+    });
     tickets.sort((a: any, b: any) => (a.createdAt || 0) - (b.createdAt || 0));
 
     return { success: true, tickets };
