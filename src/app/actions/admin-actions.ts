@@ -11,6 +11,7 @@ import { decryptData } from "@/lib/encryption-utils";
 import { getVerifiedAdminUid, getVerifiedSuperAdminUid } from "@/lib/server-utils";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { createNotificationInternal } from "@/lib/notifications";
+import { isCryptoWithdrawalNetwork } from "@/lib/withdrawal-fees";
 
 // 🔒 [SECURITY] M-007 FIX: Test mode watermark - fail-safe check
 // Production deployments MUST have NODE_ENV = 'production'
@@ -924,10 +925,16 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
       }
 
       // Queue Notification for user (Using internal utility)
+      const isCrypto = isCryptoWithdrawalNetwork(wData.bankCode || "");
+      const withdrawalReference = transferCode || `WITHDRAW_${wRef.id}`;
+      const notificationMessage = isCrypto
+        ? `Your crypto withdrawal of $${(wData.netAmount / 100).toFixed(2)} has been approved for processing on ${wData.bankCode}. Withdrawal reference: ${withdrawalReference}. Network settlement may take extra time.`
+        : `Your withdrawal of $${(wData.fiatAmount).toFixed(2)} has been initiated via Paystack. Transfer ID: ${withdrawalReference}. Funds typically arrive within 24 hours.`;
+
       await createNotificationInternal(
         wData.uid,
         "Withdrawal Sent!",
-        `Your transfer of ₦${wData.fiatAmount} has been initiated via Paystack. Transfer ID: ${transferCode}. Funds arrive within 24 hours.`,
+        notificationMessage,
         "SYSTEM"
       );
     });
