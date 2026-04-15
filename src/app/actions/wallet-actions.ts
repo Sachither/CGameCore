@@ -8,6 +8,7 @@ import { validateNuban, validateCryptoAddressByNetwork } from "@/lib/address-val
 import { getPlatformRate } from "@/app/actions/rate-actions";
 import { validateWithdrawalTier, calculateWithdrawalHoldTime } from "@/lib/security-fixes";
 import { getWithdrawalFee, isCryptoWithdrawalNetwork } from "@/lib/withdrawal-fees";
+import { encryptData, decryptData, tokenizeSensitiveData } from "@/lib/encryption-utils";
 
 /**
  * SERVER ACTION: Request Withdrawal
@@ -62,6 +63,8 @@ export async function requestWithdrawalAction(
 
   const withdrawalFee = getWithdrawalFee(bankCode);
   const netAmount = Math.max(0, amountCoins - withdrawalFee);
+  const encryptedAccountNumber = encryptData(accountNumber);
+  const tokenizedBankDetails = tokenizeSensitiveData(`${bankName}:${bankCode}:${accountNumber}`);
 
   const withdrawalRef = adminDb.collection("withdrawals").doc();
 
@@ -158,7 +161,8 @@ export async function requestWithdrawalAction(
         withdrawalAvailableAt, // FIX F-002: Can only proceed after this time
         bankName,
         bankCode,
-        accountNumber,
+        encryptedAccountNumber, // Store encrypted
+        tokenizedBankDetails,
         legalName,
         isVerifiedIdentity: true,
         status: "PENDING",
@@ -177,7 +181,7 @@ export async function requestWithdrawalAction(
         fiat_amount: fiatAmount,
         withdrawal_ticket_id: withdrawalRef.id,
         bank_name: bankName,
-        account_last4: accountNumber.slice(-4),
+        account_last4: tokenizedBankDetails?.last4 || accountNumber.slice(-4),
         aml_checks: {
           banned: !!userData.isBanned,
           suspended: suspensionEnd > now,

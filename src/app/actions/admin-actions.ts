@@ -4,6 +4,7 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { Match, Circuit } from "@/lib/match-service";
 import { purgeMatchDataInternal } from "@/lib/match-cleanup";
+import { decryptData } from "@/lib/encryption-utils";
 
 // ─── INTERNAL HELPERS ────────────────────────────────────────────────────────
 
@@ -801,12 +802,15 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
     const amountCoins = wData.amountCoins || 0;
     const fiatAmountKobo = (wData.fiatAmount || 0) * 100; // Paystack amount in kobo
 
+    // Decrypt account number for processing
+    const accountNumber = decryptData(wData.encryptedAccountNumber || wData.accountNumber);
+
     // ── STEP 1: Create Paystack Transfer Recipient ──────────────────────────
     // Paystack only supports resolving 0000000000 for standard banks (like GTBank 058) in Test Mode.
     // If the user uses the test account number, we temporarily coerce the bank_code to 058 to guarantee it passes.
-    const isTestAccount = wData.accountNumber === "0000000000" || wData.accountNumber.includes("0000");
+    const isTestAccount = accountNumber === "0000000000" || accountNumber.includes("0000");
     const enforcedBankCode = isTestAccount ? "058" : (wData.bankCode || "058");
-    const enforcedAccountNum = isTestAccount ? "0000000000" : wData.accountNumber;
+    const enforcedAccountNum = isTestAccount ? "0000000000" : accountNumber;
 
     const recipientRes = await fetch("https://api.paystack.co/transferrecipient", {
       method: "POST",

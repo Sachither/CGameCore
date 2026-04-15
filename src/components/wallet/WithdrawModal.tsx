@@ -1,10 +1,10 @@
 "use client";
 import React, { useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { requestWithdrawalAction } from '@/app/actions/wallet-actions';
 import { validate, sanitize } from '@/lib/validation-utils';
 import { validateNuban, validateCryptoAddressByNetwork } from '@/lib/address-validator';
 import { getWithdrawalFee, isCryptoWithdrawalNetwork } from '@/lib/withdrawal-fees';
+import { requestWithdrawalAction } from '@/lib/withdrawal-api';
 import { getEffectiveRateAction } from '@/app/actions/rate-actions';
 import { Landmark, Smartphone, Zap, Globe } from 'lucide-react';
 
@@ -165,6 +165,7 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
       setIsProcessing(false);
       return;
     }
+
     try {
       const idToken = await user.getIdToken();
       const result = await requestWithdrawalAction(
