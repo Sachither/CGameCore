@@ -58,6 +58,15 @@ export async function checkPaymentStatusAction(
 
     // If in PENDING_VERIFICATION, try to verify again
     if (transaction.status === 'PENDING_VERIFICATION' || transaction.status === 'PENDING') {
+      // 1.5 FIX: Detect gateway to prevent cross-gateway API errors
+      const gateway = transaction.gateway || (reference.startsWith('CG-CRYPTO') ? 'NOWPAYMENTS' : 'PAYSTACK');
+
+      if (gateway === 'NOWPAYMENTS') {
+        return { 
+          status: "PENDING", 
+          message: "Crypto payment is awaiting blockchain confirmation. This usually takes 1-5 minutes.",
+        };
+      }
       if (!PAYSTACK_SECRET_KEY) {
         return { 
           status: "PENDING", 
