@@ -11,6 +11,7 @@ import { auth } from "@/lib/firebase";
 import { signOut, deleteUser } from "firebase/auth";
 import { useToast } from "@/context/ToastContext";
 import { DeleteAccountModal } from "./DeleteAccountModal";
+import { cleanupDeletedUserAccount } from "@/lib/cleanup-utils";
 
 
 export default function ProfileSettingsView() {
@@ -209,9 +210,11 @@ export default function ProfileSettingsView() {
       // Note: If user hasn't logged in recently, Firebase requires re-authentication.
       // Usually "auth/requires-recent-login" is thrown. 
       await deleteUser(user);
-      // Data cleanup in Firestore will be handled via Firebase Auth triggers 
-      // or manual admin cleanup. Local session is wiped instantly.
-      toast.success("Account Terminated", "Your account has been deleted.");
+      
+      // Clean up Firestore data and free up username/phone reservations
+      await cleanupDeletedUserAccount(user.uid);
+      
+      toast.success("Account Terminated", "Your account has been deleted and all data cleaned up.");
       setIsDeleteModalOpen(false);
       router.push('/');
     } catch (err: any) {
