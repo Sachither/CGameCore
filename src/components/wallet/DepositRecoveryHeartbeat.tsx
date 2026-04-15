@@ -41,7 +41,10 @@ export default function DepositRecoveryHeartbeat() {
           const data = doc.data();
           
           // Tactical In-Memory Filter
-          if (data.status === "PENDING" && data.type === "DEPOSIT") {
+          const gateway = data.gateway || 'PAYSTACK';
+          const isCrypto = gateway === 'NOWPAYMENTS' || doc.id.startsWith('CG-CRYPTO');
+
+          if (data.status === "PENDING" && data.type === "DEPOSIT" && !isCrypto) {
             // Grace period: skip deposits less than 2 minutes old.
             // The user may still be actively completing the payment in the Paystack popup.
             const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().getTime() : 0;

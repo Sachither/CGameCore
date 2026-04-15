@@ -83,6 +83,12 @@ export async function verifyPaystackPaymentAction(
   }
 
   try {
+    // 0. Safety Guard: Reject NowPayments/Crypto references
+    if (reference.startsWith('CG-CRYPTO')) {
+       console.warn(`[PaystackAction] Refusing to verify Crypto reference: ${reference}`);
+       return { success: false, error: "Incorrect gateway for this reference." };
+    }
+
     // 1. Verify User
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     const uid = decodedToken.uid;
