@@ -8,7 +8,7 @@ import { validate, sanitize } from "@/lib/validation-utils";
 import { updateGameTagAction, cleanupDeletedUserAccountAction } from "@/app/actions/user-actions";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
-import { signOut, deleteUser } from "firebase/auth";
+import { signOut, deleteUser, updateProfile } from "firebase/auth";
 import { useToast } from "@/context/ToastContext";
 import { DeleteAccountModal } from "./DeleteAccountModal";
 
@@ -151,37 +151,81 @@ export default function ProfileSettingsView() {
     const oldUsername = profile?.username?.toLowerCase();
     const newUsername = sanitizedUsername.toLowerCase();
 
+    // Basic validation
+    if (!sanitizedUsername || sanitizedUsername.trim().length === 0) {
+      toast.error("Invalid Username", "Username cannot be empty.");
+      return;
+    }
+
+    if (sanitizedUsername.length < 3) {
+      toast.error("Invalid Username", "Username must be at least 3 characters long.");
+      return;
+    }
+
+    console.log(`[Profile] Attempting to change username from "${oldUsername}" to "${newUsername}"`);
+
     try {
       setSaveLoading(true);
 
       // Unique Check if name changed
       if (oldUsername !== newUsername) {
+        console.log(`[Profile] Checking username availability for: ${newUsername}`);
         const availabilityRes = await fetch(
           `/api/identity-check?field=username&value=${encodeURIComponent(newUsername)}`
         );
         const availabilityData = await availabilityRes.json();
+        console.log(`[Profile] Availability response:`, availabilityData);
 
         if (!availabilityData.success) {
-          throw new Error(availabilityData.error || "Could not verify username availability.");
+          const errorMsg = availabilityData.error || "Could not verify username availability.";
+          console.error(`[Profile] Availability check failed: ${errorMsg}`);
+          toast.error("System Error", errorMsg);
+          setSaveLoading(false);
+          return;
         }
 
         if (!availabilityData.available) {
+          console.log(`[Profile] Username ${newUsername} is not available`);
           toast.error("Platform ID Conflict", "This username is already claimed by another operative.");
           setSaveLoading(false);
           return;
         }
 
+        console.log(`[Profile] Username ${newUsername} is available, proceeding with reservation`);
         // Reserve new, delete old
-        await setDoc(doc(db, "usernames", newUsername), { uid: user.uid });
-        if (oldUsername) await deleteDoc(doc(db, "usernames", oldUsername));
+        try {
+          await setDoc(doc(db, "usernames", newUsername), { uid: user.uid });
+          if (oldUsername) await deleteDoc(doc(db, "usernames", oldUsername));
+          console.log(`[Profile] Successfully reserved username: ${newUsername}`);
+        } catch (firestoreError: any) {
+          console.error(`[Profile] Firestore reservation failed:`, firestoreError);
+          toast.error("Reservation Failed", "Could not reserve the new username. Please try again.");
+          setSaveLoading(false);
+          return;
+        }
+      } else {
+        console.log(`[Profile] Username unchanged: ${oldUsername}`);
       }
 
       const userRef = doc(db, "users", user.uid);
       await updateDoc(userRef, {
         username: sanitizedUsername,
       });
+
+      // Update Firebase Auth display name
+      try {
+        await updateProfile(user, {
+          displayName: sanitizedUsername
+        });
+        console.log(`[Profile] Updated Firebase Auth display name to: ${sanitizedUsername}`);
+      } catch (authError: any) {
+        console.error(`[Profile] Firebase Auth update failed:`, authError);
+        // Don't fail the whole operation for Auth update failure
+      }
+
       await refreshProfile();
       toast.success("Profile Secured", "Account realignment successful.");
+      console.log(`[Profile] Profile update completed successfully`);
     } catch (err) {
       console.error(err);
       toast.error("System Error", "Error saving profile.");
