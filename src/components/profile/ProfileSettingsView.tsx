@@ -169,37 +169,46 @@ export default function ProfileSettingsView() {
 
       // Unique Check if name changed
       if (oldUsername !== newUsername) {
-        console.log(`[Profile] Checking username availability for: ${newUsername}`);
-        const availabilityRes = await fetch(
-          `/api/identity-check?field=username&value=${encodeURIComponent(newUsername)}`
-        );
-        const availabilityData = await availabilityRes.json();
-        console.log(`[Profile] Availability response:`, availabilityData);
-
-        if (!availabilityData.success) {
-          const errorMsg = availabilityData.error || "Could not verify username availability.";
-          console.error(`[Profile] Availability check failed: ${errorMsg}`);
-          toast.error("System Error", errorMsg);
-          setSaveLoading(false);
-          return;
-        }
-
-        if (!availabilityData.available) {
-          console.log(`[Profile] Username ${newUsername} is not available`);
-          toast.error("Platform ID Conflict", "This username is already claimed by another operative.");
-          setSaveLoading(false);
-          return;
-        }
-
-        console.log(`[Profile] Username ${newUsername} is available, proceeding with reservation`);
-        // Reserve new, delete old
+        console.log(`[Profile] Username changed, checking availability for: ${newUsername}`);
         try {
-          await setDoc(doc(db, "usernames", newUsername), { uid: user.uid });
-          if (oldUsername) await deleteDoc(doc(db, "usernames", oldUsername));
-          console.log(`[Profile] Successfully reserved username: ${newUsername}`);
-        } catch (firestoreError: any) {
-          console.error(`[Profile] Firestore reservation failed:`, firestoreError);
-          toast.error("Reservation Failed", "Could not reserve the new username. Please try again.");
+          console.log(`[Profile] Making API call to /api/identity-check`);
+          const availabilityRes = await fetch(
+            `/api/identity-check?field=username&value=${encodeURIComponent(newUsername)}`
+          );
+          console.log(`[Profile] API response status: ${availabilityRes.status}`);
+          const availabilityData = await availabilityRes.json();
+          console.log(`[Profile] Full availability response:`, availabilityData);
+
+          if (!availabilityData.success) {
+            const errorMsg = availabilityData.error || "Could not verify username availability.";
+            console.error(`[Profile] Availability check failed: ${errorMsg}`);
+            toast.error("System Error", errorMsg);
+            setSaveLoading(false);
+            return;
+          }
+
+          if (!availabilityData.available) {
+            console.log(`[Profile] Username ${newUsername} is NOT available - blocking change`);
+            toast.error("Platform ID Conflict", "This username is already claimed by another operative.");
+            setSaveLoading(false);
+            return;
+          }
+
+          console.log(`[Profile] Username ${newUsername} is available - proceeding`);
+          // Reserve new, delete old
+          try {
+            await setDoc(doc(db, "usernames", newUsername), { uid: user.uid });
+            if (oldUsername) await deleteDoc(doc(db, "usernames", oldUsername));
+            console.log(`[Profile] Successfully reserved username: ${newUsername}`);
+          } catch (firestoreError: any) {
+            console.error(`[Profile] Firestore reservation failed:`, firestoreError);
+            toast.error("Reservation Failed", "Could not reserve the new username. Please try again.");
+            setSaveLoading(false);
+            return;
+          }
+        } catch (apiError: any) {
+          console.error(`[Profile] API call failed:`, apiError);
+          toast.error("System Error", "Could not verify username availability. Please try again.");
           setSaveLoading(false);
           return;
         }
