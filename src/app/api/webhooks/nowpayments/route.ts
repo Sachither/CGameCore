@@ -56,33 +56,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ status: "acknowledged" }, { status: 200 });
     }
 
-    // 1.2 FIX: Record webhook event for idempotency checking
-    const eventRecord = await recordWebhookEvent(
-      payload.payment_id || null,
-      order_id,
-      "nowpayments",
-      payment_status
-    );
 
-    if (!eventRecord.isNew) {
-      console.log(`[NowPayments Webhook] IDEMPOTENCY: Event already processed.`);
-      return NextResponse.json({ status: "acknowledged", duplicated: true }, { status: 200 });
-    }
-
-    // 1.2 FIX: Rate limit processing per reference
-    const rateLimitCheck = await checkWebhookRateLimit(order_id, "nowpayments");
-    if (!rateLimitCheck.allowed) {
-      console.warn(
-        `[NowPayments Webhook] Rate limited: ${order_id}. Retry after ${rateLimitCheck.retryAfterSeconds}s`
-      );
-      return NextResponse.json(
-        { error: "Rate limited", retryAfter: rateLimitCheck.retryAfterSeconds },
-        { status: 429 }
-      );
-    }
 
     // Status can be: 'waiting', 'confirming', 'confirmed', 'sending', 'partially_paid', 'finished', 'failed', 'refunded', 'expired'
-    if (payment_status === "finished" || payment_status === "confirmed") {
+    if (payment_status === "finished" || payment_status === "confirmed" || payment_status === "paid") {
+       // 1.2 FIX: Record webhook event for idempotency checking (Only lock on successful states)
+       const eventRecord = await recordWebhookEvent(
+         payload.payment_id || null,
+         order_id,
+         "nowpayments",
+         payment_status
+       );
+
+       if (!eventRecord.isNew) {
+         console.log(`[NowPayments Webhook] IDEMPOTENCY: Event already processed.`);
+         return NextResponse.json({ status: "acknowledged", duplicated: true }, { status: 200 });
+       }
+
+       // 1.2 FIX: Rate limit processing per reference
+       const rateLimitCheck = await checkWebhookRateLimit(order_id, "nowpayments");
+       if (!rateLimitCheck.allowed) {
+         return NextResponse.json(
+           { error: "Rate limited", retryAfter: rateLimitCheck.retryAfterSeconds },
+           { status: 429 }
+         );
+       }
+
        const amountUsd = Number(price_amount);
 
        if (amountUsd > 0) {
