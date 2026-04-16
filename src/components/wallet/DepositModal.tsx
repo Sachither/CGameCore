@@ -8,7 +8,15 @@ import { Globe, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
 // Tactical Paystack Integration (Inline popup)
 const PAYSTACK_PUB_KEY = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY;
 
-export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+export default function DepositModal({ 
+  isOpen, 
+  onClose, 
+  isSuccessRedirect = false 
+}: { 
+  isOpen: boolean, 
+  onClose: () => void,
+  isSuccessRedirect?: boolean
+}) {
   const { user, profile, refreshProfile } = useAuth();
   const [amountUsd, setAmountUsd] = useState<number | string>('');
   const [paymentMethod, setPaymentMethod] = useState<'FIAT' | 'CRYPTO'>('CRYPTO');
@@ -34,28 +42,25 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
 
   // 🚀 SUCCESS SYNC: Auto-check on mount if we came back with success=true
   React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-       const urlParams = new URLSearchParams(window.location.search);
-       if (urlParams.get('success') === 'true' && isOpen) {
-          setSuccess(true);
-          
-          // Recovery Logic: Restore context if lost during redirect
-          if (!orderReference || !amountUsd || amountUsd === 0) {
-            try {
-              const cached = localStorage.getItem('last_crypto_order');
-              if (cached) {
-                const { reference, amount } = JSON.parse(cached);
-                if (reference) setOrderReference(reference);
-                if (amount) setAmountUsd(amount);
-                console.log("[DepositModal] Context recovered from storage:", reference, amount);
-              }
-            } catch (e) {
-              console.warn("[DepositModal] Context recovery failed:", e);
-            }
-          }
+    if (isSuccessRedirect && isOpen) {
+       setSuccess(true);
+       
+       // Recovery Logic: Restore context if lost during redirect
+       if (!orderReference || !amountUsd || amountUsd === 0 || amountUsd === '') {
+         try {
+           const cached = localStorage.getItem('last_crypto_order');
+           if (cached) {
+             const { reference, amount } = JSON.parse(cached);
+             if (reference) setOrderReference(reference);
+             if (amount) setAmountUsd(amount);
+             console.log("[DepositModal] Context recovered from storage:", reference, amount);
+           }
+         } catch (e) {
+           console.warn("[DepositModal] Context recovery failed:", e);
+         }
        }
     }
-  }, [isOpen]);
+  }, [isOpen, isSuccessRedirect]);
 
   const handleManualCheck = async () => {
     if (!user || !orderReference) return;

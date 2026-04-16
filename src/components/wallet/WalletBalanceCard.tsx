@@ -10,14 +10,19 @@ export default function WalletBalanceCard() {
   const [isDepositOpen, setDepositOpen] = useState(false);
   const [isWithdrawOpen, setWithdrawOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSuccessMode, setIsSuccessMode] = useState(false);
   
-  // 🚀 UX FIX: Auto-open modal on success redirect
+  // 🚀 UX FIX: Auto-open modal on success redirect and CLEAN URL
   React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('success') === 'true') {
-        setDepositOpen(true);
-      }
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === 'true') {
+      setIsSuccessMode(true);
+      setDepositOpen(true);
+      // Clean the URL immediately so refresh doesn't trigger this again
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('cancel') === 'true') {
+      window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
   
@@ -106,7 +111,14 @@ export default function WalletBalanceCard() {
       </div>
 
       {/* Render Modals at Root Level Component */}
-      <DepositModal isOpen={isDepositOpen} onClose={() => setDepositOpen(false)} />
+      <DepositModal 
+        isOpen={isDepositOpen} 
+        onClose={() => {
+          setDepositOpen(false);
+          setIsSuccessMode(false);
+        }} 
+        isSuccessRedirect={isSuccessMode}
+      />
       <WithdrawModal isOpen={isWithdrawOpen} onClose={() => setWithdrawOpen(false)} balance={balance} />
     </div>
   );
