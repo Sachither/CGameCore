@@ -62,6 +62,26 @@ export default function DepositModal({
     }
   }, [isOpen, isSuccessRedirect]);
 
+  // 🕒 AUTO-DISMISS: Close and reset modal after success
+  React.useEffect(() => {
+    if (success && isOpen) {
+      const timer = setTimeout(() => {
+        // Only auto-close if we are in success mode and it was a redirect, 
+        // or if it was manually confirmed.
+        localStorage.removeItem('last_crypto_order');
+        onClose();
+        // Reset local states after close animation (approx 300ms)
+        setTimeout(() => {
+          setSuccess(false);
+          setAmountUsd('');
+          setStatusMessage("");
+        }, 300);
+      }, 7000); // 7 seconds to allow reading the message
+
+      return () => clearTimeout(timer);
+    }
+  }, [success, isOpen, onClose]);
+
   const handleManualCheck = async () => {
     if (!user || !orderReference) return;
     setIsCheckingStatus(true);
