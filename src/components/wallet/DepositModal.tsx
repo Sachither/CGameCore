@@ -20,6 +20,10 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
   const [orderReference, setOrderReference] = useState<string | null>(null);
   
   const fiatSupported = false; // ["NG", "GH", "KE", "ZA"].includes(profile?.country || "");
+  const numericUsd = Number(amountUsd) || 0;
+  const coinsGenerated = Math.floor(numericUsd * 100);
+  const minRequired = paymentMethod === 'CRYPTO' ? 1 : 1; // Testing: Reduced to $1.00 for SOL/LTC
+  const isInvalid = numericUsd > 0 && numericUsd < minRequired;
 
   // 🔒 REGIONAL GATE: Force Crypto for non-fiat regions
   React.useEffect(() => {
@@ -28,12 +32,45 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
     }
   }, [profile?.country, fiatSupported]);
 
+  // 🚀 SUCCESS SYNC: Auto-check on mount if we came back with success=true
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+       const urlParams = new URLSearchParams(window.location.search);
+       if (urlParams.get('success') === 'true' && isOpen) {
+          setSuccess(true);
+       }
+    }
+  }, [isOpen]);
+
+  const handleManualCheck = async () => {
+    if (!user || !orderReference) return;
+    setIsCheckingStatus(true);
+    setStatusMessage("Checking with NowPayments API...");
+    
+    try {
+      const idToken = await user.getIdToken();
+      const result = await checkNowPaymentStatusAction(idToken, orderReference);
+      
+      if (result.success && result.status === 'COMPLETED') {
+        setStatusMessage("Confirmed! Balance updated.");
+        await refreshProfile();
+        // Give a bit of time for the user to see the message
+        setTimeout(() => setStatusMessage(""), 3000);
+      } else {
+        setStatusMessage(result.message || result.error || "Payment still processing.");
+        setTimeout(() => setStatusMessage(""), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+      setStatusMessage("Check failed. Please try again.");
+    } finally {
+      setIsCheckingStatus(false);
+    }
+  };
+
   if (!isOpen) return null;
 
-  const numericUsd = Number(amountUsd) || 0;
-  const coinsGenerated = Math.floor(numericUsd * 100);
-  const minRequired = paymentMethod === 'CRYPTO' ? 1 : 1; // Testing: Reduced to $1.00 for SOL/LTC
-  const isInvalid = numericUsd > 0 && numericUsd < minRequired;
+  if (!isOpen) return null;
 
   const loadPaystack = () => {
     return new Promise((resolve) => {
@@ -117,41 +154,7 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
     }
   };
 
-  const handleManualCheck = async () => {
-    if (!user || !orderReference) return;
-    setIsCheckingStatus(true);
-    setStatusMessage("Checking with NowPayments API...");
-    
-    try {
-      const idToken = await user.getIdToken();
-      const result = await checkNowPaymentStatusAction(idToken, orderReference);
-      
-      if (result.success && result.status === 'COMPLETED') {
-        setStatusMessage("Confirmed! Balance updated.");
-        await refreshProfile();
-        // Give a bit of time for the user to see the message
-        setTimeout(() => setStatusMessage(""), 3000);
-      } else {
-        setStatusMessage(result.message || result.error || "Payment still processing.");
-        setTimeout(() => setStatusMessage(""), 4000);
-      }
-    } catch (err) {
-      console.error(err);
-      setStatusMessage("Check failed. Please try again.");
-    } finally {
-      setIsCheckingStatus(false);
-    }
-  };
 
-  // Auto-check on mount if we came back with success=true
-  React.useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('success') === 'true' && isOpen) {
-       setSuccess(true);
-       // We can't know the reference from URL easily without passing it back, 
-       // but if the user keeps the tab open, orderReference might be set.
-    }
-  }, [isOpen]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
