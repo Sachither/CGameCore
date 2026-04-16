@@ -38,6 +38,21 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
        const urlParams = new URLSearchParams(window.location.search);
        if (urlParams.get('success') === 'true' && isOpen) {
           setSuccess(true);
+          
+          // Recovery Logic: Restore context if lost during redirect
+          if (!orderReference || !amountUsd || amountUsd === 0) {
+            try {
+              const cached = localStorage.getItem('last_crypto_order');
+              if (cached) {
+                const { reference, amount } = JSON.parse(cached);
+                if (reference) setOrderReference(reference);
+                if (amount) setAmountUsd(amount);
+                console.log("[DepositModal] Context recovered from storage:", reference, amount);
+              }
+            } catch (e) {
+              console.warn("[DepositModal] Context recovery failed:", e);
+            }
+          }
        }
     }
   }, [isOpen]);
@@ -140,6 +155,15 @@ export default function DepositModal({ isOpen, onClose }: { isOpen: boolean, onC
         const result = await createNowPaymentInvoiceAction(idToken, numericUsd);
         if (result.success && result.invoice_url) {
            setOrderReference(result.reference || null);
+           
+           // PERSIST CONTEXT: Ensure we remember the amount and reference after redirect
+           if (result.reference) {
+             localStorage.setItem('last_crypto_order', JSON.stringify({
+               reference: result.reference,
+               amount: numericUsd
+             }));
+           }
+
            // Redirect strictly to NowPayments Secure Invoice
            window.location.href = result.invoice_url;
         } else {

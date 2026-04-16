@@ -98,6 +98,7 @@ export async function createNowPaymentInvoiceAction(idToken: string, amountUsd: 
       price_currency: "usd",
       order_id: reference,
       order_description: `Deposit $${amountUsd} USD equivalent for CGameCore Coins`,
+      ipn_callback_url: `${baseUrl}/api/webhooks/nowpayments`,
       success_url: `${baseUrl}/dashboard/wallet?success=true`,
       cancel_url: `${baseUrl}/dashboard/wallet?cancel=true`
     };
@@ -266,12 +267,17 @@ export async function checkNowPaymentStatusAction(idToken: string, reference: st
     if (t?.uid !== uid) return { success: false, error: "Unauthorized access to transaction." };
     if (t?.status === 'COMPLETED') return { success: true, status: 'COMPLETED', alreadyFulfilled: true };
 
+    const invoiceId = t?.nowpayments_invoice_id;
+    if (!invoiceId) return { success: false, error: "NowPayments Invoice ID missing from record." };
+
+    console.log(`[NowPayments Polling] Checking status for Invoice: ${invoiceId}`);
+
     const apiResult = await callNowPaymentsAPI(
-      `https://api.nowpayments.io/v1/payment?order_id=${reference}&limit=1`, 
+      `https://api.nowpayments.io/v1/invoice/${invoiceId}`, 
       "GET"
     );
 
-    if (!apiResult.success || !apiResult.data?.data?.[0]) {
+    if (!apiResult.success || !apiResult.data) {
       return { 
         success: false, 
         error: "Gateway hasn't confirmed this payment on their side yet. Please wait 1-2 minutes.",
@@ -279,26 +285,23 @@ export async function checkNowPaymentStatusAction(idToken: string, reference: st
       };
     }
 
-    const paymentData = apiResult.data.data[0];
-    const { payment_status, price_amount } = paymentData;
+    const gatewayStatus = apiResult.data.status; // finished, paid, confirmed, waiting, expired
+    console.log(`[NowPayments Polling] Gateway status for ${reference}: ${gatewayStatus}`);
 
-    console.log(`[NowPayments Manual Check] Ref: ${reference}, API Status: ${payment_status}`);
-
-    if (payment_status === "finished" || payment_status === "confirmed") {
-       const amountUsd = Number(price_amount);
-       const fulfillResult = await internalFulfillCryptoDeposit(reference, amountUsd);
-       
-       if (fulfillResult.success) {
-         return { success: true, status: 'COMPLETED', coinsAdded: fulfillResult.coinsAdded };
-       } else {
-         return { success: false, error: fulfillResult.error };
-       }
+    if (gatewayStatus === 'finished' || gatewayStatus === 'confirmed' || gatewayStatus === 'paid') {
+      // 🚀 FAIL-SAFE FULFILLMENT: Run atomic update
+      const fulfillment = await internalFulfillCryptoDeposit(reference, t.fiatAmount || (t.amount / 100));
+      if (fulfillment.success) {
+        return { success: true, status: 'COMPLETED', message: "Balance synced! Welcome back." };
+      } else {
+        return { success: false, error: fulfillment.error || "Fulfillment loop error." };
+      }
     }
 
     return { 
       success: true, 
-      status: payment_status, 
-      message: `Payment is currently '${payment_status}'. Please wait for confirmation.` 
+      status: gatewayStatus, 
+      message: `Status is '${gatewayStatus}'. Please wait for network confirmation.` 
     };
 
   } catch (err: any) {
