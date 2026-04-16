@@ -152,8 +152,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             // AUTO-REDIRECT: If on auth pages, move to dashboard
             if (pathname === '/login' || pathname === '/register' || pathname === '/') {
-              console.log("[AuthProvider] Session active. Entering Dashboard...");
-              router.push('/dashboard');
+              console.log("[AuthProvider] Session active. Redirecting to Dashboard...");
+              router.replace('/dashboard');
             }
           } else {
              // 🔒 [SECURITY] PHASE 7: Secure self-healing profile creation

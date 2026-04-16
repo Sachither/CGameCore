@@ -33,6 +33,11 @@ export default function LoginForm() {
       setError("LOGGING IN TO CORE...");
       await signInWithEmailAndPassword(auth, email, password);
       setError("SUCCESS! SYNCING PROFILE...");
+      
+      // FAIL-SAFE: If the redirect takes more than 10s, release the button
+      setTimeout(() => {
+        setLoading(false);
+      }, 10000);
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/configuration-not-found') {

@@ -11,6 +11,16 @@ export default function WalletBalanceCard() {
   const [isWithdrawOpen, setWithdrawOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   
+  // 🚀 UX FIX: Auto-open modal on success redirect
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('success') === 'true') {
+        setDepositOpen(true);
+      }
+    }
+  }, []);
+  
   const balance = profile?.balanceCoins || 0;
 
   const handleSync = async () => {
