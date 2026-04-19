@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { Suspense } from "react";
 import Link from "next/link";
 import WalletCard from "@/components/dashboard/WalletCard";
 import GameCategoryGrid from "@/components/dashboard/GameCategoryGrid";
@@ -7,6 +7,7 @@ import LiveChallengeList from "@/components/dashboard/LiveChallengeList";
 import CombatInterestHub from "@/components/dashboard/CombatInterestHub";
 import ActiveTournamentsTable from "@/components/dashboard/ActiveTournamentsTable";
 import NotificationTray from "@/components/dashboard/NotificationTray";
+import PromoTournamentCard from "@/components/promo/PromoTournamentCard";
 import { useAuth } from "@/components/auth/AuthProvider";
 import DepositRecoveryHeartbeat from "@/components/wallet/DepositRecoveryHeartbeat";
 import RegionGate from "@/components/dashboard/RegionGate";
@@ -15,9 +16,10 @@ export default function DashboardPage() {
   const { user, profile } = useAuth();
 
   return (
-    <div className="w-full max-w-6xl mx-auto">
-      <RegionGate />
-      <DepositRecoveryHeartbeat />
+    <Suspense fallback={<div className="w-full max-w-6xl mx-auto h-[500px] animate-pulse bg-white/5 rounded-lg border border-white/10" />}>
+      <div className="w-full max-w-6xl mx-auto">
+        <RegionGate />
+        <DepositRecoveryHeartbeat />
       <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl md:text-5xl font-black text-main italic tracking-tighter uppercase leading-none">
@@ -40,11 +42,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <PromoTournamentCard />
       <WalletCard />
       <GameCategoryGrid />
       <LiveChallengeList />
       <CombatInterestHub />
-      <ActiveTournamentsTable />
-    </div>
+        <ActiveTournamentsTable />
+      </div>
+    </Suspense>
   );
 }

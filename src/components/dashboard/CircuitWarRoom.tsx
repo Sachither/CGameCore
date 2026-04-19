@@ -59,6 +59,16 @@ export default function CircuitWarRoom({
       return true;
    });
 
+   // Deduplicate matches by round to prevent displaying multiple Phantom Matches if the engine previously spawned duplicates
+   const uniqueDisplayMatches = displayMatches.reduce((acc: Match[], current) => {
+      const isDuplicate = acc.find(m => m.round === current.round && m.leg === current.leg);
+      if (!isDuplicate) {
+         // Prefer newer matches typically (if they have created at timestamps)
+         acc.push(current);
+      }
+      return acc;
+   }, []);
+
    const handleIntervention = async (mId: string) => {
       if (!idToken || intervening) return;
       const reason = prompt("Describe the tactical blockage (e.g., Opponent no-show, Score dispute):");
@@ -184,14 +194,14 @@ export default function CircuitWarRoom({
                            <h2 className="text-[11px] font-black text-accent uppercase tracking-[0.5em] italic">Active Mission Directives</h2>
                         </div>
 
-                        {displayMatches.length > 0 ? (
+                        {uniqueDisplayMatches.length > 0 ? (
                            <div className="space-y-6">
-                              {displayMatches.length > 1 && (
+                              {uniqueDisplayMatches.length > 1 && (
                                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] italic mb-6 border-l-2 border-accent pl-4">
                                     Multiple operational sectors active. Engage objectives sequentially.
                                  </p>
                               )}
-                              {displayMatches.map(m => renderMissionCard(m))}
+                              {uniqueDisplayMatches.map(m => renderMissionCard(m))}
                            </div>
                         ) : playerStatus?.isEliminated ? (
                            <div className="py-12 space-y-6">

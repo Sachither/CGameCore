@@ -39,7 +39,7 @@ export default function PrivacyPolicy() {
         <section>
           <h2 className="text-xl font-black text-white uppercase tracking-widest mb-4 italic">3. Data Protection and Vault Security</h2>
           <p className="leading-relaxed text-sm">
-            CGameCore employs robust encryption for databasing user identities and transaction ledgers. We do not store raw credit card or banking infrastructure data on our own servers. Payment processing is entirely handled by compliant, secure third-party financial aggregators (e.g., Paystack).
+            CGameCore employs robust encryption for databasing user identities and transaction ledgers. We do not store raw credit card or banking infrastructure data on our own servers. Payment processing is entirely handled by compliant, secure third-party financial aggregators (e.g., Flutterwave).
           </p>
         </section>
 

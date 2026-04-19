@@ -1,14 +1,15 @@
 "use client";
 import React, { useState } from 'react';
 import { Match, setReadyStatus, respondToHostRole, executeMatchClosure, updateRoomCode } from "@/lib/match-service";
-import { adminResolveMatchAction } from "@/app/actions/match-actions";
+import { adminResolveMatchAction, pingOpponentAction } from "@/app/actions/match-actions";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { 
   UserCheck, UserX, Copy, Loader2, CheckCircle2, 
   Clock, Flame, ShieldAlert, Server, Shield,
-  Gavel,
+  Gavel, Trophy,
   Zap,
 } from "lucide-react";
+
 import { useToast } from "@/context/ToastContext";
 import SubmitResultModal from "./SubmitResultModal";
 import DisputeModal from "./DisputeModal";
@@ -28,6 +29,8 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const [roomCode, setRoomCode] = useState("");
   const [codeCopied, setCodeCopied] = useState(false);
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
+
+  const hasGhostOpponent = match?.players ? Object.values(match.players).some(p => p.username === 'GHOST' && p.uid !== currentUserUid) : false;
 
   React.useEffect(() => {
     const hasResolutionTimer = (match?.status === 'RESOLVING' || match?.status === 'WAITING_FOR_OPPONENT') && match?.resolutionEndTime;
@@ -76,6 +79,78 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
     const intv = setInterval(updateTimer, 1000);
     return () => clearInterval(intv);
   }, [match?.status, match?.resolutionEndTime, match?.expiresAt, currentUserUid, user]);
+  React.useEffect(() => {
+    if (timerSeconds !== 0 || match?.status === 'CLOSED' || match?.status === 'COMPLETED') return;
+
+    // GHOST MATCH: Auto-claim immediately at t=0, no button, no delay
+    if (hasGhostOpponent && currentUserUid && match.players[currentUserUid] && user && match.id) {
+      const autoClaimGhost = async () => {
+        if (loading) return;
+        setLoading(true);
+        try {
+          const idToken = await user.getIdToken();
+          const { claimTechnicalWinAction } = await import("@/app/actions/match-actions");
+          const res = await claimTechnicalWinAction(idToken, match.id!);
+          if (res.success) {
+            toast.success("TOURNAMENT VICTORY", "You advance — Ghost opponent auto-eliminated.");
+            setTimeout(() => { window.location.href = "/dashboard"; }, 2000);
+          } else {
+            console.warn("[Ghost Auto-Claim]", (res as any).error);
+          }
+        } catch (err: any) {
+          console.error("Ghost auto-claim failed:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      autoClaimGhost();
+      return;
+    }
+
+    // STANDARD: Wait 20 seconds after expiry then auto-resolve
+    const timeout = setTimeout(async () => {
+      if (!match.id || !user || loading) return;
+      const allPlayers = Object.values(match.players);
+      const readyCount = allPlayers.filter(p => p.ready).length;
+      const claimCount = allPlayers.filter(p => (p as any).claim).length;
+      const me = match.players[currentUserUid || ''];
+      const myReady = me?.ready;
+
+      try {
+        setLoading(true);
+        const idToken = await user.getIdToken();
+        if (myReady && readyCount === 1) {
+          const { claimTechnicalWinAction } = await import("@/app/actions/match-actions");
+          await claimTechnicalWinAction(idToken, match.id!);
+          toast.success("VICTORY SECURED", "Opponent forfeited by no-show (Auto-Resolved).");
+        } else if (readyCount === 0 || (readyCount === allPlayers.length && claimCount === 0)) {
+          const { applyExpirationExtractionAction } = await import("@/app/actions/match-actions");
+          await applyExpirationExtractionAction(idToken, match.id!);
+          toast.error("MUTUAL FORFEIT", "Extraction protocol initiated (Auto-Resolved).");
+        } else {
+          // If consensus hasn't been reached yet but we are timed out, we can't auto-resolve blindly.
+          // The background listeners will handle any late incoming results.
+        }
+      } catch (err: any) {
+        console.error("Auto-resolve failed", err);
+      } finally {
+        setLoading(false);
+      }
+    }, 20000); // 20 second grace window
+
+    return () => clearTimeout(timeout);
+  }, [timerSeconds, match?.status, match?.id, user, currentUserUid, loading, hasGhostOpponent]);
+
+
+  // Auto-redirect ALL users when match closes (prevents clock skew issue where only 1 user exits)
+  React.useEffect(() => {
+    if ((match?.status === 'CLOSED' || match?.status === 'COMPLETED') && currentUserUid && match.players[currentUserUid]) {
+      const timer = setTimeout(() => {
+        window.location.href = "/dashboard";
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [match?.status, currentUserUid, match.players]);
 
   if (!match) return null;
 
@@ -90,6 +165,8 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const allPlayers = Object.values(match.players);
   const targetPlayers = match.maxPlayers || 2;
   const isGatheringLobby = (match.format === 'tournament' || match.format === 'league') && (match.maxPlayers || 2) > 2;
+  
+  // Check if current user is facing a ghost opponent (in tournament finals)
 
   const handleHostResponse = async (action: 'ACCEPT' | 'PASS') => {
     if (!currentUserUid || !match.id || !user) return;
@@ -342,11 +419,11 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
         <div className="bg-surface border border-surface-border rounded-sm p-4">
           <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3">Data Uplink Status</h4>
           <div className="space-y-3">
-            {allPlayers.map(p => {
+            {Object.entries(match.players).map(([uid, p], idx) => {
                const hasClaimed = !!(p as any).claim;
-               const isMe = p.uid === currentUserUid;
+               const isMe = uid === currentUserUid;
                return (
-                 <div key={p.uid} className="flex items-center justify-between border-b border-surface-border/50 pb-2 last:border-0 last:pb-0">
+                 <div key={uid} className="flex items-center justify-between border-b border-surface-border/50 pb-2 last:border-0 last:pb-0">
                    <span className={`text-xs font-black uppercase italic ${isMe ? 'text-accent' : 'text-white'}`}>{p.username} {isMe && '(You)'}</span>
                    <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-sm ${hasClaimed ? (isMe ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20') : 'bg-surface-hover text-gray-500 border border-surface-border'}`}>
                      {hasClaimed ? (isMe ? 'DATA UPLOADED' : 'OPPONENT HAS SUBMITTED - URGENT') : 'AWAITING UPLOAD'}
@@ -359,7 +436,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
       )}
 
       <div className="flex flex-col gap-3">
-        {(match.status === 'WAITING' || match.status === 'READY') && isPlayerInMatch && (() => {
+        {(match.status === 'WAITING' || match.status === 'READY') && isPlayerInMatch && !hasGhostOpponent && (() => {
            // Distinguish: main gathering lobby (12/16 players) vs spawned 2-player circuit duel
            
            if (isGatheringLobby) {
@@ -413,8 +490,18 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
               </button>
            );
         })()}
+        {hasGhostOpponent && match.status !== 'CLOSED' && match.status !== 'COMPLETED' && (
+          <div className="bg-accent/10 border-2 border-accent p-5 rounded-sm shadow-[0_0_30px_rgba(0,255,102,0.15)] animate-in fade-in zoom-in">
+            <div className="flex items-center gap-3 mb-2">
+              <Trophy className="w-5 h-5 text-accent" />
+              <h3 className="text-accent font-black uppercase tracking-tighter text-lg italic">Auto-Victory Pending</h3>
+            </div>
+            <p className="text-[10px] text-gray-300 font-bold uppercase leading-relaxed tracking-tight">
+              Your opponent is a Ghost placeholder. You will be awarded the victory automatically when the countdown reaches zero — no action required.
+            </p>
+          </div>
+        )}
 
-        {/* GATHERING LOBBY DEPLOYED STATE */}
         {(() => {
            const targetId = (match as any).circuitId || (match as any).leagueId;
            if (isGatheringLobby && (match.status === 'IN_PROGRESS' || match.status === 'CLOSED' || match.status === 'COMPLETED')) {
@@ -446,7 +533,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
               <Flame className={`w-4 h-4 ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-500' : 'text-accent'} animate-pulse`} /> 
               {isResolutionTimer 
                 ? (match.status === 'WAITING_FOR_OPPONENT' ? 'Strict Forfeit Timer' : 'Final Validation Countdown')
-                : 'Tactical Extraction Deadline'}
+                : (hasGhostOpponent ? 'AUTO-VICTORY COUNTDOWN' : 'Tactical Extraction Deadline')}
             </h4>
 
             <div className={`text-6xl font-black ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-400 drop-shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-white drop-shadow-[0_0_10px_rgba(0,255,102,0.4)]'} italic tracking-tighter tabular-nums z-10`}>
@@ -472,8 +559,12 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                                      const { claimTechnicalWinAction } = await import("@/app/actions/match-actions");
                                      const idToken = await user.getIdToken();
                                      const res = await claimTechnicalWinAction(idToken, match.id);
-                                     if (res.success) toast.success("VICTORY SECURED", "Opponent forfeited by no-show.");
-                                     else toast.error("Error", (res as any).error);
+                                     if (res.success) {
+                                        toast.success("VICTORY SECURED", "Opponent forfeited by no-show.");
+                                        setTimeout(() => { window.location.href = "/dashboard"; }, 1000);
+                                     } else {
+                                        toast.error("Error", (res as any).error);
+                                     }
                                   } catch (e: any) { toast.error("Error", e.message); }
                                   finally { setLoading(false); }
                                }}
@@ -520,7 +611,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
           </div>
         )}
 
-        {['IN_PROGRESS', 'RESOLVING', 'WAITING_FOR_OPPONENT'].includes(match.status) && isPlayerInMatch && !isGatheringLobby && (
+        {['IN_PROGRESS', 'RESOLVING', 'WAITING_FOR_OPPONENT', 'READY'].includes(match.status) && isPlayerInMatch && !hasGhostOpponent && (!isGatheringLobby || (match as any).isPromo || match.format === 'br') && (
            <>
               {(me as any)?.claim ? (
                 <div className="flex flex-col gap-2 w-full">
@@ -544,9 +635,36 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
         )}
 
         {(match.status === 'IN_PROGRESS' || match.status === 'WAITING' || match.status === 'READY' || match.status === 'RESOLVING' || match.status === 'WAITING_FOR_OPPONENT') && isPlayerInMatch && !isGatheringLobby && (
-          <button onClick={() => setDisputeOpen(true)} className="w-full bg-black border border-surface-border text-gray-500 hover:border-red-500/50 hover:text-red-500 font-bold uppercase tracking-widest py-4 rounded-sm text-xs transition-colors shadow-lg flex items-center justify-center gap-2">
-            Dispute / Report
-          </button>
+          <div className="space-y-3">
+             <button 
+               onClick={async () => {
+                 if (!user || loading) return;
+                 setLoading(true);
+                 try {
+                    const idToken = await user.getIdToken();
+                    const res = await pingOpponentAction(idToken, match.id!);
+                    if (res.success) {
+                       toast.success("TACTICAL PING SENT", "Opponent notified of your presence.");
+                    } else {
+                       toast.error("Ping Failed", (res as any).error || "Cooldown active.");
+                    }
+                 } catch (e) {
+                    console.error(e);
+                 } finally {
+                    setLoading(false);
+                 }
+               }}
+               disabled={loading}
+               className="w-full bg-accent/5 border border-accent/20 hover:border-accent hover:bg-accent/10 text-accent font-black uppercase tracking-widest py-3 rounded-sm text-[10px] transition-all flex items-center justify-center gap-2 group"
+             >
+                <Zap className="w-3.5 h-3.5 group-hover:animate-pulse" />
+                Ping Opponent
+             </button>
+             
+             <button onClick={() => setDisputeOpen(true)} className="w-full bg-black border border-surface-border text-gray-500 hover:border-red-500/50 hover:text-red-500 font-bold uppercase tracking-widest py-4 rounded-sm text-xs transition-colors shadow-lg flex items-center justify-center gap-2">
+               Dispute / Report
+             </button>
+          </div>
         )}
 
       </div>

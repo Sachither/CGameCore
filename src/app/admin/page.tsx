@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getPlatformStatsAction, wipeCombatQueueAction } from "@/app/actions/admin-actions";
-import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink, RefreshCw, Eraser, ShieldAlert, Trophy } from "lucide-react";
+import { createPromoEventAction } from "@/app/actions/promo-actions";
+import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink, RefreshCw, Eraser, ShieldAlert, Trophy, Plus, Settings } from "lucide-react";
 import Link from "next/link";
 
 interface Stats {
@@ -119,6 +120,102 @@ function WipeButton({ queueId, label, icon: Icon }: { queueId: string; label: st
         </div>
       )}
     </>
+  );
+}
+
+function PromoDeploymentCenter() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    game: 'EFOOTBALL' as 'EFOOTBALL' | 'CODM',
+    limit: 128,
+    prizeUSD: 35,
+    prizeNGN: 50000
+  });
+
+  const handleLaunch = async () => {
+    if (!user) return;
+    if (!confirm(`DEPLOY PROTOCOL: This will launch a live ${formData.game} promo for ${formData.limit} players. Proceed?`)) return;
+    
+    setLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await createPromoEventAction(idToken, formData.game, formData.limit, formData.prizeUSD, formData.prizeNGN);
+      if (res.success) {
+        alert("PROMO DEPLOYED SUCCESSFULLY. Monitor participant influx on the dashboard.");
+      } else {
+        alert("DEPLOYMENT FAILED: " + (res as any).error);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div className="bg-[#0a0a0a] border border-accent/20 p-8 rounded-sm mb-10 relative overflow-hidden group shadow-[0_0_40px_rgba(0,255,102,0.05)]">
+      <div className="absolute top-0 right-0 p-4 opacity-10">
+         <Flame className="w-24 h-24 text-accent" />
+      </div>
+
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-10 relative z-10">
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-4">
+             <Trophy className="w-5 h-5 text-accent" />
+             <h2 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none">Promo Deployment Center</h2>
+          </div>
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed mb-6">
+             Initialize high-growth promotional events. Use a small limit (4-8) for system testing before official 100/128-player launch.
+          </p>
+
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-1">
+               <label className="text-[8px] font-black text-gray-600 uppercase tracking-widest px-1">Game Matrix</label>
+               <select 
+                 value={formData.game}
+                 onChange={(e) => setFormData({...formData, game: e.target.value as any, limit: e.target.value === 'EFOOTBALL' ? 128 : 100})}
+                 className="w-full bg-black border border-white/10 p-3 rounded-sm text-[10px] font-bold text-white outline-none focus:border-accent"
+               >
+                 <option value="EFOOTBALL">eFootball (Knockout)</option>
+                 <option value="CODM">CODM (Battle Royale)</option>
+               </select>
+            </div>
+            
+            <div className="space-y-1">
+               <label className="text-[8px] font-black text-gray-600 uppercase tracking-widest px-1">Participant Limit</label>
+               <input 
+                 type="number"
+                 value={formData.limit}
+                 onChange={(e) => setFormData({...formData, limit: parseInt(e.target.value)})}
+                 className="w-full bg-black border border-white/10 p-3 rounded-sm text-[10px] font-bold text-white outline-none focus:border-accent"
+                 placeholder="128"
+               />
+            </div>
+
+            <div className="space-y-1">
+               <label className="text-[8px] font-black text-gray-600 uppercase tracking-widest px-1">Prize pool (USD)</label>
+               <input 
+                 type="number"
+                 value={formData.prizeUSD}
+                 onChange={(e) => setFormData({...formData, prizeUSD: parseInt(e.target.value)})}
+                 className="w-full bg-black border border-white/10 p-3 rounded-sm text-[10px] font-bold text-white outline-none focus:border-accent"
+                 placeholder="35"
+               />
+            </div>
+
+            <div className="mt-auto px-1">
+               <button 
+                 onClick={handleLaunch}
+                 disabled={loading}
+                 className="w-full flex items-center justify-center gap-2 bg-accent hover:bg-accent-aware text-black py-3 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all"
+               >
+                 {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <><Plus className="w-3.5 h-3.5" /> Deploy Promo</>}
+               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

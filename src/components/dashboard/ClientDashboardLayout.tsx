@@ -178,6 +178,8 @@ export default function ClientDashboardLayout({ children }: { children: React.Re
         <main className="flex-1 p-4 sm:p-6 lg:p-10 pb-32 w-full max-w-full overflow-x-hidden min-w-0">
           {children}
         </main>
+        
+        {/* Real-time Global Elements */}
       </div>
     </div>
   );

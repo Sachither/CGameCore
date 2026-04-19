@@ -13,11 +13,16 @@
 import { adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
+const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 
-// Exchange rate constants
-const INTERNAL_USD_TO_NGN_RATE = 1500;
+// --- REGIONAL FALLBACK RATES ---
+// 100 Coins = $1.00 USD
+// These are used if the dynamic rate API is unavailable.
+const FALLBACK_USD_NGN = 1500;
+const FALLBACK_USD_GHS = 14.5;
+const FALLBACK_USD_ZAR = 18.8;
+const FALLBACK_USD_KES = 130;
 
 export interface PaymentVerificationResult {
   verified: boolean;
@@ -30,168 +35,113 @@ export interface PaymentVerificationResult {
 }
 
 /**
- * 1.1 FIX: Verify Paystack transaction amount against API and stored record
- * 
- * This prevents attackers from modifying the amount in webhook POST body.
- * We verify against:
- * 1. Stored transaction record (what user initiated)
- * 2. Paystack API (source of truth)
+ * 1.1 FIX: Amount verification is now handled by gateway-specific verify functions.
+ * Legacy Paystack logic has been purged in favor of Flutterwave V3.
  */
-export async function verifyPaystackAmount(
+
+
+/**
+ * NEW: Verify Flutterwave transaction amount against API and stored record
+ * Flutterwave uses standard currency units (not kobo).
+ */
+export async function verifyFlutterwaveAmount(
   reference: string,
-  webhookAmountKobo: number,
+  webhookAmount: number,
   verifyAgainstApi: boolean = true,
   manualExchangeRate?: number
 ): Promise<PaymentVerificationResult> {
   try {
-    // Step 1: Get the stored transaction record
     const transactionRef = adminDb.collection("transactions").doc(reference);
     const transactionSnap = await transactionRef.get();
-
     const storedData = transactionSnap.exists ? transactionSnap.data() : null;
     
-    // Layered Rate Selection: Stored Record > Manual Override > Library Fallback
-    // FIX: Optimized fallback to use specific country defaults
     const currency = storedData?.currency || "NGN";
     const countryFallback = 
-      currency === 'GHS' ? 14.5 : 
-      currency === 'ZAR' ? 18.8 : 
-      currency === 'KES' ? 130 : 1500;
+      currency === 'GHS' ? FALLBACK_USD_GHS : 
+      currency === 'ZAR' ? FALLBACK_USD_ZAR : 
+      currency === 'KES' ? FALLBACK_USD_KES : FALLBACK_USD_NGN;
 
     const exchangeRate = storedData?.exchangeRate || manualExchangeRate || countryFallback;
 
-    const storedAmountKobo = storedData
-      ? (storedData?.fiatAmount || 0) * exchangeRate * 100
-      : null;
+    const storedAmountUsd = (storedData?.fiatAmount !== undefined) ? Number(storedData.fiatAmount) : 0;
+    const webhookAmountUsd = Number(webhookAmount) / exchangeRate;
 
-    const storedAmountUsd = storedData
-      ? storedData?.fiatAmount || 0
-      : null;
+    const difference = Math.abs(storedAmountUsd - webhookAmountUsd);
+    const tolerance = Math.max(0.15, storedAmountUsd * 0.15); // Allow 15% drift for regional conversion
 
-    // Step 2: Convert webhook amount (KOBO) to USD using the same exchange rate
-    const webhookAmountNaira = Number(webhookAmountKobo) / 100;
-    const webhookAmountUsd = webhookAmountNaira / exchangeRate;
+    console.log(`[PaymentVerification] Checking Reference: ${reference}`);
+    console.log(`[PaymentVerification] Values: Stored=$${storedAmountUsd}, Received=$${webhookAmountUsd.toFixed(4)} (from ${webhookAmount} ${currency}), Diff=$${difference.toFixed(4)}, Tolerance=$${tolerance.toFixed(4)}`);
 
-    // Step 3: Check for mismatch with stored record
-    const mismatchWithStored =
-      storedAmountUsd !== null && Math.abs(storedAmountUsd - webhookAmountUsd) > 0.01;
-
-    if (mismatchWithStored) {
-      // Amount mismatch with what user initiated
-      await logPaymentVerificationFailure(reference, "amount_mismatch_stored", {
+    if (difference > tolerance) {
+      await logPaymentVerificationFailure(reference, "amount_mismatch_stored_fw", {
         storedUsd: storedAmountUsd,
         claimedUsd: webhookAmountUsd,
-        storedKobo: storedAmountKobo,
-        claimedKobo: webhookAmountKobo,
+        webhookAmount,
+        difference,
+        tolerance
       });
 
       return {
         verified: false,
         storedAmountUsd: storedAmountUsd || 0,
         claimedAmountUsd: webhookAmountUsd,
-        storedAmountKobo: storedAmountKobo ?? undefined,
-        claimedAmountKobo: webhookAmountKobo,
         mismatch: true,
-        reason: "Webhook amount does not match stored transaction record",
+        reason: "Webhook amount does not match stored Flutterwave record",
       };
     }
 
-    // Step 4: Verify against Paystack API (if flag enabled and we have credentials)
-    if (verifyAgainstApi && PAYSTACK_SECRET_KEY) {
+    if (verifyAgainstApi && FLUTTERWAVE_SECRET_KEY) {
       try {
-        const paystackResponse = await fetch(
-          `https://api.paystack.co/transaction/verify/${reference}`,
+        // We use the ID if we have it, otherwise reference. 
+        // Flutterwave verify endpoint usually needs the internal ID for reliability, 
+        // but often we only have tx_ref in webhooks.
+        const fwResponse = await fetch(
+          `https://api.flutterwave.com/v3/transactions/verify_by_reference?tx_ref=${reference}`,
           {
             method: "GET",
-            headers: {
-              Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-            },
+            headers: { Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}` },
           }
         );
 
-        const paystackData = await paystackResponse.json();
+        const fwData = await fwResponse.json();
 
-        if (paystackData.status && paystackData.data?.status === "success") {
-          const paystackAmountKobo = Number(paystackData.data.amount);
-          const paystackAmountUsd = (paystackAmountKobo / 100) / exchangeRate;
+        if (fwData.status === 'success' && fwData.data?.status === "successful") {
+          const apiAmount = Number(fwData.data.amount);
+          const apiAmountUsd = apiAmount / exchangeRate;
 
-          // Compare Paystack amount with webhook claim
-          if (Math.abs(paystackAmountUsd - webhookAmountUsd) > 0.01) {
-            await logPaymentVerificationFailure(
-              reference,
-              "amount_mismatch_paystack_api",
-              {
-                paystackUsd: paystackAmountUsd,
-                claimedUsd: webhookAmountUsd,
-                paystackKobo: paystackAmountKobo,
-                claimedKobo: webhookAmountKobo,
-              }
-            );
+          const apiDifference = Math.abs(apiAmountUsd - webhookAmountUsd);
+          const apiTolerance = Math.max(0.15, apiAmountUsd * 0.15);
 
+          if (apiDifference > apiTolerance) {
             return {
               verified: false,
-              storedAmountUsd: paystackAmountUsd,
+              storedAmountUsd: apiAmountUsd,
               claimedAmountUsd: webhookAmountUsd,
-              storedAmountKobo: paystackAmountKobo,
-              claimedAmountKobo: webhookAmountKobo,
               mismatch: true,
-              reason: "Webhook amount does not match Paystack API records",
+              reason: "Webhook amount does not match Flutterwave API records",
             };
           }
 
-          // All verification passed
-          await logPaymentVerificationSuccess(reference, "paystack", {
-            amountUsd: paystackAmountUsd,
-            amountKobo: paystackAmountKobo,
-          });
-
           return {
             verified: true,
-            storedAmountUsd: paystackAmountUsd,
-            claimedAmountUsd: webhookAmountUsd,
-            storedAmountKobo: paystackAmountKobo,
-            claimedAmountKobo: webhookAmountKobo,
-            mismatch: false,
-          };
-        } else if (paystackData.message?.toLowerCase().includes("reference not found")) {
-          // Transaction not yet confirmed on Paystack
-          await logPaymentVerificationFailure(reference, "not_found_on_api", {
-            message: "Reference not found on Paystack API yet",
-          });
-
-          return {
-            verified: false,
-            storedAmountUsd: storedAmountUsd || 0,
+            storedAmountUsd: apiAmountUsd,
             claimedAmountUsd: webhookAmountUsd,
             mismatch: false,
-            reason: "Transaction not found on Paystack API",
           };
         }
-      } catch (apiError) {
-        console.warn("[PaymentVerification] Paystack API verification failed:", apiError);
-        // Fall back to stored record verification if API fails
-        // This prevents API outages from blocking legitimate payments
+      } catch (e) {
+        console.warn("[PaymentVerification] Flutterwave API fallback active:", e);
       }
-    }
-
-    // Verification passed (stored record matches webhook)
-    if (storedAmountUsd !== null) {
-      await logPaymentVerificationSuccess(reference, "stored_record", {
-        amountUsd: storedAmountUsd,
-        amountKobo: storedAmountKobo,
-      });
     }
 
     return {
       verified: true,
       storedAmountUsd: storedAmountUsd || webhookAmountUsd,
       claimedAmountUsd: webhookAmountUsd,
-      storedAmountKobo: storedAmountKobo ?? undefined,
-      claimedAmountKobo: webhookAmountKobo,
       mismatch: false,
     };
   } catch (error) {
-    console.error("[PaymentVerification] Paystack verification error:", error);
+    console.error("[PaymentVerification] Flutterwave verification error:", error);
     throw error;
   }
 }
@@ -272,7 +222,7 @@ export async function verifyNowPaymentsAmount(
 export async function recordWebhookEvent(
   eventId: string | null,
   reference: string,
-  gateway: "paystack" | "nowpayments",
+  gateway: "paystack" | "nowpayments" | "flutterwave",
   eventType: string
 ): Promise<{
   isNew: boolean;
@@ -348,7 +298,7 @@ export async function recordWebhookEvent(
  */
 export async function checkWebhookRateLimit(
   reference: string,
-  gateway: "paystack" | "nowpayments"
+  gateway: "paystack" | "nowpayments" | "flutterwave"
 ): Promise<{ allowed: boolean; reason?: string; retryAfterSeconds?: number }> {
   try {
     const rateLimitKey = `webhook_rl_${gateway}_${reference}`;

@@ -191,6 +191,12 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow write: if false; 
     }
+    
+    // --- PROMO EVENTS (Campaigns) ---
+    match /promo_events/{promoId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Managed by Server Actions
+    }
 
     // --- LEAGUES (Legacy Tournament Format) ---
     match /leagues/{leagueId} {

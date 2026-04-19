@@ -2,9 +2,12 @@ export default function ChampionPodium({ topUsers }: { topUsers: any[] }) {
   const PodiumCard = ({ rank, user, height, colorClass, highlight }: any) => {
     if (!user) {
       return (
-        <div className={`flex flex-col items-center justify-end ${height} w-full md:w-1/3 opacity-20 px-1 grayscale blur-[1px]`}>
-           <div className="w-12 h-12 bg-surface-hover border border-surface-border rounded-full flex items-center justify-center mb-6">
-              <span className="text-[10px] font-black italic text-sub">#{rank}</span>
+        <div className={`flex flex-col items-center justify-end ${height} w-[32%] md:w-1/3 opacity-30 px-1 grayscale blur-[0.5px]`}>
+           <div className="absolute -top-10 flex flex-col items-center">
+              <span className="text-[10px] font-black text-sub uppercase tracking-[0.3em]">{rank === '2' ? '2ND' : '3RD'}</span>
+           </div>
+           <div className={`w-14 h-14 bg-black border border-surface-border rotate-45 mb-10 flex items-center justify-center opacity-60 shadow-[0_0_15px_rgba(0,0,0,0.5)]`}>
+              <div className="-rotate-45 relative z-10 text-lg font-black italic text-accent shadow-[0_0_10px_rgba(0,255,102,0.3)]">#{rank}</div>
            </div>
            <div className={`w-full bg-gradient-to-t ${colorClass} border border-surface-border rounded-t-sm p-4 h-full flex flex-col items-center justify-center`}>
               <div className="text-[10px] font-black text-sub uppercase tracking-[0.2em] animate-pulse">Recruiting...</div>
@@ -19,7 +22,13 @@ export default function ChampionPodium({ topUsers }: { topUsers: any[] }) {
     return (
       <div className={`flex flex-col items-center justify-end ${height} w-[32%] md:w-1/3 relative group px-0.5 md:px-1`}>
         {/* Animated Ambient Light for Rank 1 */}
-        {highlight && <div className="absolute top-0 w-48 h-48 bg-accent/10 blur-[80px] rounded-full pointer-events-none animate-pulse" />}
+        {highlight ? (
+          <div className="absolute top-0 w-48 h-48 bg-accent/10 blur-[80px] rounded-full pointer-events-none animate-pulse" />
+        ) : (
+          <div className="absolute -top-10 flex flex-col items-center opacity-60">
+             <span className="text-[10px] font-black text-sub uppercase tracking-[0.3em]">{rank === '2' ? '2ND' : '3RD'}</span>
+          </div>
+        )}
 
         {/* Rank 1 Crown */}
         {highlight && (
@@ -92,7 +101,7 @@ export default function ChampionPodium({ topUsers }: { topUsers: any[] }) {
       <PodiumCard
         rank="3"
         user={rank3}
-        height="h-[45%]"
+        height="h-[60%]"
         colorClass="from-surface via-surface-hover to-surface"
       />
     </div>

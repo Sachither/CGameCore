@@ -76,8 +76,9 @@ export default function ActiveTournamentsTable() {
     const unsubCircuits = onSnapshot(qCircuits, (snap) => {
       const docs = snap.docs
         .map(d => {
-          const data = d.data();
-          const quota = data.format === '16_TOURNAMENT' ? 16 : 16;
+          const data = d.id ? d.data() : {};
+          // DYNAMIC QUOTA: Support both 16-player and custom Promo sizes
+          const quota = data.isPromo ? (data.playerIds?.length || 128) : 16;
           return {
             id: d.id,
             game: data.game,
@@ -89,10 +90,11 @@ export default function ActiveTournamentsTable() {
             format: data.format,
             status: data.status,
             isGathering: false,
-            playerIds: data.playerIds || []
-          } as LeagueListing;
+            playerIds: data.playerIds || [],
+            isPromo: data.isPromo
+          } as any;
         })
-        .filter(c => c.status === 'FILLING');
+        .filter(c => ['FILLING', 'KNOCKOUT_Q', 'ACTIVE'].includes(c.status));
       setCircuits(docs);
       
       // Increment loading counter and check if both queries are done
@@ -270,7 +272,8 @@ function LeagueCard({ league: t, progress, onJoin, currentUserUid }: { league: L
   if (t.isGathering) detailHref = `/match/${t.id}`;
   const isCircuit = !t.isGathering;
 
-  const formatLabel = 'ELITE KNOCKOUT (16P)';
+  const isPromo = (t as any).isPromo;
+  const formatLabel = isPromo ? `PROMO RUSH (${t.quota}P)` : 'ELITE KNOCKOUT (16P)';
   
   return (
     <div className="group relative bg-surface border border-surface-border hover:border-accent/40 rounded-sm transition-all overflow-hidden flex flex-col shadow-2xl">

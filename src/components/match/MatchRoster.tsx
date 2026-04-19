@@ -22,7 +22,7 @@ export default function MatchRoster({
   // Gathering lobbies and multi-player formats (FFA, BR, Alcatraz, etc.) 
   // should show the list view even if only 2 players are currently joined.
   const isMultiPlayerView = (match.maxPlayers || 0) > 2 || 
-                            ['FFA', 'ffa', 'br', 'alcatraz', 'tournament', 'league'].includes(match.format);
+                            ['FFA', 'ffa', 'br', 'alcatraz'].includes(match.format);
   const is1v1 = !isMultiPlayerView;
   
   // DEBUG

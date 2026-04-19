@@ -19,48 +19,76 @@ export default function LeaderboardView() {
   useEffect(() => {
     if (!user || !profile) return;
     
-    // Attempt a deep-scan sync only once per session if counters look uninitialized
-    if (profile.totalMatches === undefined || profile.totalMatches === null || (profile.totalMatches === 0 && !profile.totalWins)) {
-      const performSync = async () => {
-        setSyncing(true);
-        console.log(`[Leaderboard] Deep-scanning legacy stats for elite sync...`);
-        try {
-          // Use array-contains filter to satisfy security rules
-          const q = query(
-            collection(db, "matches"),
-            where("playerIds", "array-contains", user.uid),
-            limit(400)
-          );
-          const snap = await getDocs(q);
-          const activeStatuses = ['WAITING', 'READY', 'IN_PROGRESS', 'RESOLVING', 'DISPUTED'];
+    // // Attempt a deep-scan sync only once per session if counters look uninitialized
+    // if (profile.totalMatches === undefined || profile.totalMatches === null || (profile.totalMatches === 0 && !profile.totalWins)) {
+    //   const performSync = async () => {
+    //     setSyncing(true);
+    //     console.log(`[Leaderboard] Deep-scanning legacy stats for elite sync...`);
+    //     try {
+    //       // Use array-contains filter to satisfy security rules
+    //       const q = query(
+    //         collection(db, "matches"),
+    //         where("playerIds", "array-contains", user.uid),
+    //         limit(400)
+    //       );
+    //       const snap = await getDocs(q);
+    //       const activeStatuses = ['WAITING', 'READY', 'IN_PROGRESS', 'RESOLVING', 'DISPUTED'];
           
-          const history = snap.docs
-            .map(d => d.data())
-            .filter(m => {
-              const isInvolved = m.playerIds?.includes(user.uid) || !!m.players?.[user.uid] || m.creatorId === user.uid;
-              const isResolved = !activeStatuses.includes(m.status);
-              return isInvolved && isResolved;
-            });
+    //       const history = snap.docs
+    //         .map(d => d.data())
+    //         .filter(m => {
+    //           const isInvolved = m.playerIds?.includes(user.uid) || !!m.players?.[user.uid] || m.creatorId === user.uid;
+    //           const isResolved = !activeStatuses.includes(m.status);
+    //           return isInvolved && isResolved;
+    //         });
           
-          const totalMatches = history.length;
-          const totalWins = history.filter(m => m.championUid === user.uid).length;
+    //       const totalMatches = history.length;
+    //       const totalWins = history.filter(m => m.championUid === user.uid).length;
           
-          if (totalMatches > 0) {
-            await updateDoc(doc(db, "users", user.uid), {
-              totalMatches,
-              totalWins
-            });
-            console.log(`[Leaderboard] Elite sync complete: ${totalWins}/${totalMatches}`);
-          }
-        } catch (e) {
-          console.error("Deep sync protocol failure:", e);
-        } finally {
-          setSyncing(false);
-        }
-      };
+    //       // --- DEEP TACTICAL SCAN: Recover goals and kills ---
+    //       const eFootballMatches = history.filter(m => m.game === 'EFOOTBALL');
+    //       const eFootballWins = eFootballMatches.filter(m => m.championUid === user.uid).length;
+    //       let totalGoalsFor = 0;
+    //       let totalGoalsAgainst = 0;
+    //       eFootballMatches.forEach(m => {
+    //         const myData = m.players?.[user.uid];
+    //         if (myData) {
+    //           totalGoalsFor += (myData.scoreFor || 0);
+    //           totalGoalsAgainst += (myData.scoreAgainst || 0);
+    //         }
+    //       });
+
+    //       const codmMatches = history.filter(m => m.game === 'CODM');
+    //       const codmWins = codmMatches.filter(m => m.championUid === user.uid).length;
+    //       let totalKills = 0;
+    //       codmMatches.forEach(m => {
+    //         const myData = m.players?.[user.uid];
+    //         if (myData) totalKills += (myData.kills || 0);
+    //       });
+
+    //       if (totalMatches > 0) {
+    //         await updateDoc(doc(db, "users", user.uid), {
+    //           totalMatches,
+    //           totalWins,
+    //           [`stats.EFOOTBALL.matches`]: eFootballMatches.length,
+    //           [`stats.EFOOTBALL.wins`]: eFootballWins,
+    //           [`stats.EFOOTBALL.goalsFor`]: totalGoalsFor,
+    //           [`stats.EFOOTBALL.goalsAgainst`]: totalGoalsAgainst,
+    //           [`stats.CODM.matches`]: codmMatches.length,
+    //           [`stats.CODM.wins`]: codmWins,
+    //           [`stats.CODM.kills`]: totalKills
+    //         });
+    //         console.log(`[Leaderboard] Elite sync complete: ${totalWins}/${totalMatches} matches and ${totalGoalsFor} goals recovered.`);
+    //       }
+    //     } catch (e) {
+    //       console.error("Deep sync protocol failure:", e);
+    //     } finally {
+    //       setSyncing(false);
+    //     }
+    //   };
       
-      performSync();
-    }
+    //   performSync();
+    // }
   }, [user, profile]);
 
   useEffect(() => {

@@ -15,6 +15,9 @@ import {
    initializeCircuit 
 } from "@/lib/match-engine/initialization";
 import { 
+   handlePromoAdvancement 
+} from "@/lib/match-engine/promo-engine";
+import { 
    resolveTechnicalWin, 
    validateAbsoluteVictory,
    resolveDoubleNoShow
@@ -53,7 +56,14 @@ async function internalFinalizeMatchClosure(
   operatorUid: string, // Who triggered it (Admin or Player)
   circuitData?: any // Pass circuit data if already fetched
 ): Promise<{ needsTournamentCleanup: boolean; circuitId?: string }> {
-  const victoryReward = matchData.circuitId ? 0 : Math.floor((matchData.challengeFee * 2) * 0.8);
+  let victoryReward = matchData.circuitId ? 0 : Math.floor((matchData.challengeFee * 2) * 0.8);
+
+  // HARDENING: One-off Promo matches (like CODM BR) that aren't part of a circuit
+  if (matchData.isPromo && !matchData.circuitId && !victoryReward) {
+     const prizeUSD = (matchData as any).prizeUSD || 0;
+     victoryReward = prizeUSD * 100; // $1.00 USD = 100 Coins platform standard
+  }
+
   let needsTournamentCleanup = false;
   let tournamentCleanupCircuitId: string | null = null;
 
@@ -61,19 +71,55 @@ async function internalFinalizeMatchClosure(
     status: 'CLOSED',
     rewardAmount: victoryReward,
     resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
-    championUid // Ensure it's set
+    championUid,
+    isPromo: !!matchData.isPromo || !!circuitData?.isPromo,
+    round: matchData.round || 'NONE'
   });
 
   // 1. Update Core Profile Stats (Universal for all match types)
   // This ensures that tournament/circuit matches still contribute to the user's 
   // "totalMatches" count, which is required for withdrawal eligibility.
   const playerIds = Object.keys(matchData.players);
+  const gameKey = matchData.game; // 'CODM' or 'EFOOTBALL'
+
   for (const pid of playerIds) {
     const userRef = adminDb.collection("users").doc(pid);
     const isWinner = pid === championUid;
-    transaction.update(userRef, {
+    const playerMatchData = (matchData.players as any)[pid];
+
+    // Build tactical stat updates
+    const statsUpdate: any = {
       totalMatches: admin.firestore.FieldValue.increment(1),
       ...(isWinner && { totalWins: admin.firestore.FieldValue.increment(1) })
+    };
+
+    if (gameKey === 'EFOOTBALL') {
+      statsUpdate[`stats.EFOOTBALL.matches`] = admin.firestore.FieldValue.increment(1);
+      statsUpdate[`stats.EFOOTBALL.goalsFor`] = admin.firestore.FieldValue.increment(playerMatchData.scoreFor || 0);
+      statsUpdate[`stats.EFOOTBALL.goalsAgainst`] = admin.firestore.FieldValue.increment(playerMatchData.scoreAgainst || 0);
+      if (isWinner) {
+        statsUpdate[`stats.EFOOTBALL.wins`] = admin.firestore.FieldValue.increment(1);
+      }
+    } else if (gameKey === 'CODM') {
+      statsUpdate[`stats.CODM.matches`] = admin.firestore.FieldValue.increment(1);
+      statsUpdate[`stats.CODM.kills`] = admin.firestore.FieldValue.increment(playerMatchData.kills || 0);
+      if (isWinner) {
+        statsUpdate[`stats.CODM.wins`] = admin.firestore.FieldValue.increment(1);
+      }
+    }
+
+    transaction.update(userRef, statsUpdate);
+  }
+
+  // 1.5 PROMO SYSTEM SYNC (The "Mission Accomplished" Bridge)
+  // If this match or its parent circuit is part of a promotional campaign,
+  // propagate the closure status to the admin deployment record.
+  const promoId = (matchData as any).promoId || circuitData?.promoId;
+  if (promoId) {
+    const promoRef = adminDb.collection("promo_events").doc(promoId);
+    transaction.update(promoRef, {
+      status: 'COMPLETED',
+      finalizedAt: admin.firestore.FieldValue.serverTimestamp()
     });
   }
 
@@ -136,7 +182,14 @@ async function internalFinalizeMatchClosure(
     
     // Knockout Advancement
     else if (matchData.round) {
-      if (matchData.round === 'QR1') {
+      if (circuitData.isPromo) {
+         // --- PROMO ENGINE REDIRECT ---
+         const finalizeResult = await handlePromoAdvancement(transaction, circuitRef, circuitData, matchData.round, championUid, matchRef.id, operatorUid, matchData.game);
+         if (finalizeResult?.needsTournamentCleanup) {
+            needsTournamentCleanup = true;
+            tournamentCleanupCircuitId = matchData.circuitId;
+         }
+      } else if (matchData.round === 'QR1') {
          await handleKnockoutAdvancement(transaction, circuitRef, circuitData, 'QR1', -1, championUid, matchRef.id, operatorUid, matchData.game);
       } else {
          const roundKey = matchData.round.includes('QF') ? 'quarters' : (matchData.round.includes('SF') ? 'semis' : 'final');
@@ -289,6 +342,7 @@ export async function createMatchAction(
         players: { [uid]: { uid, username, avatarId, ready: false, team: 'alpha', inGameName: inGameName || "Unknown" } },
         championUid: null, creatorId: uid, createdAt: admin.firestore.FieldValue.serverTimestamp(),
         weaponClass: game === 'CODM' ? weaponClass : 'NONE', duration, maxPlayers,
+        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 3 * 3600 * 1000)), // 3 hours for regular matches
       };
 
       if (roomCode) matchData.roomCode = roomCode;
@@ -525,6 +579,12 @@ export async function submitMatchResultAction(
 
       if (!matchData.playerIds.includes(uid)) throw new Error("Unauthorized operative.");
       
+      // 🔒 [SECURITY] Prevent modifications to resolved matches IF user already submitted
+      const myData = matchData.players[uid];
+      if ((matchData.status === 'CLOSED' || matchData.status === 'COMPLETED') && (myData as any)?.claim) {
+         throw new Error("Match has already been resolved. Tactical report cannot be modified.");
+      }
+      
       validateAbsoluteVictory(scoreFor || 0, scoreAgainst || 0, matchData.format);
 
       // [SCORE-VERIFICATION] Mirror-Score Lockdown
@@ -559,7 +619,8 @@ export async function submitMatchResultAction(
         ...(requiresAdminReview && { [`players.${uid}.requiresAdminReview`]: true })
       };
 
-      const playerList = Object.values({ ...matchData.players, [uid]: { ...matchData.players[uid], claim } });
+      const updatedPlayers = { ...matchData.players, [uid]: { ...matchData.players[uid], claim } };
+      const playerList = Object.entries(updatedPlayers).map(([pid, p]) => ({ ...(p as any), uid: pid }));
       const winners = playerList.filter(p => (p as any).claim === 'WIN');
       const losers = playerList.filter(p => (p as any).claim === 'LOSS');
       const totalPlayers = Object.keys(matchData.players).length;
@@ -567,43 +628,34 @@ export async function submitMatchResultAction(
 
       const isCircuitMatch = !!matchData.circuitId || ['tournament', '16_TOURNAMENT'].includes(matchData.format);
 
-      // 🔒 [SECURITY] H-006 FIX: Require balanced claims before auto-resolve
-      // Only auto-resolve if: ALL players submitted AND exactly ONE winner AND exactly ONE loser
-      // This prevents winner spoofing where opponent hasn't submitted yet
-      if (totalSubmitted === totalPlayers && winners.length === 1 && losers.length === 1) {
-         // 1.3 FIX: Check if already finalized (or being finalized) to prevent double-payout race
-         if (matchData.status === 'CLOSED') {
-            // Already closed - idempotent return without re-executing payout
-            return;
+      // 🔒 [SECURITY] MULTI-PLAYER CONSENSUS FIX
+      // Auto-resolve if: ALL players submitted AND exactly ONE winner declared
+      if (totalSubmitted === totalPlayers && winners.length === 1) {
+         if (matchData.status !== 'CLOSED') {
+            const attemptId = `finalize_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+            updates.championUid = (winners[0] as any).uid;
+            updates.status = 'CLOSED';
+            updates.finalizationAttemptId = attemptId;
+            
+            const finalizeResult = await internalFinalizeMatchClosure(transaction, matchRef, matchData, (winners[0] as any).uid, uid, circuitData);
+            if (finalizeResult.needsTournamentCleanup && finalizeResult.circuitId) {
+               pendingTournamentCleanup = finalizeResult.circuitId;
+            }
+            
+            if (!isCircuitMatch) needsNuke = true;
          }
-         
-         // --- AUTO-RESOLVE ALL AGREED MATCHES ---
-         // Generate unique attempt ID to prevent re-execution if transaction retries
-         const attemptId = `finalize_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-         
-         updates.championUid = (winners[0] as any).uid;
-         updates.status = 'CLOSED';
-         updates.finalizationAttemptId = attemptId; // Track attempt to prevent re-execution
-         
-         const finalizeResult = await internalFinalizeMatchClosure(transaction, matchRef, matchData, (winners[0] as any).uid, uid, circuitData);
-         if (finalizeResult.needsTournamentCleanup && finalizeResult.circuitId) {
-            pendingTournamentCleanup = finalizeResult.circuitId;
-         }
-         
-         // Only nuke standalone non-circuit matches so bracket histories can keep their Match IDs
-         if (!isCircuitMatch) {
-            needsNuke = true;
-         }
-      } else if (totalSubmitted === totalPlayers && (winners.length > 1 || losers.length > 1)) {
-         // 🔒 DISPUTE DETECTED: Both players claim same result (both WIN or both LOSS)
-         // This is a conflict - match cannot auto-resolve. Must be reviewed manually.
+      } 
+      // 🔒 DISPUTE DETECTED: Conflict (Multiple winners) or Deadlock (Zero winners)
+      else if (totalSubmitted === totalPlayers && (winners.length > 1 || winners.length === 0)) {
          updates.status = 'DISPUTED';
          updates.disputedAt = admin.firestore.FieldValue.serverTimestamp();
          updates.championUid = null;
-      } else if (winners.length > 0 && matchData.status !== 'WAITING_FOR_OPPONENT') {
+      } 
+      // 🕒 PENDING: Awaiting more results
+      else if (winners.length > 0 && matchData.status !== 'WAITING_FOR_OPPONENT' && matchData.status !== 'DISPUTED') {
          updates.status = 'WAITING_FOR_OPPONENT';
          updates.resolutionEndTime = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-         updates.championUid = (winners[0] as any).uid;
+         updates.championUid = (winners[0] as any).uid || null;
       }
 
       transaction.update(matchRef, updates);
@@ -1189,7 +1241,17 @@ export async function claimTechnicalWinAction(idToken: string, matchId: string) 
     await adminDb.runTransaction(async (transaction) => {
       const matchSnap = await transaction.get(matchRef);
       const matchData = matchSnap.data() as Match;
-      if (!matchData.players[uid]?.ready) throw new Error("You must be READY.");
+      
+      // Prevent race conditions and duplicate claims
+      if (matchData.status === 'CLOSED' || matchData.status === 'COMPLETED' || matchData.status === 'RESOLVING') {
+         throw new Error("Match has already been resolved.");
+      }
+
+      const hasGhostOpponent = Object.values(matchData.players).some(p => p.username === 'GHOST');
+      if (!hasGhostOpponent && !matchData.players[uid]?.ready) {
+         throw new Error("You must be READY.");
+      }
+      
       await resolveTechnicalWin(transaction, matchRef, matchData as any as EngineMatch, uid);
     });
     return { success: true };
@@ -1218,10 +1280,24 @@ export async function applyExpirationExtractionAction(idToken: string, matchId: 
          const readyCount = playersList.filter(p => p.ready).length;
          const claimCount = playersList.filter(p => (p as any).claim).length;
 
+         if (matchData.status === 'CLOSED' || matchData.status === 'COMPLETED') return;
+
          if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
             await resolveDoubleNoShow(transaction, matchRef, matchData as any as EngineMatch);
+         } else if (claimCount === 1) {
+            // 🏆 AUTO-RESOLVE: One person submitted, the other vanished. Award win to claimant.
+            const winnerUid = Object.keys(matchData.players).find(pid => !!(matchData.players[pid] as any).claim);
+            if (winnerUid) {
+               const { resolveTechnicalWin } = await import("@/lib/match-engine/validation");
+               await resolveTechnicalWin(transaction, matchRef, matchData as any as EngineMatch, winnerUid);
+            } else {
+               throw new Error("Claimant data missing.");
+            }
          } else {
-            throw new Error("Match has partial readiness or claims. Cannot apply mutual extraction.");
+            // If both submitted, consensus should handled by the standard submit action.
+            // If we hit here, it means they might have conflicting claims or some other edge case.
+            // We'll leave it for manual result submission or tribunal if it hasn't closed yet.
+            return;
          }
       });
       return { success: true };
@@ -1320,6 +1396,82 @@ export async function requestAdminInterventionAction(
     return { success: true };
   } catch (error: any) {
     console.error("[MatchAction] requestIntervention error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * USER ACTION: Ping Opponent (Tactical Alert)
+ * 🔒 [SECURITY] M-010: Enforce 3m cooldown on pings
+ */
+export async function pingOpponentAction(idToken: string, matchId: string) {
+  const { uid, profile } = await getVerifiedIdentity(idToken);
+  const matchRef = adminDb.collection("matches").doc(matchId);
+
+  try {
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const matchSnap = await transaction.get(matchRef);
+      if (!matchSnap.exists) throw new Error("Match not found.");
+      
+      const match = matchSnap.data()!;
+      if (!match.playerIds.includes(uid)) throw new Error("Unauthorized.");
+      if (match.status === 'CLOSED' || match.status === 'COMPLETED') throw new Error("Session closed.");
+
+      // Check Cooldown (3 minutes)
+      const now = Date.now();
+      const lastPing = match.lastPingAt?.toMillis() || 0;
+      const cooldown = 3 * 60 * 1000;
+      
+      if (now - lastPing < cooldown) {
+        const remaining = Math.ceil((cooldown - (now - lastPing)) / 1000);
+        throw new Error(`Ping Cooldown Active: Wait ${remaining}s.`);
+      }
+
+      // Identify Opponent
+      const opponentId = match.playerIds.find((pid: string) => pid !== uid);
+      if (!opponentId) throw new Error("No opponent found.");
+
+      // Update Match with lastPingAt
+      transaction.update(matchRef, {
+        lastPingAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // 4. Send Tactical Ping Signals (Mass Broadcast to ALL participants)
+      const others = match.playerIds.filter((pid: string) => pid !== uid);
+      
+      for (const recipientId of others) {
+        const userRef = adminDb.collection("users").doc(recipientId);
+        
+        // Profile Signal (Real-Time HUD)
+        transaction.update(userRef, {
+          ping: {
+            active: true,
+            matchId: matchId,
+            from: profile.username,
+            message: `${profile.username} is waiting for you in the combat zone!`,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+          }
+        });
+
+        // Historical Record (Notification Inbox)
+        const nRef = userRef.collection("notifications").doc();
+        transaction.set(nRef, {
+          type: 'QUICK_PING',
+          title: 'TACTICAL ALERT',
+          message: `${profile.username} is waiting for you in the combat zone!`,
+          matchId,
+          senderName: profile.username,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      return { success: true };
+    });
+
+    return result;
+  } catch (error: any) {
+    console.error("[PingAction] Failure:", error);
     return { success: false, error: error.message };
   }
 }

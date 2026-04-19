@@ -1,11 +1,13 @@
 "use client";
 import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useToast } from "@/context/ToastContext";
 import { getPendingWithdrawalsAction, adminApproveWithdrawalAction, adminRejectWithdrawalAction, getUserAuditHistoryAction, getPlatformTransactionsAction } from "@/app/actions/admin-actions";
-import { Landmark, Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, User, Search, Target, ShieldAlert, ExternalLink, Trophy, Skull, Calendar, ArrowUpRight, ArrowDownLeft, Wallet, History, ReceiptText } from "lucide-react";
+import { Landmark, Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, User, Search, Target, ShieldAlert, ExternalLink, Trophy, Skull, Calendar, ArrowUpRight, ArrowDownLeft, Wallet, History, ReceiptText, Download, Files } from "lucide-react";
 
 export default function AdminTreasuryPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'WITHDRAWALS' | 'TRANSACTIONS'>('WITHDRAWALS');
   const [tickets, setTickets] = useState<any[]>([]);
   const [platformTransactions, setPlatformTransactions] = useState<any[]>([]);
@@ -22,6 +24,100 @@ export default function AdminTreasuryPage() {
   const [ticketToApprove, setTicketToApprove] = useState<any>(null);
   const [ticketToReject, setTicketToReject] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState("");
+
+  const CRYPTO_NETWORKS: Record<string, string> = {
+    'USDT_TRC20': 'usdttrc20',
+    'USDC_SOL': 'usdcsol',
+    'USDT_POLYGON': 'usdtmatic',
+    'USDT_ETH': 'usdt',
+    'BTC': 'btc',
+    'ETH': 'eth',
+    'LTC': 'ltc',
+    'SOL': 'sol'
+  };
+
+  const downloadCSV = (filename: string, content: string) => {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportBankCSV = () => {
+    // Standard Bank withdrawals (isCrypto = false)
+    const bankMap = [
+      'USDT_TRC20', 'USDC_SOL', 'USDT_POLYGON', 'USDT_ETH', 'BTC', 'ETH', 'LTC', 'SOL'
+    ];
+    const bankTickets = tickets.filter(t => !bankMap.includes(t.bankName));
+    
+    if (bankTickets.length === 0) {
+      toast.error("NO BANK REQUESTS", "No pending bank withdrawals found in the priority queue.");
+      return;
+    }
+
+    const headers = ["account_number", "bank_code", "amount", "currency", "narration", "reference", "legal_name"];
+    const rows = bankTickets.map(t => {
+      // Net Amount (AmountCoins - Fee)
+      const amount = (t.netAmount || (t.amountCoins - 10)) / 100; 
+      return [
+        t.accountNumber,
+        t.bankCode || "058", // Default to GTB if missing
+        amount.toString(),
+        t.currency || "NGN",
+        `CGame Payout: ${t.username}`,
+        t.id,
+        t.legalName ? `"${t.legalName}"` : '"UNVERIFIED"' // Use quotes to protect against commas in names
+      ].join(",");
+    });
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    downloadCSV(`flutterwave_payout_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
+    toast.success("CSV EXPORTED", `Succesfully prepared ${bankTickets.length} bank transfers for Flutterwave.`);
+  };
+
+  const handleExportCryptoCSV = () => {
+    const cryptoMap = [
+      'USDT_TRC20', 'USDC_SOL', 'USDT_POLYGON', 'USDT_ETH', 'BTC', 'ETH', 'LTC', 'SOL'
+    ];
+    const cryptoTickets = tickets.filter(t => cryptoMap.includes(t.bankName));
+    
+    if (cryptoTickets.length === 0) {
+      toast.error("NO CRYPTO REQUESTS", "No pending crypto withdrawals found in the priority queue.");
+      return;
+    }
+
+    const headers = ["address", "amount", "currency", "extra_id"];
+    const rows = cryptoTickets.map(t => {
+      // Fee calculation parity with the UI
+      const cryptoFeeMap: Record<string, number> = {
+        'USDT_TRC20': 100,
+        'USDC_SOL': 10,
+        'USDT_POLYGON': 50,
+        'USDT_ETH': 200,
+        'BTC': 500,
+        'ETH': 300
+      };
+      const fee = cryptoFeeMap[t.bankName] || 100;
+      const netAmount = Math.max(0, (t.amountCoins - fee) / 100);
+      const ticker = CRYPTO_NETWORKS[t.bankName] || t.bankName.toLowerCase();
+
+      return [
+        t.accountNumber, // wallet address
+        netAmount.toString(),
+        ticker,
+        t.extraId || "" // Destination Tag if any
+      ].join(",");
+    });
+
+    const csvContent = [headers.join(","), ...rows].join("\n");
+    downloadCSV(`nowpayments_payout_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
+    toast.success("CSV EXPORTED", `Succesfully prepared ${cryptoTickets.length} crypto transfers for NowPayments.`);
+  };
 
   // Audit States
   const [isAuditOpen, setAuditOpen] = useState(false);
@@ -142,6 +238,25 @@ export default function AdminTreasuryPage() {
             Transaction Ledger
             {activeTab === 'TRANSACTIONS' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-red-400 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />}
          </button>
+         
+         <div className="flex-1" />
+
+         <div className="flex items-center gap-2 mb-3">
+            <button 
+              onClick={handleExportBankCSV}
+              className="px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-sm text-[9px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 transition-all"
+            >
+               <Download className="w-3.5 h-3.5" />
+               Bank CSV
+            </button>
+            <button 
+              onClick={handleExportCryptoCSV}
+              className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/20 rounded-sm text-[9px] font-black text-yellow-500 uppercase tracking-widest flex items-center gap-2 transition-all"
+            >
+               <Files className="w-3.5 h-3.5" />
+               Crypto CSV
+            </button>
+         </div>
       </div>
 
       {feedback && (

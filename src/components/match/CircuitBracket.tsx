@@ -1,7 +1,7 @@
 "use client";
 import React from 'react';
 import { Circuit, CircuitTie, MatchPlayer, Match } from '@/lib/match-service';
-import { Trophy, Swords, Zap, Activity, Clock, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Trophy, Swords, Zap, Activity, Clock, ShieldCheck } from 'lucide-react';
 
 interface Props {
   circuit: Circuit;
@@ -30,28 +30,7 @@ export default function CircuitBracket({ circuit, allMatches }: Props) {
         </div>
       </div>
 
-      {/* TACTICAL DEBUG PANEL - INJECTED CHANNELS */}
-      <div className="p-4 bg-black/60 border border-red-500/10 rounded-sm">
-         <div className="flex items-center justify-between mb-4">
-            <h5 className="text-[9px] font-black text-red-500 uppercase tracking-widest italic">Neural Link Diagnostic // Metadata Feed</h5>
-            <span className="text-[8px] font-mono text-gray-500">M-FEED: {allMatches?.length || 0} SECTORS DETECTED</span>
-         </div>
-         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {allMatches?.slice(0, 4).map(m => (
-               <div key={m.id} className="p-2 border border-white/5 bg-white/5 rounded-sm">
-                  <p className="text-[8px] font-mono text-gray-400 truncate">ID: {m.id?.slice(-8)}</p>
-                  <p className="text-[8px] font-mono text-white italic">{m.round || 'NONE'} / L:{m.leg || '-'}</p>
-                  <p className={m.status === 'CLOSED' ? 'text-accent text-[7px] font-bold' : 'text-gray-600 text-[7px]'}>{m.status}</p>
-               </div>
-            ))}
-            {(!allMatches || allMatches.length === 0) && (
-               <div className="col-span-4 py-8 text-center border border-dashed border-red-500/20 bg-red-500/5 rounded-sm">
-                  <ShieldAlert className="w-6 h-6 text-red-500 mx-auto mb-2 opacity-50" />
-                  <p className="text-[9px] font-black text-red-500 uppercase tracking-widest animate-pulse">Neural Blindness Detected: 0 matches found in feed.</p>
-               </div>
-            )}
-         </div>
-      </div>
+
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
         {/* Quarter-Finals (Legs) */}
@@ -201,8 +180,16 @@ function PlayerSlot({ player, score1, score2, total, isWinner, l1Status, l2Statu
 
 function FinalNode({ final, players, allMatches }: { final: any, players: { [uid: string]: MatchPlayer }, allMatches?: Match[] }) {
    const winner = final.winner ? players[final.winner] : null;
-   const p1 = players[final.p1];
-   const p2 = players[final.p2];
+
+   // Fallback: if circuit.players doesn't have the entry (e.g. Ghost player),
+   // pull player data directly from the spawned FINAL match document.
+   const finalMatch = allMatches?.find(m =>
+      m.round === 'FINAL' &&
+      (m.playerIds?.includes(final.p1) || m.playerIds?.includes(final.p2))
+   );
+
+   const p1 = players[final.p1] ?? (finalMatch?.players?.[final.p1] as MatchPlayer | undefined);
+   const p2 = players[final.p2] ?? (finalMatch?.players?.[final.p2] as MatchPlayer | undefined);
 
    // Reconciliation for Finals
    const syncFromMatch = (mId: string | undefined, leg: number, round: string): { p1: number | undefined, p2: number | undefined, active: boolean, closed: boolean, submitted: boolean } => {

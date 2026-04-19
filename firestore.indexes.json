@@ -1,3 +1,13 @@
 {
-  "rules": "firestore.rules"
+  "indexes": [
+    {
+      "collectionGroup": "promo_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
 }

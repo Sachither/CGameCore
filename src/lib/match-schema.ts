@@ -50,6 +50,8 @@ export interface Match {
   leg?: 1 | 2 | 3 | 'NONE'; 
   adminAlert?: boolean;
   adminAlertAt?: any;
+  isPromo?: boolean;
+  promoId?: string;
 }
 
 export interface ChallengeInterest {

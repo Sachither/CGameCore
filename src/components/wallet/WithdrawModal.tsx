@@ -6,7 +6,7 @@ import { validateNuban, validateCryptoAddressByNetwork } from '@/lib/address-val
 import { getWithdrawalFee, isCryptoWithdrawalNetwork } from '@/lib/withdrawal-fees';
 import { requestWithdrawalAction } from '@/lib/withdrawal-api';
 import { getEffectiveRateAction } from '@/app/actions/rate-actions';
-import { Landmark, Smartphone, Zap, Globe } from 'lucide-react';
+import { Landmark, Smartphone, Zap, Globe, ShieldAlert, Clock } from 'lucide-react';
 
 export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: boolean, onClose: () => void, balance: number }) {
   // KYC States
@@ -23,7 +23,7 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const { user, profile } = useAuth();
-  const fiatSupported = false; // ["NG", "GH", "KE", "ZA"].includes(profile?.country || "");
+  const fiatSupported = true; // RE-ENABLED: Flutterwave transit restores global bank/mobile payouts
   
   const [gatewayType, setGatewayType] = useState<'BANK' | 'CRYPTO'>(fiatSupported ? 'BANK' : 'CRYPTO');
   const [withdrawalRate, setWithdrawalRate] = useState(1500);
@@ -494,7 +494,26 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
 
                 {error && <p className="text-center text-[10px] text-red-500 font-bold uppercase tracking-widest">{error}</p>}
                 {success && <p className="text-center text-[10px] text-green-400 font-bold uppercase tracking-widest">{success}</p>}
-             </div>
+                 
+                 {/* Security & Whitelisting Notice */}
+                 {isEligibleToWithdraw && hasKYC && !success && (
+                    <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-sm p-4 animate-in slide-in-from-bottom-2 duration-500">
+                       <div className="flex items-center gap-3 mb-3">
+                          <div className="p-2 bg-yellow-500/10 rounded-sm">
+                             <ShieldAlert className="w-4 h-4 text-yellow-500" />
+                          </div>
+                          <div>
+                             <h4 className="text-[10px] font-black uppercase tracking-widest text-yellow-500 italic">Security Whitelisting Protocol</h4>
+                             <p className="text-[8px] text-gray-500 font-black uppercase tracking-[0.2em]">Transaction Verification: 1-3 Days</p>
+                          </div>
+                       </div>
+                       <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight leading-relaxed italic">
+                          Notice: For security clearance, the first withdrawal to a new wallet address requires a mandatory <span className="text-white underline">1-3 business day verification buffer</span>. 
+                          The gateway (NowPayments) performs a 24-48h security whitelist to prevent unauthorized outflows. Subsequent releases will be accelerated.
+                       </p>
+                    </div>
+                 )}
+              </div>
            )}
         </div>
 

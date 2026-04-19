@@ -32,7 +32,7 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
                    {activeFilter === 'All-Time' ? 'Total Wins' : `${activeFilter} Wins`}
                 </th>
                 <th className="p-6 font-bold text-center">
-                   {activeFilter === 'CODM' ? 'KD/Rating' : activeFilter === 'eFootball' ? 'Goal Diff' : 'Win Rate'}
+                   {activeFilter === 'CODM' ? 'KD/Rating' : activeFilter === 'eFootball' ? 'Matches Played' : 'Win Rate'}
                 </th>
                 <th className="p-6 font-bold text-center">
                    {activeFilter === 'CODM' ? 'Total Kills' : activeFilter === 'eFootball' ? 'Total Goals' : 'Combat Engagement'}
@@ -75,11 +75,11 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
                     </td>
                     <td className="p-6 text-center">
                       <div className="inline-flex items-center">
-                         <span className={`text-xs font-mono font-bold ${activeFilter === 'CODM' ? 'text-accent' : (activeFilter === 'eFootball' && (p.stats?.EFOOTBALL?.goalsFor > p.stats?.EFOOTBALL?.goalsAgainst)) ? 'text-accent' : 'text-sub'}`}>
+                         <span className={`text-xs font-mono font-bold ${activeFilter === 'CODM' ? 'text-accent' : (activeFilter === 'eFootball') ? 'text-accent' : 'text-sub'}`}>
                             {activeFilter === 'CODM' 
                               ? (p.displayMatches ? ((p.displayWins * 12.5) / (p.displayMatches || 1)).toFixed(2) : '0.00') 
                               : activeFilter === 'eFootball' 
-                                ? (p.stats?.EFOOTBALL?.goalsFor || 0) - (p.stats?.EFOOTBALL?.goalsAgainst || 0)
+                                ? (p.stats?.EFOOTBALL?.matches || 0)
                                 : `${winRate}%`
                             }
                          </span>

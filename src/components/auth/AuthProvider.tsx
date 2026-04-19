@@ -38,6 +38,13 @@ export interface UserProfile {
     adminName?: string;
     createdAt?: any;
   };
+  ping?: {
+    active: boolean;
+    matchId?: string;
+    from?: string;
+    message?: string;
+    timestamp?: any;
+  };
 }
 
 interface AuthContextType {

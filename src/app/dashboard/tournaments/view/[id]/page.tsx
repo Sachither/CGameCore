@@ -292,15 +292,45 @@ export default function WarRoomPage() {
              }
           }
        }
-    } else if (isKnockout) {
-       const myRound1Match = allMatches.find(m =>
-         m.playerIds?.includes(user.uid) &&
-         ['QR1', 'QR2', 'R16'].includes(m.round || '')
-       );
-       if (myRound1Match && (myRound1Match.status === 'CLOSED' || myRound1Match.status === 'COMPLETED')) {
-          played = 1;
-          if (myRound1Match.championUid === user.uid) qualified = true;
-          else eliminated = true;
+    } else if (isKnockout || (competition as any).format === 'PROMO_TOURNAMENT') {
+       // PROMO or Standard Knockout Check
+       const isPromo = (competition as any).format === 'PROMO_TOURNAMENT';
+       
+       if (isPromo) {
+          // Promo format tracks winners explicitly
+          const currentWinners = (competition as any).roundWinners || [];
+          const myLatestMatch = allMatches
+             .filter(m => m.playerIds?.includes(user.uid) && (m.status === 'CLOSED' || m.status === 'COMPLETED'))
+             .sort((a,b) => {
+                const aTime = (a.resolvedAt as any)?.seconds || (a.createdAt as any)?.seconds || 0;
+                const bTime = (b.resolvedAt as any)?.seconds || (b.createdAt as any)?.seconds || 0;
+                return bTime - aTime;
+             })[0];
+             
+          if (myLatestMatch) {
+             played = allMatches.filter(m => m.playerIds?.includes(user.uid) && (m.status === 'CLOSED' || m.status === 'COMPLETED')).length;
+             // If I won my latest match or if I got a bye, I'm qualified
+             if (myLatestMatch.championUid === user.uid || (competition as any).byePlayer === user.uid) {
+                qualified = true;
+             } else {
+                eliminated = true;
+             }
+          } else {
+             // Have not played yet
+             qualified = false;
+             eliminated = false;
+          }
+       } else {
+          // Legacy Knockout
+          const myRound1Match = allMatches.find(m =>
+            m.playerIds?.includes(user.uid) &&
+            ['QR1', 'QR2', 'R16'].includes(m.round || '')
+          );
+          if (myRound1Match && (myRound1Match.status === 'CLOSED' || myRound1Match.status === 'COMPLETED')) {
+             played = 1;
+             if (myRound1Match.championUid === user.uid) qualified = true;
+             else eliminated = true;
+          }
        }
     }
 

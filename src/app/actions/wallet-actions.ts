@@ -144,7 +144,7 @@ export async function requestWithdrawalAction(
 
       transaction.update(userRef, updateData);
 
-      // 2. Create the ticket — including bankCode for Paystack Transfer API
+      // 2. Create the ticket — including bankCode for Flutterwave Transfer API
       // FIX F-002: Add withdrawal availability time (7-day hold on deposits)
       const withdrawalAvailableAt = admin.firestore.Timestamp.fromDate(
         new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
@@ -209,62 +209,44 @@ export async function getWalletTransactionsAction(idToken: string) {
   const uid = await getVerifiedUid(idToken);
   
   try {
-     const [matchesSnap, withdrawalsSnap, genericTransactionsSnap] = await Promise.all([
-       adminDb.collection("matches").where("playerIds", "array-contains", uid).orderBy("createdAt", "desc").limit(20).get(),
-       adminDb.collection("withdrawals").where("uid", "==", uid).orderBy("createdAt", "desc").limit(20).get(),
-       adminDb.collection("transactions").where("uid", "==", uid).orderBy("createdAt", "desc").limit(20).get(),
+     // Wallet ledger: only financial operations (deposits, withdrawals, admin adjustments).
+     // Game match entries and prizes are intentionally excluded — they belong on the Matches page.
+     const [withdrawalsSnap, genericTransactionsSnap] = await Promise.all([
+       adminDb.collection("withdrawals").where("uid", "==", uid).orderBy("createdAt", "desc").limit(100).get(),
+       adminDb.collection("transactions").where("uid", "==", uid).orderBy("createdAt", "desc").limit(500).get(),
+     ]);
+
+     // Game-internal categories to exclude from the wallet ledger (Only filter out standard match spam)
+     const GAME_CATEGORIES = new Set([
+       'MATCH_PRIZE', 'PROMO_TECHNICAL_WIN', 'FORFEIT_LOSS', 'MATCH_ENTRY', 'MATCH_REFUND',
      ]);
 
      const transactions: any[] = [];
 
-     // Process Match Entries & Winnings
-     matchesSnap.forEach(doc => {
-        const m = doc.data();
-        const isWinner = m.championUid === uid;
-        const netPool = m.rewardAmount || 0;
-        
-        // 1. Show the Entry Fee as a deduction
-        if (m.createdAt) {
-           transactions.push({
-              id: `${doc.id}-entry`, // Unique React Key
-              displayId: doc.id.substring(0, 8).toUpperCase(), // UI Display
-              timestamp: m.createdAt.toDate ? m.createdAt.toDate() : new Date(),
-              type: "Match Entry",
-              match: `${m.game} ${m.format}`,
-              amount: `-${m.challengeFee}`,
-              status: "Completed"
-           });
-        }
-
-        // 2. If won, show the winnings as a gain
-        if (isWinner && m.status === 'CLOSED') {
-           transactions.push({
-              id: `${doc.id}-win`, // Unique React Key
-              displayId: "WIN-" + doc.id.substring(0, 5).toUpperCase(), // UI Display
-              timestamp: m.resolvedAt?.toDate ? m.resolvedAt.toDate() : new Date(),
-              type: "Prize Won",
-              match: `${m.game} Victory`,
-              amount: `+${netPool}`,
-              status: "Completed"
-           });
-        }
-     });
-
-     // Process Deployments, Deposits and Admin Adjs (Transactions Collection)
+     // Process Deposits and Admin Adjustments (exclude game-internal categories)
      genericTransactionsSnap.forEach(doc => {
         const t = doc.data();
-        // Use the full doc.id for uniqueness, but keep the display format
+        if (GAME_CATEGORIES.has(t.category)) return; // skip game records
+
         const displayId = doc.id.startsWith('CGC-') ? doc.id.replace('CGC-DEP-', 'DEP-') : doc.id.substring(0, 8).toUpperCase();
-        
+
+        let displayType = "Wallet Adj";
+        if (t.type === 'DEPOSIT' || t.category === 'DEPOSIT') displayType = "Deposit";
+        else if (t.category === 'IDENTITY_FINE') displayType = "Identity Fine";
+
+        let operationLabel = "System Audit";
+        if (t.gateway === 'PAYSTACK' || t.gateway === 'FLUTTERWAVE') operationLabel = "Flutterwave";
+        else if (t.gateway === 'NOWPAYMENTS' || t.gateway === 'CRYPTO') operationLabel = "Crypto Gateway";
+        else if (t.description) operationLabel = String(t.description).substring(0, 30);
+
         transactions.push({
-           id: doc.id, // Full ID for React key
-           displayId: displayId, // Clean ID for UI
+           id: doc.id,
+           displayId,
            timestamp: t.createdAt?.toDate ? t.createdAt.toDate() : new Date(),
-           type: t.type === 'DEPOSIT' ? "Deposit" : 
-                 t.type === 'IDENTITY_FINE' ? "Identity Fine" : "Wallet Adj",
-           match: t.gateway === 'PAYSTACK' ? "Paystack Gateway" : "System Audit",
+           type: displayType,
+           match: operationLabel,
            amount: t.amount > 0 ? `+${t.amount}` : `${t.amount}`,
-           status: t.status === 'COMPLETED' || t.status === 'SUCCESS' ? "Completed" : 
+           status: t.status === 'COMPLETED' || t.status === 'SUCCESS' ? "Completed" :
                    t.status === 'ABANDONED' ? "Abandoned" : "Pending"
         });
      });
@@ -273,13 +255,13 @@ export async function getWalletTransactionsAction(idToken: string) {
      withdrawalsSnap.forEach(doc => {
         const w = doc.data();
         transactions.push({
-           id: doc.id, // Full ID for React key
-           displayId: "WD-" + doc.id.substring(0, 6).toUpperCase(), // UI Display
+           id: doc.id,
+           displayId: "WD-" + doc.id.substring(0, 6).toUpperCase(),
            timestamp: w.createdAt?.toDate ? w.createdAt.toDate() : new Date(),
            type: "Withdrawal",
-           match: "Bank Transfer",
+           match: w.bankName ? `${w.bankName}` : "Bank Transfer",
            amount: `-${w.amountCoins}`,
-           status: w.status === 'PENDING' ? "Pending" : 
+           status: w.status === 'PENDING' ? "Pending" :
                    w.status === 'REJECTED' ? "Rejected" : "Completed"
         });
      });
@@ -291,10 +273,11 @@ export async function getWalletTransactionsAction(idToken: string) {
         ...t,
         date: t.timestamp.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
         time: t.timestamp.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-        timestamp: null // strip the Date object for Serialized Action response
+        timestamp: null
      }));
 
      return { success: true, transactions: sanitized };
+
   } catch (error: any) {
      console.error("[WalletAction] Error fetching ledger:", error);
      return { success: false, error: error.message, transactions: [] };

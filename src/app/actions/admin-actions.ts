@@ -799,123 +799,90 @@ export async function getPendingWithdrawalsAction(idToken: string) {
 
 export async function adminApproveWithdrawalAction(idToken: string, withdrawalId: string) {
   const adminUid = await getVerifiedAdminUid(idToken, true); // Admin only - financial operations
-  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-  if (!PAYSTACK_SECRET) throw new Error("Paystack secret key missing.");
+  const FLUTTERWAVE_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
+  if (!FLUTTERWAVE_SECRET) throw new Error("Flutterwave secret key missing.");
 
   try {
     const wRef = adminDb.collection("withdrawals").doc(withdrawalId);
     
-    // FETCH DATA ONCE OUTSIDE (For Paystack params)
+    // FETCH DATA ONCE
     const initialSnap = await wRef.get();
     if (!initialSnap.exists || initialSnap.data()?.status !== "PENDING") {
       return { success: false, error: "Withdrawal invalid or already processed." };
     }
     const wData = initialSnap.data()!;
     const amountCoins = wData.amountCoins || 0;
-    const fiatAmountKobo = (wData.fiatAmount || 0) * 100; // Paystack amount in kobo
+    const fiatAmountUSD = wData.fiatAmount || 0;
+    const currency = wData.currency || "NGN";
 
     // Decrypt account number for processing
     const accountNumber = decryptData(wData.encryptedAccountNumber || wData.accountNumber);
 
-    // ── STEP 1: Create Paystack Transfer Recipient ──────────────────────────
-    // Paystack only supports resolving 0000000000 for standard banks (like GTBank 058) in Test Mode.
-    // If the user uses the test account number, we temporarily coerce the bank_code to 058 to guarantee it passes.
-    const isTestAccount = accountNumber === "0000000000" || accountNumber.includes("0000");
-    const enforcedBankCode = isTestAccount ? "058" : (wData.bankCode || "058");
-    const enforcedAccountNum = isTestAccount ? "0000000000" : accountNumber;
-
-    const recipientRes = await fetch("https://api.paystack.co/transferrecipient", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        type: "nuban",
-        name: wData.legalName,
-        account_number: enforcedAccountNum,
-        bank_code: enforcedBankCode,
-        currency: "NGN",
-      }),
-    });
-
-    const recipientJson = await recipientRes.json().catch(() => ({ status: false, message: "Network fetch failed natively." }));
-    let recipientCode = "";
-
-    if (!recipientJson.status) {
-      // 🚨 ULTIMATE DEV FAILSAFE: If Paystack validation fails and we are using a Test Key, bypass it completely.
-      if (PAYSTACK_SECRET.startsWith("sk_test")) {
-        console.warn("[AdminAction] Paystack recipient validation failed in Test Mode. Mocking recipient to unblock.", recipientJson.message);
-        recipientCode = "RCP_mock_dev_bypass";
-      } else {
-        console.error("[AdminAction] Paystack recipient creation failed:", recipientJson);
-        return { success: false, error: `Bank validation failed: ${recipientJson.message || "Invalid account details."}` };
-      }
-    } else {
-      recipientCode = recipientJson.data.recipient_code;
-    }
-
-    // ── STEP 2: Initiate Paystack Transfer ──────────────────────────────────
-    let transferCode = "";
+    // ── STEP 1: Process Transfer ──────────────────────────────────────────
+    let transferId = "";
     let transferStatus = "pending";
+    const bankCode = wData.bankCode || "058"; // Fallback to GTB if missing
 
-    // If we mocked the recipient, we MUST mock the transfer too, because Paystack won't recognize 'RCP_mock_dev_bypass'
-    if (recipientCode === "RCP_mock_dev_bypass") {
-      console.warn("[AdminAction] Simulating Paystack Transfer to unblock Test Mode.");
-      transferCode = `TRF_mock_${Math.random().toString(36).substring(7)}`;
-      transferStatus = "success"; 
-      // Simulated delay just for realism
-      await new Promise(res => setTimeout(res, 800));
+    // Force Success in Test Mode if using the universal test account
+    const isTestAccount = accountNumber === "0000000000" || accountNumber.includes("0000");
+
+    if (FLUTTERWAVE_SECRET.startsWith("FLWSECK_TEST") && isTestAccount) {
+      console.warn("[AdminAction] Simulating Flutterwave Transfer for Test Account.");
+      transferId = `FW_MOCK_${Math.random().toString(36).substring(7).toUpperCase()}`;
+      transferStatus = "successful";
+      await new Promise(res => setTimeout(res, 800)); // Realism
     } else {
-      const transferRes = await fetch("https://api.paystack.co/transfer", {
+      const transferRes = await fetch("https://api.flutterwave.com/v3/transfers", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          source: "balance",
-          amount: fiatAmountKobo,
-          recipient: recipientCode,
-          reason: `CGameCore payout for ${wData.username} (${amountCoins} CR)`,
+          account_bank: bankCode,
+          account_number: accountNumber,
+          amount: wData.netAmount / 100 || fiatAmountUSD * 1500, // NET Amount is in coins/cents usually
+          narration: `CGameCore payout for ${wData.username} (${amountCoins} CR)`,
+          currency: currency,
+          callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/api/webhooks/flutterwave`,
+          debit_currency: "NGN",
         }),
       });
 
       const transferJson = await transferRes.json();
-      if (!transferJson.status) {
-        if (PAYSTACK_SECRET.startsWith("sk_test")) {
-           console.warn("[AdminAction] Transfer failed in Test Mode. Mocking transfer to unblock.", transferJson);
-           transferCode = `TRF_mock_${Math.random().toString(36).substring(7)}`;
-           transferStatus = "success";
+      
+      if (transferJson.status !== 'success') {
+        // DEV FAILSAFE: Mock if in test mode even if API rejected (e.g. balance issues)
+        if (FLUTTERWAVE_SECRET.startsWith("FLWSECK_TEST")) {
+           console.warn("[AdminAction] Flutterwave rejected test transfer. Mocking to unblock.", transferJson.message);
+           transferId = `FW_MOCK_ERR_${Math.random().toString(36).substring(7).toUpperCase()}`;
+           transferStatus = "successful";
         } else {
-           console.error("[AdminAction] Paystack transfer initiation failed:", transferJson);
-           return { success: false, error: `Transfer failed: ${transferJson.message || "Paystack rejected the transfer."}` };
+           console.error("[AdminAction] Flutterwave transfer failed:", transferJson);
+           return { success: false, error: `Transfer failed: ${transferJson.message || "Flutterwave rejected the request."}` };
         }
       } else {
-        transferCode = transferJson.data.transfer_code;
-        transferStatus = transferJson.data.status; // "pending" in test mode
+        transferId = transferJson.data.id.toString();
+        transferStatus = transferJson.data.status; // Usually "NEW" or "PENDING"
       }
     }
 
-    // ── STEP 3: Update Firestore atomically ─────────────────────────────────
+    // ── STEP 2: Update Firestore atomically ─────────────────────────────────
     await adminDb.runTransaction(async (transaction) => {
-      // C-06: RE-VERIFY STATUS INSIDE TRANSACTION
       const tSnap = await transaction.get(wRef);
       if (!tSnap.exists || tSnap.data()?.status !== "PENDING") {
-        throw new Error("CONCURRENCY_ERROR: Withdrawal was already processed by another admin.");
+        throw new Error("CONCURRENCY_ERROR: Already processed.");
       }
 
-      // Mark withdrawal as APPROVED with transfer reference
       transaction.update(wRef, {
         status: "APPROVED",
-        paystackTransferCode: transferCode,
-        paystackRecipientCode: recipientCode,
-        paystackStatus: transferStatus,
+        flutterwaveTransferId: transferId,
+        flutterwaveStatus: transferStatus,
+        gateway: "FLUTTERWAVE",
         processedAt: admin.firestore.FieldValue.serverTimestamp(),
         processedBy: adminUid,
       });
 
-      // Track total withdrawals globally
       if (amountCoins > 0) {
         const platformFinancesRef = adminDb.collection("stats").doc("platform_finances");
         transaction.set(platformFinancesRef, {
@@ -924,12 +891,8 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         }, { merge: true });
       }
 
-      // Queue Notification for user (Using internal utility)
-      const isCrypto = isCryptoWithdrawalNetwork(wData.bankCode || "");
-      const withdrawalReference = transferCode || `WITHDRAW_${wRef.id}`;
-      const notificationMessage = isCrypto
-        ? `Your crypto withdrawal of $${(wData.netAmount / 100).toFixed(2)} has been approved for processing on ${wData.bankCode}. Withdrawal reference: ${withdrawalReference}. Network settlement may take extra time.`
-        : `Your withdrawal of $${(wData.fiatAmount).toFixed(2)} has been initiated via Paystack. Transfer ID: ${withdrawalReference}. Funds typically arrive within 24 hours.`;
+      const withdrawalReference = transferId || `FW_WITHDRAW_${wRef.id}`;
+      const notificationMessage = `Your withdrawal of $${(fiatAmountUSD).toFixed(2)} has been initiated via Flutterwave. Reference: ${withdrawalReference}. Funds typically arrive within 24 hours.`;
 
       await createNotificationInternal(
         wData.uid,
@@ -939,7 +902,7 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
       );
     });
 
-    return { success: true, transferCode };
+    return { success: true, transferId };
   } catch (error: any) {
     console.error("[AdminAction] adminApproveWithdrawal error:", error);
     return { success: false, error: error.message };

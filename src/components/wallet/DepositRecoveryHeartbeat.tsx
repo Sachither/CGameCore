@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { verifyPaystackPaymentAction } from '@/app/actions/paystack-actions';
+import { verifyFlutterwavePaymentAction } from '@/app/actions/flutterwave-actions';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 
 /**
@@ -23,8 +23,6 @@ export default function DepositRecoveryHeartbeat() {
         const idToken = await user.getIdToken();
         
         // 1. Tactical Query Simplification: 
-        // We only filter by UID to avoid requiring a composite index (status/type).
-        // For individual users, the transaction list is small enough to filter in memory.
         const q = query(
           collection(db, "transactions"),
           where("uid", "==", user.uid)
@@ -41,30 +39,26 @@ export default function DepositRecoveryHeartbeat() {
           const data = doc.data();
           
           // Tactical In-Memory Filter
-          const gateway = data.gateway || 'PAYSTACK';
+          const gateway = data.gateway || 'FLUTTERWAVE';
           const isCrypto = gateway === 'NOWPAYMENTS' || doc.id.startsWith('CG-CRYPTO');
 
           if (data.status === "PENDING" && data.type === "DEPOSIT" && !isCrypto) {
             // Grace period: skip deposits less than 2 minutes old.
-            // The user may still be actively completing the payment in the Paystack popup.
             const createdAt = data.createdAt?.toDate ? data.createdAt.toDate().getTime() : 0;
             const ageSeconds = (Date.now() - createdAt) / 1000;
-            if (ageSeconds < 120) {
-              console.log(`[RecoveryHeartbeat] ⏳ Skipping ${doc.id} — too new (${Math.round(ageSeconds)}s old), user may still be paying.`);
-              continue;
-            }
+            if (ageSeconds < 120) continue;
 
             const ref = doc.id;
-            console.log(`[RecoveryHeartbeat] Attempting verification for stuck deposit: ${ref}`);
+            console.log(`[RecoveryHeartbeat] Attempting verification for stuck deposit: ${ref} (${gateway})`);
             
-            const result = await verifyPaystackPaymentAction(idToken, ref);
+            // Flutterwave handles verification well with just the reference in recovery mode
+            const result = await verifyFlutterwavePaymentAction(idToken, ref);
             
             if (result.success) {
               console.log(`[RecoveryHeartbeat] ✅ Successfully recovered deposit: ${ref}`);
               successCount++;
             } else if ((result as any).isAbandoned) {
               console.log(`[RecoveryHeartbeat] 👻 Cleaned up phantom deposit: ${ref}`);
-              // We refresh to show the 'Abandoned' state in the ledger
               await refreshProfile(); 
             } else {
               console.warn(`[RecoveryHeartbeat] ⚠️ Verification failed for ${ref}:`, result.error);

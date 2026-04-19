@@ -16,12 +16,20 @@ export default function WalletBalanceCard() {
   React.useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get('success') === 'true') {
+    
+    const isFwSuccess = params.get('status') === 'successful' || params.get('status') === 'redirect_check';
+    const isCryptoSuccess = params.get('success') === 'true';
+
+    if (isFwSuccess || isCryptoSuccess) {
       setIsSuccessMode(true);
       setDepositOpen(true);
-      // Clean the URL immediately so refresh doesn't trigger this again
-      window.history.replaceState({}, '', window.location.pathname);
-    } else if (params.get('cancel') === 'true') {
+      // Clean the URL immediately but keep the params for the Modal's useSearchParams to read
+      // Actually, we should keep them for a second so the modal's EFFECT can run, 
+      // then clean them.
+      setTimeout(() => {
+         window.history.replaceState({}, '', window.location.pathname);
+      }, 1000);
+    } else if (params.get('cancel') === 'true' || params.get('status') === 'cancelled') {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);

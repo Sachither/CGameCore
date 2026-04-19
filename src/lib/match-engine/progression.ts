@@ -3,6 +3,20 @@ import { adminDb } from "@/lib/firebase-admin";
 import { EngineCircuit, EngineMatch, EngineTie } from "./types";
 
 /**
+ * UTILITY: Create Ghost Player Object (for eliminated/missing players)
+ */
+function createGhostPlayer(uid: string, team: 'alpha' | 'bravo') {
+   return {
+      username: 'GHOST',
+      uid,
+      avatarId: 0,
+      team,
+      inGameName: '',
+      ready: false
+   };
+}
+
+/**
  * UTILITY: Create Tournament/Circuit Notifications
  */
 export async function pushMatchNotification(
@@ -73,10 +87,7 @@ export async function pushMatchNotification(
         });
 
         // When all 4 QF matches complete, spawn SF
-        // 🔒 [SECURITY] Validate exact count: QF should have exactly 4 winners
-        if (qfWinners.length > 4) {
-           throw new Error(`Invalid QF winner count: ${qfWinners.length} (expected 4)`);
-        }
+        // Expect exactly 4 QF winners (no byes possible since 4 matches = 4 winners)
         if (qfWinners.length === 4) {
            await spawnSemiFinals(transaction, circuitRef, { ...circuit, qfWinners }, operatorUid);
         }
@@ -91,12 +102,13 @@ export async function pushMatchNotification(
            sfWinners: admin.firestore.FieldValue.arrayUnion(tieWinner)
         });
 
-        // When all 2 SF matches complete, spawn Final
-        // 🔒 [SECURITY] Validate exact count: SF should have exactly 2 winners
-        if (sfWinners.length > 2) {
-           throw new Error(`Invalid SF winner count: ${sfWinners.length} (expected 2)`);
-        }
-        if (sfWinners.length === 2) {
+        // When all SF matches complete, spawn Final
+        // With bye system: if started with odd players, one had a bye
+        // So we expect: number of SF matches (which is floor(QF winners / 2))
+        const initialQFWinners = circuit.qfWinners?.length || 0;
+        const expectedSFMatches = Math.floor(initialQFWinners / 2);
+        
+        if (sfWinners.length === expectedSFMatches) {
            await spawnFinal(transaction, circuitRef, { ...circuit, sfWinners }, operatorUid);
         }
         return;
@@ -172,7 +184,7 @@ async function spawnQuarterFinals(
 }
 
 /**
- * HELPER: Spawn Semi Finals (Random Pairing)
+ * HELPER: Spawn Semi Finals (Random Pairing + BYE for odd winners)
  */
 async function spawnSemiFinals(
    transaction: admin.firestore.Transaction,
@@ -181,13 +193,23 @@ async function spawnSemiFinals(
    operatorUid: string
 ) {
    const winners = circuit.qfWinners || [];
-   if (winners.length < 4) return;
+   if (winners.length < 2) return;
 
    // Shuffle winners for random pairing
    const shuffled = [...winners].sort(() => Math.random() - 0.5);
+   
+   // Handle odd number of winners: last player gets a BYE to Finals
+   let byePlayer: string | null = null;
+   let matchupPlayers = shuffled;
+   if (shuffled.length % 2 === 1) {
+      byePlayer = shuffled[shuffled.length - 1];
+      matchupPlayers = shuffled.slice(0, -1);
+      console.log(`[SF] BYE awarded to ${circuit.players[byePlayer]?.username || byePlayer}`);
+   }
+
    const pairs = [];
-   for (let i = 0; i < 4; i += 2) {
-      pairs.push([shuffled[i], shuffled[i + 1]]);
+   for (let i = 0; i < matchupPlayers.length; i += 2) {
+      pairs.push([matchupPlayers[i], matchupPlayers[i + 1]]);
    }
 
    const expiresAt = new Date(Date.now() + 3 * 3600 * 1000); // 3 hours
@@ -210,12 +232,21 @@ async function spawnSemiFinals(
       pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'SF', '3 Hours');
    }
 
-   transaction.update(circuitRef, { status: 'KNOCKOUT_S' });
-   await pushGlobalCommand(transaction, circuitRef.id, `SEMI FINALS BEGIN! 2 RANDOM MATCHES SEEDED — 3 HOUR DEADLINE.`);
+   // Store bye player for finals
+   if (byePlayer) {
+      transaction.update(circuitRef, { 
+         status: 'KNOCKOUT_S',
+         sfByePlayer: byePlayer
+      });
+   } else {
+      transaction.update(circuitRef, { status: 'KNOCKOUT_S' });
+   }
+   
+   await pushGlobalCommand(transaction, circuitRef.id, `SEMI FINALS BEGIN!${byePlayer ? ` ${circuit.players[byePlayer]?.username?.toUpperCase()} ADVANCES WITH BYE.` : ''} ${pairs.length} MATCHES SEEDED — 3 HOUR DEADLINE.`);
 }
 
 /**
- * HELPER: Spawn Final Match
+ * HELPER: Spawn Final Match (+ BYE player from SF if exists)
  */
 async function spawnFinal(
    transaction: admin.firestore.Transaction,
@@ -224,9 +255,13 @@ async function spawnFinal(
    operatorUid: string
 ) {
    const winners = circuit.sfWinners || [];
-   if (winners.length < 2) return;
+   const byePlayer = circuit.sfByePlayer || null;
+   
+   // Winners + bye player should result in 2 finalists
+   const finalPlayers = byePlayer ? [...winners, byePlayer] : winners;
+   if (finalPlayers.length < 2) return;
 
-   const [p1, p2] = winners;
+   const [p1, p2] = finalPlayers.slice(0, 2);
    const expiresAt = new Date(Date.now() + 3 * 3600 * 1000); // 3 hours
 
    const mRef = adminDb.collection("matches").doc();
@@ -235,19 +270,18 @@ async function spawnFinal(
       circuitId: circuitRef.id, round: 'FINAL', playerIds: [p1, p2],
       expiresAt, hostUid: p1,
       players: {
-         [p1]: { ...circuit.players[p1], ready: false, team: 'alpha', isHost: true },
-         [p2]: { ...circuit.players[p2], ready: false, team: 'bravo', isHost: false }
+            [p1]: { ...(circuit.players[p1] || createGhostPlayer(p1, 'alpha')), ready: false, team: 'alpha', isHost: true },
+            [p2]: { ...(circuit.players[p2] || createGhostPlayer(p2, 'bravo')), ready: false, team: 'bravo', isHost: false }
       },
       creatorId: operatorUid, createdAt: admin.firestore.FieldValue.serverTimestamp()
    });
-
-   transaction.update(circuitRef, { status: 'FINAL' });
-
-   // Notify both players
+   
    pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'FINAL', '3 Hours');
    pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'FINAL', '3 Hours');
 
-   await pushGlobalCommand(transaction, circuitRef.id, `GRAND FINAL! ${circuit.players[p1]?.username?.toUpperCase()} vs ${circuit.players[p2]?.username?.toUpperCase()} — 3 HOUR DEADLINE.`);
+   transaction.update(circuitRef, { status: 'KNOCKOUT_F' });
+   const byeNotice = (byePlayer && p2 === byePlayer) ? ' (BYE ADVANCE)' : '';
+   await pushGlobalCommand(transaction, circuitRef.id, `GRAND FINAL! ${circuit.players[p1]?.username?.toUpperCase()} vs ${circuit.players[p2]?.username?.toUpperCase()}${byeNotice} — 3 HOUR DEADLINE.`);
 }
 
 

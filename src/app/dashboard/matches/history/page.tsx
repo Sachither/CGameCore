@@ -117,7 +117,9 @@ export default function MatchHistoryPage() {
                              {isWinner ? 'Victory' : 'Defeat'}
                            </span>
                            <span className="text-xs font-mono text-gray-500">
-                             {isWinner ? `(+${Math.floor(match.challengeFee * 1.8)})` : `(-${match.challengeFee})`}
+                             {!!match.circuitId
+                                ? (isWinner ? (match.round === 'FINAL' ? '(🏆 Champion)' : '(Advanced)') : '(--)')
+                                : (isWinner ? `(+${(match as any).rewardAmount || Math.floor(match.challengeFee * 1.8)})` : `(-${match.challengeFee})`)}
                            </span>
                         </div>
                      </div>

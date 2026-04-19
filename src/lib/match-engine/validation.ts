@@ -26,44 +26,71 @@ export async function resolveTechnicalWin(
    matchData: EngineMatch,
    winnerUid: string
 ) {
-   const opponentId = matchData.playerIds.find(pid => pid !== winnerUid);
-   if (!opponentId) throw new Error("No opponent to penalize.");
+   // Find opponent — may be a ghost/system placeholder in finals
+   const opponentId = matchData.playerIds.find(pid => pid !== winnerUid) || null;
+   const isGhostOpponent = !opponentId || opponentId === 'system' || matchData.players[opponentId]?.username === 'GHOST';
 
-   // 1. Close Match
-   transaction.update(matchRef, {
+   // READ FIRST
+   let circuitSnap: admin.firestore.DocumentSnapshot | null = null;
+   let circuitRef: admin.firestore.DocumentReference | null = null;
+   if (matchData.circuitId) {
+      circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
+      circuitSnap = await transaction.get(circuitRef);
+   }
+
+   // 1. Close Match — track ghost opponent score safely
+   const matchUpdate: any = {
       status: 'CLOSED',
       championUid: winnerUid,
       technicalWin: true,
       resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
-      disputeReason: 'OPPONENT_NO_SHOW',
+      disputeReason: isGhostOpponent ? 'GHOST_OPPONENT_AUTO_WIN' : 'OPPONENT_NO_SHOW',
       [`players.${winnerUid}.scoreFor`]: 2,
-      [`players.${opponentId}.scoreFor`]: 0
-   });
+      rewardAmount: matchData.prizeUSD || 0,
+      isPromo: !!matchData.isPromo,
+   };
+   if (opponentId && !isGhostOpponent) {
+      matchUpdate[`players.${opponentId}.scoreFor`] = 0;
+   }
+   transaction.update(matchRef, matchUpdate);
+
+   // NOTE: Promo prize distribution is handled EXCLUSIVELY by the circuit engine
+   // (handlePromoAdvancement → distributePromoPrizes). Do NOT award here to prevent
+   // double-crediting the winner. The promo advancement below will handle it.
 
    // 2. Advance Circuit
-   if (matchData.circuitId) {
-      const circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
-      const circuitSnap = await transaction.get(circuitRef);
-      if (circuitSnap.exists) {
-         const circuit = circuitSnap.data() as EngineCircuit;
+   if (circuitSnap && circuitSnap.exists && circuitRef) {
+      const circuit = circuitSnap.data() as EngineCircuit;
 
-         const updates: any = {
-            matchesCompleted: admin.firestore.FieldValue.increment(1)
-         };
+      const updates: any = {
+         matchesCompleted: admin.firestore.FieldValue.increment(1)
+      };
 
-         const g = matchData.group;
-         if (g && circuit.groups?.[g]) {
-            updates[`groups.${g}.standings.${winnerUid}.played`] = admin.firestore.FieldValue.increment(1);
-            updates[`groups.${g}.standings.${winnerUid}.wins`] = admin.firestore.FieldValue.increment(1);
-            updates[`groups.${g}.standings.${winnerUid}.pts`] = admin.firestore.FieldValue.increment(3);
-            updates[`groups.${g}.standings.${winnerUid}.gf`] = admin.firestore.FieldValue.increment(2);
-            updates[`groups.${g}.standings.${opponentId}.played`] = admin.firestore.FieldValue.increment(1);
-            updates[`groups.${g}.standings.${opponentId}.losses`] = admin.firestore.FieldValue.increment(1);
-            updates[`groups.${g}.standings.${opponentId}.ga`] = admin.firestore.FieldValue.increment(2);
-         }
+      const g = matchData.group;
+      if (g && circuit.groups?.[g] && opponentId && !isGhostOpponent) {
+         // Only update group standings when a real opponent exists
+         updates[`groups.${g}.standings.${winnerUid}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`groups.${g}.standings.${winnerUid}.wins`] = admin.firestore.FieldValue.increment(1);
+         updates[`groups.${g}.standings.${winnerUid}.pts`] = admin.firestore.FieldValue.increment(3);
+         updates[`groups.${g}.standings.${winnerUid}.gf`] = admin.firestore.FieldValue.increment(2);
+         updates[`groups.${g}.standings.${opponentId}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`groups.${g}.standings.${opponentId}.losses`] = admin.firestore.FieldValue.increment(1);
+         updates[`groups.${g}.standings.${opponentId}.ga`] = admin.firestore.FieldValue.increment(2);
+      }
 
+      if (!circuit.isPromo) {
          transaction.update(circuitRef, updates);
+      }
 
+      if (circuit.isPromo) {
+         // Promo: circuit engine handles all prize distribution (single source of truth)
+         const { handlePromoAdvancement } = await import("./promo-engine");
+         await handlePromoAdvancement(transaction, circuitRef, circuit, matchData.round || '', winnerUid, matchRef.id, 'SYSTEM_PROMO', matchData.game);
+      } else if (matchData.round === 'FINAL') {
+         // Standard final: the winner IS the tournament champion — distribute prizes directly
+         const runnerUpUid = opponentId && !isGhostOpponent ? opponentId : null;
+         await handleKnockoutAdvancement(transaction, circuitRef, circuit, 'FINAL', -1, winnerUid, matchRef.id, winnerUid, matchData.game);
+      } else {
          const round = matchData.round;
          if (round === 'QF' || round === 'SF' || round === 'QR1') {
             if (round === 'QF' || round === 'SF') {
@@ -73,8 +100,10 @@ export async function resolveTechnicalWin(
                     const tie = (ties || [])[tieIdx];
                     const p1Goals = tie.p1 === winnerUid ? 2 : 0;
                     const p2Goals = tie.p2 === winnerUid ? 2 : 0;
-                    await handleKnockoutAdvancement(transaction, circuitRef, circuit, round, tieIdx, '', matchRef.id, winnerUid, matchData.game, p1Goals, p2Goals);
+                    await handleKnockoutAdvancement(transaction, circuitRef, circuit, round, tieIdx, winnerUid, matchRef.id, winnerUid, matchData.game, p1Goals, p2Goals);
                  }
+            } else if (round === 'QR1') {
+               await handleKnockoutAdvancement(transaction, circuitRef, circuit, 'QR1', -1, winnerUid, matchRef.id, winnerUid, matchData.game);
             }
          }
       }
@@ -83,43 +112,70 @@ export async function resolveTechnicalWin(
 
 /**
  * RESOLUTION: Handle Double No-Show (Expiry extraction)
+ * Both players lose their coins (no refund). Builder keeps the pool.
  */
 export async function resolveDoubleNoShow(
    transaction: admin.firestore.Transaction,
    matchRef: admin.firestore.DocumentReference,
    matchData: EngineMatch
 ) {
-   // Mark BOTH as losers, no victory
+   // READ FIRST
+   let circuitSnap: admin.firestore.DocumentSnapshot | null = null;
+   let circuitRef: admin.firestore.DocumentReference | null = null;
+   if (matchData.circuitId) {
+      circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
+      circuitSnap = await transaction.get(circuitRef);
+   }
+
+   const updatesForPlayers: any = {};
+   if (matchData.playerIds[0]) updatesForPlayers[`players.${matchData.playerIds[0]}.scoreFor`] = 0;
+   if (matchData.playerIds[1]) updatesForPlayers[`players.${matchData.playerIds[1]}.scoreFor`] = 0;
+
+   // Mark BOTH as losers, no victory, NO COINS RETURNED
    transaction.update(matchRef, {
       status: 'CLOSED',
       championUid: null,
       technicalWin: true,
       resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
       disputeReason: 'DOUBLE_NO_SHOW_EXTRACTION',
-      [`players.${matchData.playerIds[0]}.scoreFor`]: 0,
-      [`players.${matchData.playerIds[1]}.scoreFor`]: 0
+      ...updatesForPlayers
    });
 
-   if (matchData.circuitId) {
-      const circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
-      const circuitSnap = await transaction.get(circuitRef);
-      if (circuitSnap.exists) {
-         const circuit = circuitSnap.data() as EngineCircuit;
+   // Log the loss for both players (coins already deducted at match creation)
+   for (const uid of matchData.playerIds) {
+      const logRef = adminDb.collection("transactions").doc();
+      transaction.set(logRef, {
+         uid,
+         type: "DEBIT",
+         category: "FORFEIT_LOSS",
+         description: "Double No-Show: Coins forfeited. No refund.",
+         amount: matchData.challengeFee || 0,
+         status: "COMPLETED",
+         createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+   }
 
-         const updates: any = {
-            matchesCompleted: admin.firestore.FieldValue.increment(1)
-         };
+   if (circuitSnap && circuitSnap.exists && circuitRef) {
+      const circuit = circuitSnap.data() as EngineCircuit;
 
-         const g = matchData.group;
-         if (g && circuit.groups?.[g]) {
-            updates[`groups.${g}.standings.${matchData.playerIds[0]}.played`] = admin.firestore.FieldValue.increment(1);
-            updates[`groups.${g}.standings.${matchData.playerIds[0]}.losses`] = admin.firestore.FieldValue.increment(1);
-            updates[`groups.${g}.standings.${matchData.playerIds[1]}.played`] = admin.firestore.FieldValue.increment(1);
-            updates[`groups.${g}.standings.${matchData.playerIds[1]}.losses`] = admin.firestore.FieldValue.increment(1);
-         }
+      const updates: any = {
+         matchesCompleted: admin.firestore.FieldValue.increment(1)
+      };
 
-         transaction.update(circuitRef, updates);
+      const g = matchData.group;
+      if (g && circuit.groups?.[g]) {
+         updates[`groups.${g}.standings.${matchData.playerIds[0]}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`groups.${g}.standings.${matchData.playerIds[0]}.losses`] = admin.firestore.FieldValue.increment(1);
+         updates[`groups.${g}.standings.${matchData.playerIds[1]}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`groups.${g}.standings.${matchData.playerIds[1]}.losses`] = admin.firestore.FieldValue.increment(1);
+      }
 
+      transaction.update(circuitRef, updates);
+
+      if (circuit.isPromo) {
+         const { handlePromoAdvancement } = await import("./promo-engine");
+         await handlePromoAdvancement(transaction, circuitRef, circuit, matchData.round || '', 'system', matchRef.id, 'SYSTEM_PROMO', matchData.game);
+      } else {
          const round = matchData.round;
          if (round === 'QF' || round === 'SF') {
             const ties = circuit.bracket?.[round === 'QF' ? 'quarters' : 'semis'];

@@ -7,6 +7,9 @@ import { ToastProvider } from "@/context/ToastContext";
 import GlobalInterventionOverlay from "@/components/layout/GlobalInterventionOverlay";
 import MatchReadyDispatcher from "@/components/match/MatchReadyDispatcher";
 import PushNotificationManager from "@/components/notifications/PushNotificationManager";
+import QuickPingOverlay from "@/components/notifications/QuickPingOverlay";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -72,11 +75,14 @@ export default function RootLayout({
             <GlobalInterventionOverlay />
             <MatchReadyDispatcher />
             <PushNotificationManager />
+            <QuickPingOverlay />
             <ClientLayoutWrapper>
               {children}
             </ClientLayoutWrapper>
           </ToastProvider>
         </AuthProvider>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

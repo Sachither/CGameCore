@@ -6,6 +6,7 @@ import AdminGuard from "@/components/auth/AdminGuard";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   LayoutDashboard,
+  Flame,
   Gavel,
   Users,
   Shield,
@@ -18,6 +19,7 @@ import {
 
 const navItems = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
+  { href: "/admin/promo", label: "Promo Ops", icon: Flame },
   { href: "/admin/disputes", label: "Tribunal", icon: Gavel },
   { href: "/admin/matches", label: "Matches", icon: Swords },
   { href: "/admin/treasury", label: "Treasury", icon: Landmark },

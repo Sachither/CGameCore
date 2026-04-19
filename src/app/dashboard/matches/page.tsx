@@ -20,7 +20,7 @@ export default function MyMatchesPage() {
     const q = query(
       collection(db, "matches"),
       where("playerIds", "array-contains", user!.uid),
-      limit(200)
+      limit(500)
     );
 
     const unsub = onSnapshot(q, (snap) => {
@@ -34,9 +34,15 @@ export default function MyMatchesPage() {
         .filter(m => activeStatuses.includes(m.status))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
+      // History: only CLOSED matches (completed results). COMPLETED is a gathering lobby
+      // status meaning players have been deployed into sub-matches — not a finished match.
       const history = myInvolved
-        .filter(m => !activeStatuses.includes(m.status))
-        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        .filter(m => m.status === 'CLOSED')
+        .sort((a, b) => {
+          const aTime = (b as any).resolvedAt?.seconds || b.createdAt?.seconds || 0;
+          const bTime = (a as any).resolvedAt?.seconds || a.createdAt?.seconds || 0;
+          return aTime - bTime;
+        });
       
       setActiveMatches(active);
       setHistoryMatches(history);
@@ -159,19 +165,41 @@ export default function MyMatchesPage() {
                  </tr>
               </thead>
                <tbody className="divide-y divide-surface-border/50">
-                  {historyMatches.slice(0, 5).map((match) => {
-                    const opponent = match.players ? Object.values(match.players).find(p => p.uid !== user?.uid) : null;
-                    const isWinner = match.championUid === user?.uid;
-                    const date = match.createdAt?.seconds 
-                      ? new Date(match.createdAt.seconds * 1000).toLocaleDateString()
-                      : 'Recently';
-                    
+                  {historyMatches.map((match) => {
+                     const opponent = match.players
+                       ? Object.values(match.players).find(p => p.uid !== user?.uid)
+                       : null;
+                     const isWinner = match.championUid === user?.uid;
+                     const resolvedSec = (match as any).resolvedAt?.seconds;
+                     const createdSec = match.createdAt?.seconds;
+                     const date = resolvedSec
+                       ? new Date(resolvedSec * 1000).toLocaleDateString()
+                       : createdSec
+                         ? new Date(createdSec * 1000).toLocaleDateString()
+                         : 'Recently';
+                     // Prize: display 'Advanced/Qualifier' only if it's a circuit match
+                     let prizeString = '--';
+                     const isCircuitMatch = !!match.circuitId;
+                     if (isCircuitMatch) {
+                        prizeString = isWinner ? (match.round === 'FINAL' ? '🏆 Champion' : 'Advanced') : '--';
+                     } else {
+                        prizeString = isWinner ? `+${(match as any).rewardAmount || 0}` : '--';
+                     }
+                     // Opponent: handle ghost, tournament round, and missing cases
+                     const opponentName = opponent?.username === 'GHOST'
+                       ? 'Ghost (Auto-Win)'
+                       : opponent?.username
+                         ? `vs ${opponent.username}`
+                         : (match as any).circuitId
+                           ? `${(match as any).round || 'Tournament'} Match`
+                           : 'Solo / Waitlist';
+                     
                     return (
                       <tr key={match.id} className="hover:bg-surface-hover/30 transition-colors group">
                         <td className="px-6 py-4">
                            <div className="text-main font-bold text-sm uppercase tracking-tight italic">{match.game} {match.format}</div>
                            <div className="text-[10px] text-sub uppercase font-bold tracking-widest">
-                             {opponent ? `vs ${opponent.username}` : 'Solo / Waitlist'}
+                             {opponentName}
                            </div>
                         </td>
                         <td className="px-6 py-4 text-xs text-sub font-mono">{date}</td>
@@ -180,11 +208,11 @@ export default function MyMatchesPage() {
                              {isWinner ? 'Victory' : 'Defeat'}
                            </span>
                         </td>
-                        <td className="px-6 py-4">
-                           <span className={`text-main font-mono font-bold ${isWinner ? 'text-accent' : 'text-sub'}`}>
-                              {isWinner ? `+${Math.floor(match.challengeFee * 1.8)}` : '--'}
-                           </span>
-                        </td>
+                         <td className="px-6 py-4">
+                            <span className={`text-main font-mono font-bold ${isWinner ? 'text-accent' : 'text-sub'}`}>
+                               {prizeString}
+                            </span>
+                         </td>
                       </tr>
                     );
                   })}

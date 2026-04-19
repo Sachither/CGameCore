@@ -246,7 +246,12 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                   </div>
                   <div className="text-right border-l border-surface-border pl-8">
                      <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 text-center">Victory Pool</p>
-                     <p className={`text-2xl font-black italic tracking-tighter ${match?.game === 'CODM' ? 'text-red-500' : 'text-accent'}`}>{Math.floor((match?.challengeFee || 0) * (match?.maxPlayers || 2) * 0.8).toLocaleString()} CR</p>
+                     <p className={`text-2xl font-black italic tracking-tighter ${match?.game === 'CODM' ? 'text-red-500' : 'text-accent'}`}>
+                        {(match as any).isPromo 
+                          ? (((match as any).prizeUSD || 0) * 100).toLocaleString() 
+                          : Math.floor((match?.challengeFee || 0) * (match?.maxPlayers || 2) * 0.8).toLocaleString()
+                        } CR
+                     </p>
                   </div>
                </div>
             </div>
