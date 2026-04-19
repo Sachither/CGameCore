@@ -22,8 +22,46 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CGameCore | High Stakes Mobile Gaming",
-  description: "Play CODM and eFootball for real money. Skill-based matchmaking with automated Escrow.",
+  metadataBase: new URL('https://www.cgamecore.online'),
+  title: {
+    default: "CGameCore | High Stakes Mobile Gaming",
+    template: "%s | CGameCore",
+  },
+  description: "Play CODM and eFootball for real money. Enter automated escrow tournaments, verify scores, and win real cash payouts on Africa's premier gaming platform.",
+  keywords: ["Esports", "CODM tournaments", "eFootball tournaments", "play for money", "gaming escrow", "competitive mobile gaming", "crypto gaming", "Nigeria esports"],
+  openGraph: {
+    title: "CGameCore | High Stakes Mobile Gaming",
+    description: "Play CODM and eFootball for real money. Enter automated escrow tournaments, verify scores, and win real cash payouts.",
+    url: "https://www.cgamecore.online",
+    siteName: "CGameCore",
+    images: [
+      {
+        url: "/web-app-manifest-512x512.png", // Fallback OPenGraph image using existing 512 logo
+        width: 512,
+        height: 512,
+        alt: "CGameCore Logo",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "CGameCore | High Stakes Mobile Gaming",
+    description: "Compete in high stakes CODM & eFootball matches. Secure escrow and instant payouts.",
+    images: ["/web-app-manifest-512x512.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
