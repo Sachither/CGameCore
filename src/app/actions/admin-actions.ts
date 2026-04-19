@@ -782,7 +782,12 @@ export async function getPendingWithdrawalsAction(idToken: string) {
       // Decrypt account number for admin display
       let accountNumber = '';
       try {
-        accountNumber = data.encryptedAccountNumber ? decryptData(data.encryptedAccountNumber) : data.accountNumber || '';
+        if (data.encryptedAccountNumber) {
+          accountNumber = decryptData(data.encryptedAccountNumber);
+          if (!accountNumber) throw new Error("Decryption returned empty string (Check ENCRYPTION_KEY mismatch)");
+        } else {
+          accountNumber = data.accountNumber || '';
+        }
       } catch (decryptError) {
         console.error(`Failed to decrypt account number for withdrawal ${d.id}:`, decryptError);
         accountNumber = '[DECRYPTION_FAILED]';
