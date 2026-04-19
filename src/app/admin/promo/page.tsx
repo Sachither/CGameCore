@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { createPromoEventAction, deletePromoEventAction } from "@/app/actions/promo-actions";
 import { getEffectiveRateAction } from "@/app/actions/rate-actions";
-import { Trophy, Plus, RefreshCw, Flame, Users, Zap, ShieldCheck, Trash2 } from "lucide-react";
+import { Trophy, Plus, RefreshCw, RefreshCcw, Flame, Users, Zap, ShieldCheck, Trash2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import TacticalConfirmModal from "@/components/admin/TacticalConfirmModal";
@@ -268,38 +268,53 @@ function DeletePromoButton({ promo }: { promo: any }) {
   const { user } = useAuth();
   const toast = useToast();
   const [isOpen, setIsOpen] = useState(false);
+  const [isRefundMode, setIsRefundMode] = useState(false);
 
   const handleDelete = async () => {
     try {
       const idToken = await user?.getIdToken();
       if (idToken) {
-        await deletePromoEventAction(idToken, promo.id);
-        toast.success("PROMO TERMINATED", "The promotional operational record has been expunged.");
+        await deletePromoEventAction(idToken, promo.id, isRefundMode);
+        toast.success(isRefundMode ? "PROMO REFUNDED & TERMINATED" : "PROMO TERMINATED", "The promotional operational record has been expunged.");
       }
     } catch (e) {
       toast.error("DELETION FAILED", "Tactical record could not be purged.");
     }
   };
 
+  const openDelete = () => { setIsRefundMode(false); setIsOpen(true); };
+  const openRefund = () => { setIsRefundMode(true); setIsOpen(true); };
+
   return (
-    <>
-      <button
-        onClick={() => setIsOpen(true)}
-        className="p-2 bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500 hover:text-black transition-all rounded-sm"
-        title="Delete Promo"
+    <div className="flex gap-2">
+      {promo.entryFeeCoins > 0 && (promo.participants?.length || 0) > 0 && (
+         <button 
+           onClick={openRefund}
+           className="p-2 bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 hover:bg-yellow-500 hover:text-black transition-all rounded-sm flex items-center justify-center"
+           title="Refund Entry Fees & Delete"
+         >
+           <RefreshCcw className="w-4 h-4 ml-1 mr-1" />
+           <span className="text-[10px] uppercase font-black tracking-widest px-1 mr-1">Refund All</span>
+         </button>
+      )}
+
+      <button 
+        onClick={openDelete}
+        className="p-2 bg-red-500/10 border border-red-500/20 text-red-500 hover:bg-red-500 hover:text-black transition-all rounded-sm flex items-center justify-center"
+        title="Delete Promo (No Refunds)"
       >
         <Trash2 className="w-4 h-4" />
       </button>
 
-      <TacticalConfirmModal
+      <TacticalConfirmModal 
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         onConfirm={handleDelete}
-        title="Terminate Operation?"
-        message={`Are you sure you want to expunge the 100K RUSH: ${promo.game}? This data cannot be recovered once purged from the neural core.`}
-        confirmText="Expunge Record"
+        title={isRefundMode ? "Refund & Terminate?" : "Terminate Operation?"}
+        message={isRefundMode ? `Are you sure you want to completely refund the ${promo.participants?.length || 0} participants ${promo.entryFeeCoins} coins each and delete this promo?` : `Are you sure you want to expunge the 100K RUSH: ${promo.game}? This data cannot be recovered once purged.`}
+        confirmText={isRefundMode ? "Refund & Expunge" : "Expunge Record"}
         isDanger={true}
       />
-    </>
+    </div>
   );
 }
