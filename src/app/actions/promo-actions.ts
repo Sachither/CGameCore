@@ -75,6 +75,16 @@ export async function joinPromoEventAction(idToken: string, promoId: string) {
   const userRef = adminDb.collection("users").doc(uid);
 
   try {
+    // 🛡️ SECURITY: Prevent Dual Enrollment in multiple Promos concurrently
+    const activePromoQuery = await adminDb.collection("promo_events")
+      .where("participants", "array-contains", uid)
+      .where("status", "in", ["OPEN", "READY", "ACTIVE"])
+      .get();
+
+    if (!activePromoQuery.empty) {
+      throw new Error("DUAL_ENROLLMENT_DENIED: You are currently active in another ongoing Promo Event. You must complete it or await elimination before joining a new one.");
+    }
+
     const result = await adminDb.runTransaction(async (transaction) => {
       const promoSnap = await transaction.get(promoRef);
       const userSnap = await transaction.get(userRef);

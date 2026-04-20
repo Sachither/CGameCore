@@ -139,6 +139,13 @@ export default function PromoTournamentCard() {
                 )}
              </p>
 
+             <div className="bg-red-500/10 border border-red-500/20 p-3 rounded-sm max-w-xl mb-8 flex gap-3 items-center">
+                <span className="text-xl">⚠️</span>
+                <p className="text-[9px] font-black text-red-500 uppercase tracking-widest leading-loose">
+                  Tactical Warning: You can only enlist in <span className="underline">ONE</span> promo event at a time! Choose your arena carefully, as you cannot switch once registered.
+                </p>
+             </div>
+
              <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 max-w-2xl">
                 <div>
                    <p className="text-[9px] text-gray-600 font-black uppercase tracking-widest mb-1">Combat Arena</p>
@@ -177,12 +184,16 @@ export default function PromoTournamentCard() {
                 </div>
 
                 {/* Cyber Progress Bar */}
-                <div className="relative h-2 bg-white/5 rounded-full overflow-hidden mb-10 border border-white/5">
+                <div className="relative h-2 bg-white/5 rounded-full overflow-hidden mb-4 border border-white/5">
                    <div 
                       className="absolute top-0 left-0 h-full bg-gradient-to-r from-accent/50 to-accent transition-all duration-1000 shadow-[0_0_10px_rgba(0,255,102,0.5)]" 
                       style={{ width: `${progress}%` }}
                    />
                 </div>
+                
+                <p className="text-[9px] text-accent-aware text-center font-bold uppercase tracking-widest mb-6">
+                   Tip: Share the platform with your friends to fill the bracket and trigger the tournament faster!
+                </p>
 
                 {message && (
                    <div className={`mb-6 p-4 rounded-sm border ${message.type === 'error' ? 'bg-red-500/10 border-red-500/20 text-red-400' : 'bg-accent/10 border-accent/20 text-accent'} text-[10px] font-black uppercase tracking-widest text-center animate-in zoom-in-95 duration-300`}>
