@@ -254,6 +254,16 @@ export async function deletePromoEventAction(idToken: string, promoId: string, s
         }
       }
 
+      // 🚀 RECIPROCAL CLEANUP: Delete associated circuit/match records to prevent ghost entries on dashboard
+      if (pData?.circuitId) {
+        const cRef = adminDb.collection("circuits").doc(pData.circuitId);
+        transaction.delete(cRef);
+      }
+      if (pData?.matchId) {
+        const mRef = adminDb.collection("matches").doc(pData.matchId);
+        transaction.delete(mRef);
+      }
+
       transaction.delete(promoRef);
 
       const auditRef = adminDb.collection("admin_audit_log").doc();
@@ -261,6 +271,8 @@ export async function deletePromoEventAction(idToken: string, promoId: string, s
         action: shouldRefund ? "REFUND_AND_DELETE_PROMO" : "DELETE_PROMO_EVENT",
         adminUid,
         promoId,
+        circuitId: pData?.circuitId || null,
+        matchId: pData?.matchId || null,
         refundedCount: shouldRefund ? participants.length : 0,
         totalRefundAmount: shouldRefund ? (participants.length * fee) : 0,
         timestamp: admin.firestore.FieldValue.serverTimestamp()

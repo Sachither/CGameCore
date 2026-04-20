@@ -69,8 +69,13 @@ export default function ActiveTournamentsTable() {
     setLoadingCounter(0);
 
     // 1. Fetch Active Circuits (Tournament only)
+    const searchWindow = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+    // 1. Fetch Active Circuits (Tournament only)
     const qCircuits = query(
       collection(db, "circuits"),
+      where("status", "in", ["FILLING", "KNOCKOUT_Q", "ACTIVE"]),
+      where("createdAt", ">", searchWindow),
       orderBy("createdAt", "desc")
     );
     const unsubCircuits = onSnapshot(qCircuits, (snap) => {
@@ -93,8 +98,7 @@ export default function ActiveTournamentsTable() {
             playerIds: data.playerIds || [],
             isPromo: data.isPromo
           } as any;
-        })
-        .filter(c => ['FILLING', 'KNOCKOUT_Q', 'ACTIVE'].includes(c.status));
+        });
       setCircuits(docs);
       
       // Increment loading counter and check if both queries are done
@@ -117,7 +121,8 @@ export default function ActiveTournamentsTable() {
     const qMatches = query(
       collection(db, "matches"),
       where("format", "==", "tournament"),
-      where("status", "in", ["WAITING", "READY"])
+      where("status", "in", ["WAITING", "READY"]),
+      where("createdAt", ">", searchWindow)
     );
     const unsubMatches = onSnapshot(qMatches, (snap) => {
       const docs = snap.docs
