@@ -72,32 +72,27 @@ export default function SystemBanner() {
     e.preventDefault();
     e.stopPropagation();
     
-    console.log("[SystemBanner] Dismiss clicked, notification:", activeNotification?.id);
+    if (!activeNotification || !user) return;
+
+    const notificationId = activeNotification.id;
     
-    if (!activeNotification || !user) {
-      console.error("[SystemBanner] Missing notification or user");
-      return;
-    }
-    
-    setIsDismissing(true);
+    // 🚀 OPTIMISTIC UI: Clear the notification immediately from the view
+    // This prevents the user from being stuck with a spinner if the server/network times out.
+    setActiveNotification(null);
+    setIsDismissing(false); // We don't need a spinner if it's gone instantly
     
     try {
       const idToken = await user.getIdToken();
-      console.log("[SystemBanner] Calling markNotificationReadAction with ID:", activeNotification.id);
-      
-      const result = await markNotificationReadAction(idToken, activeNotification.id);
-      console.log("[SystemBanner] markNotificationReadAction result:", result);
-      
-      if (result.success) {
-        console.log("[SystemBanner] Notification marked as read, clearing UI");
-        setActiveNotification(null);
-      } else {
-        console.error("[SystemBanner] Failed to mark as read:", result.error);
-      }
+      // fire and forget the server update (don't await it to block UI)
+      markNotificationReadAction(idToken, notificationId).then(result => {
+        if (!result.success) {
+          console.error("[SystemBanner] Background mark as read failed:", result.error);
+        }
+      }).catch(err => {
+        console.error("[SystemBanner] Background mark as read error:", err);
+      });
     } catch (error) {
-      console.error("[SystemBanner] Dismiss failed:", error);
-    } finally {
-      setIsDismissing(false);
+      console.error("[SystemBanner] Token retrieval failed:", error);
     }
   };
 

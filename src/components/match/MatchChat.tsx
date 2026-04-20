@@ -115,8 +115,28 @@ Secure the objective.`,
     const text = sanitize(msg);
     setMsg("");
     const senderName = profile?.username || user.displayName || 'Operator';
-
     const isMod = profile?.role === 'MODERATOR' || profile?.role === 'ADMIN' || !!profile?.isAdmin;
+
+    // 🚀 OPTIMISTIC UI: Add a local temporary message immediately
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMsg: Message = {
+      id: tempId,
+      text,
+      senderUid: user.uid,
+      senderName,
+      role: profile?.role || (profile?.isAdmin ? 'ADMIN' : 'USER'),
+      isMod,
+      createdAt: { seconds: Math.floor(Date.now() / 1000) } // Mock Firestore timestamp
+    };
+
+    setMessages(prev => [...prev, optimisticMsg]);
+    
+    // Auto-scroll for the optimistic message
+    setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    }, 50);
 
     try {
       await addDoc(collection(db, "matches", matchId, "messages"), {
@@ -127,7 +147,10 @@ Secure the objective.`,
         isMod,
         createdAt: serverTimestamp(),
       });
+      // Note: The real message will arrive via onSnapshot and replace the list
     } catch (err: any) {
+      // Remove optimistic message on failure
+      setMessages(prev => prev.filter(m => m.id !== tempId));
       toast.error("Transmission Error", err.message);
       console.error("Chat send error: ", err);
       setChatError(`Transmission failed: ${err.message}`);

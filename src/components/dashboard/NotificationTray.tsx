@@ -41,18 +41,37 @@ export default function NotificationTray() {
     
     // Auto-mark all as read when opening
     if (nextState && unreadCount > 0 && user) {
-       const idToken = await user.getIdToken();
-       await markAllNotificationsReadAction(idToken);
+       // 🚀 OPTIMISTIC UI: Mark all as read locally first
        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+
+       try {
+         const idToken = await user.getIdToken();
+         // Fire and forget background update
+         markAllNotificationsReadAction(idToken).catch(err => {
+           console.error("[NotificationTray] Background mark all read error:", err);
+         });
+       } catch (error) {
+         console.error("[NotificationTray] Token retrieval error:", error);
+       }
     }
   };
 
   const handleMarkRead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation(); // Don't close tray
     if (!user) return;
-    const idToken = await user.getIdToken();
-    await markNotificationReadAction(idToken, id);
+
+    // 🚀 OPTIMISTIC UI: Update local state immediately
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+
+    try {
+      const idToken = await user.getIdToken();
+      // Fire and forget background update
+      markNotificationReadAction(idToken, id).catch(err => {
+        console.error("[NotificationTray] Background mark read error:", err);
+      });
+    } catch (error) {
+      console.error("[NotificationTray] Token retrieval error:", error);
+    }
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
