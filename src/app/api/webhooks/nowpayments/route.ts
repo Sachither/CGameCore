@@ -23,7 +23,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Configuration Error" }, { status: 500 });
     }
 
-    const payload = await req.json();
+    const rawBody = await req.text();
+    const payload = JSON.parse(rawBody);
     const signature = req.headers.get("x-nowpayments-sig") || "";
 
     // DEEP DIAGNOSTIC: Log headers and payload structure
@@ -38,8 +39,8 @@ export async function POST(req: Request) {
       all_keys: Object.keys(payload).sort().join(",")
     });
 
-    // 4.2 FIX: Use constant-time signature verification
-    const isValid = verifyNowPaymentsSignature(payload, signature, NOWPAYMENTS_IPN_SECRET);
+    // 4.2 FIX: Use constant-time signature verification with multi-method fallback
+    const isValid = verifyNowPaymentsSignature(payload, signature, NOWPAYMENTS_IPN_SECRET, rawBody);
 
     if (!isValid) {
        console.error("[NowPayments Webhook] SECURITY: Invalid Signature detected. Check IPN Secret match.");

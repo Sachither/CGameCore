@@ -53,43 +53,63 @@ export function verifyWebhookSignature(
 export function verifyNowPaymentsSignature(
   payload: Record<string, any>,
   signature: string,
-  secret: string
+  secret: string,
+  rawBody?: string
 ): boolean {
   try {
-    // NowPayments requires sorted keys for signature
-    const sortedPayloadStr = JSON.stringify(payload, Object.keys(payload).sort());
-    const hash = crypto
-      .createHmac("sha512", secret)
-      .update(sortedPayloadStr)
-      .digest("hex");
-
-    // Convert both to buffers for constant-time comparison
-    // Use lowercase and trim to prevent casing/whitespace mismatches
     const cleanSignature = signature.trim().toLowerCase();
-    const hashBuffer = Buffer.from(hash);
     const signatureBuffer = Buffer.from(cleanSignature);
 
-    if (hashBuffer.length !== signatureBuffer.length) {
-      console.warn("[WebhookSecurity] NowPayments signature length mismatch:", {
-        expected: hashBuffer.length,
-        received: signatureBuffer.length
-      });
-      return false;
-    }
-
-    const isValid = crypto.timingSafeEqual(hashBuffer, signatureBuffer);
+    // Prepare sorted payload
+    const sortedPayloadStr = JSON.stringify(payload, Object.keys(payload).sort());
     
-    if (!isValid) {
-      // SAFE DIAGNOSTIC: Log lengths and first/last chars
-      // NEVER log the full hash or signature in production logs
-      console.warn("[WebhookSecurity] NowPayments signature mismatch detailed check:", {
-        payloadKeys: Object.keys(payload).sort().join(","),
-        hashPreview: `${hash.substring(0, 4)}...${hash.substring(hash.length - 4)}`,
-        sigPreview: `${cleanSignature.substring(0, 4)}...${cleanSignature.substring(cleanSignature.length - 4)}`
-      });
+    // Define the candidate strings and secrets
+    const candidateStrings = [sortedPayloadStr];
+    if (rawBody) candidateStrings.push(rawBody);
+
+    const candidateSecrets = [
+      { key: secret, label: "UTF8_STRING" },
+    ];
+    
+    // Try Base64 secret as well if it looks like one
+    if (secret.includes('/') || secret.includes('+')) {
+      try {
+        candidateSecrets.push({ 
+          key: Buffer.from(secret, 'base64').toString('binary'), 
+          label: "BASE64_DECODED" 
+        });
+      } catch (e) {}
     }
 
-    return isValid;
+    // Brute-force verification
+    for (const candString of candidateStrings) {
+      for (const candSec of candidateSecrets) {
+        const hash = crypto
+          .createHmac("sha512", candSec.key)
+          .update(candString)
+          .digest("hex");
+
+        const hashBuffer = Buffer.from(hash);
+
+        if (hashBuffer.length === signatureBuffer.length) {
+          if (crypto.timingSafeEqual(hashBuffer, signatureBuffer)) {
+            console.log(`[WebhookSecurity] NowPayments verification SUCCESS using ${candSec.label} and ${candString === rawBody ? "RAW_BODY" : "SORTED_JSON"}`);
+            return true;
+          }
+        }
+      }
+    }
+
+    // If none matched, log detailed mismatch for the primary expected method (Sorted JSON + UTF8 Secret)
+    const primaryHash = crypto.createHmac("sha512", secret).update(sortedPayloadStr).digest("hex");
+    
+    console.warn("[WebhookSecurity] NowPayments multi-method signature mismatch detailed check:", {
+      payloadKeys: Object.keys(payload).sort().join(","),
+      hashPreview: `${primaryHash.substring(0, 4)}...${primaryHash.substring(primaryHash.length - 4)}`,
+      sigPreview: `${cleanSignature.substring(0, 4)}...${cleanSignature.substring(cleanSignature.length - 4)}`
+    });
+
+    return false;
   } catch (error) {
     console.error("[WebhookSecurity] NowPayments signature verification error:", error);
     return false;
