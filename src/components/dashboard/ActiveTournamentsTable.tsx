@@ -68,20 +68,18 @@ export default function ActiveTournamentsTable() {
     setLoading(true);
     setLoadingCounter(0);
 
-    // 1. Fetch Active Circuits (Tournament only)
+    // 1. Fetch Circuits from the last 72 hours
     const searchWindow = new Date(Date.now() - 72 * 60 * 60 * 1000);
-
-    // 1. Fetch Active Circuits (Tournament only)
     const qCircuits = query(
       collection(db, "circuits"),
-      where("status", "in", ["FILLING", "KNOCKOUT_Q", "ACTIVE"]),
-      where("createdAt", ">", searchWindow),
-      orderBy("createdAt", "desc")
+      where("createdAt", ">", searchWindow)
     );
     const unsubCircuits = onSnapshot(qCircuits, (snap) => {
+      const allowedStatuses = ["FILLING", "KNOCKOUT_Q", "ACTIVE"];
       const docs = snap.docs
+        .filter(d => allowedStatuses.includes(d.data().status))
         .map(d => {
-          const data = d.id ? d.data() : {};
+          const data = d.data();
           // DYNAMIC QUOTA: Support both 16-player and custom Promo sizes
           const quota = data.isPromo ? (data.playerIds?.length || 128) : 16;
           return {
@@ -96,8 +94,15 @@ export default function ActiveTournamentsTable() {
             status: data.status,
             isGathering: false,
             playerIds: data.playerIds || [],
-            isPromo: data.isPromo
+            isPromo: data.isPromo,
+            createdAt: data.createdAt
           } as any;
+        })
+        .sort((a, b) => {
+          // Client-side sort by createdAt DESC
+          const timeA = a.createdAt?.toMillis?.() || 0;
+          const timeB = b.createdAt?.toMillis?.() || 0;
+          return timeB - timeA;
         });
       setCircuits(docs);
       
@@ -117,18 +122,17 @@ export default function ActiveTournamentsTable() {
       });
     });
 
-    // 2. Fetch Gathering Match Lobbies (tournament format only)
+    // 2. Fetch Gathering Match Lobbies from the last 72 hours
     const qMatches = query(
       collection(db, "matches"),
-      where("format", "==", "tournament"),
-      where("status", "in", ["WAITING", "READY"]),
       where("createdAt", ">", searchWindow)
     );
     const unsubMatches = onSnapshot(qMatches, (snap) => {
+      const allowedStatuses = ["WAITING", "READY"];
       const docs = snap.docs
         .filter(d => {
            const data = d.data();
-           return !data.circuitId; // Exclude spawned sub-matches
+           return data.format === 'tournament' && allowedStatuses.includes(data.status) && !data.circuitId;
         })
         .map(d => {
           const data = d.data();
