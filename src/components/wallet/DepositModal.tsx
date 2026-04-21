@@ -252,7 +252,7 @@ export default function DepositModal({
           customizations: {
             title: "CGameCore Wallet",
             description: `Vault Deposit (${coinsGenerated.toLocaleString()} Coins)`,
-            logo: "https://cgamecore.vercel.app/logo.png",
+            logo: "https://cgamecore.online/logo.png",
           },
           meta: {
             uid: user.uid,
