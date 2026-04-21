@@ -35,6 +35,7 @@ export async function POST(req: Request) {
       order_id: payload.order_id,
       payment_status: payload.payment_status,
       payment_id: payload.payment_id,
+      all_keys: Object.keys(payload).sort().join(",")
     });
 
     // 4.2 FIX: Use constant-time signature verification

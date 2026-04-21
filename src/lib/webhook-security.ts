@@ -63,14 +63,33 @@ export function verifyNowPaymentsSignature(
       .update(sortedPayloadStr)
       .digest("hex");
 
+    // Convert both to buffers for constant-time comparison
+    // Use lowercase and trim to prevent casing/whitespace mismatches
+    const cleanSignature = signature.trim().toLowerCase();
     const hashBuffer = Buffer.from(hash);
-    const signatureBuffer = Buffer.from(signature);
+    const signatureBuffer = Buffer.from(cleanSignature);
 
     if (hashBuffer.length !== signatureBuffer.length) {
+      console.warn("[WebhookSecurity] NowPayments signature length mismatch:", {
+        expected: hashBuffer.length,
+        received: signatureBuffer.length
+      });
       return false;
     }
 
-    return crypto.timingSafeEqual(hashBuffer, signatureBuffer);
+    const isValid = crypto.timingSafeEqual(hashBuffer, signatureBuffer);
+    
+    if (!isValid) {
+      // SAFE DIAGNOSTIC: Log lengths and first/last chars
+      // NEVER log the full hash or signature in production logs
+      console.warn("[WebhookSecurity] NowPayments signature mismatch detailed check:", {
+        payloadKeys: Object.keys(payload).sort().join(","),
+        hashPreview: `${hash.substring(0, 4)}...${hash.substring(hash.length - 4)}`,
+        sigPreview: `${cleanSignature.substring(0, 4)}...${cleanSignature.substring(cleanSignature.length - 4)}`
+      });
+    }
+
+    return isValid;
   } catch (error) {
     console.error("[WebhookSecurity] NowPayments signature verification error:", error);
     return false;
