@@ -240,9 +240,12 @@ service cloud.firestore {
       allow create: if isSignedIn() && !isBanned();
       
       // Users can update only their own tickets (limited fields); admins can update all
-      allow update: if isSignedIn() && !isBanned() && (
-        (resource.data.uid == request.auth.uid && request.resource.data.uid == resource.data.uid) ||
-        isAdmin()
+      allow update: if isSignedIn() && !isBanned() && !isSuspended() && (
+        isAdmin() || (
+          resource.data.uid == request.auth.uid && 
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['status', 'priority', 'adminAssigned', 'resolvedAt', 'closedAt', 'uid', 'ticketId', 'category', 'subject'])
+        )
       );
       
       allow write: if false; // Prevent deletes

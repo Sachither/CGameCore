@@ -36,15 +36,11 @@ export function verifyWebhookSignature(
     const hashBuffer = Buffer.from(hash);
     const signatureBuffer = Buffer.from(signature);
 
-    // timingSafeEqual throws if lengths don't match
-    // This is acceptable because length mismatch is obvious
-    try {
-      crypto.timingSafeEqual(hashBuffer, signatureBuffer);
-      return true;
-    } catch (err) {
-      // timingSafeEqual throws if buffers don't match
+    if (hashBuffer.length !== signatureBuffer.length) {
       return false;
     }
+
+    return crypto.timingSafeEqual(hashBuffer, signatureBuffer);
   } catch (error) {
     console.error("[WebhookSecurity] Signature verification error:", error);
     return false;
@@ -70,12 +66,11 @@ export function verifyNowPaymentsSignature(
     const hashBuffer = Buffer.from(hash);
     const signatureBuffer = Buffer.from(signature);
 
-    try {
-      crypto.timingSafeEqual(hashBuffer, signatureBuffer);
-      return true;
-    } catch (err) {
+    if (hashBuffer.length !== signatureBuffer.length) {
       return false;
     }
+
+    return crypto.timingSafeEqual(hashBuffer, signatureBuffer);
   } catch (error) {
     console.error("[WebhookSecurity] NowPayments signature verification error:", error);
     return false;

@@ -197,6 +197,71 @@ export async function verifyNowPaymentsAmount(
       };
     }
 
+    if (verifyAgainstApi && NOWPAYMENTS_API_KEY && storedData?.nowpayments_invoice_id) {
+      try {
+        const invoiceId = storedData.nowpayments_invoice_id;
+        const npResponse = await fetch(
+          `https://api.nowpayments.io/v1/invoice/${invoiceId}`,
+          {
+            method: "GET",
+            headers: {
+              "x-api-key": NOWPAYMENTS_API_KEY,
+            },
+          }
+        );
+
+        if (npResponse.ok) {
+          const npData = await npResponse.json();
+          
+          // Verify it's for the same order and same amount
+          const apiAmount = Number(npData.price_amount);
+          const apiOrderId = npData.order_id;
+
+          if (apiOrderId !== reference) {
+             return {
+                verified: false,
+                storedAmountUsd,
+                claimedAmountUsd,
+                mismatch: true,
+                reason: "Gateway Order ID mismatch",
+             };
+          }
+
+          const apiDifference = Math.abs(apiAmount - claimedAmountUsd);
+          const apiTolerance = Math.max(0.01, apiAmount * 0.15);
+
+          if (apiDifference > apiTolerance) {
+            return {
+              verified: false,
+              storedAmountUsd: apiAmount,
+              claimedAmountUsd,
+              mismatch: true,
+              reason: "Gateway amount mismatch",
+            };
+          }
+          
+          // Ensure the status is finished/paid/confirmed
+          const status = npData.status;
+          const validStatuses = ['finished', 'paid', 'confirmed', 'partially_paid'];
+          if (!validStatuses.includes(status)) {
+             return {
+                verified: false,
+                storedAmountUsd: apiAmount,
+                claimedAmountUsd,
+                mismatch: true,
+                reason: `Gateway status is not fulfilled: ${status}`,
+             };
+          }
+
+          console.log(`[PaymentVerification] NowPayments API verified for ${reference}`);
+        } else {
+           console.warn(`[PaymentVerification] NowPayments API status check failed: ${npResponse.status}`);
+        }
+      } catch (e) {
+        console.warn("[PaymentVerification] NowPayments API fallback active:", e);
+      }
+    }
+
     await logPaymentVerificationSuccess(reference, "nowpayments", {
       amountUsd: claimedAmountUsd,
     });

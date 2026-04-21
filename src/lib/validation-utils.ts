@@ -20,16 +20,32 @@ export const REGEX = {
   ACCOUNT_NUMBER: /^\d{10}$/,
 };
 
-/**
- * Sanitizes strings for Firestore and UI display.
- * Trims whitespace and removes potentially dangerous HTML-like tags.
- */
 export function sanitize(input: string): string {
   if (!input) return "";
   return input
     .trim()
     .replace(/<[^>]*>?/gm, "") // Strip HTML tags
     .slice(0, 1000); // Prevent overflow attacks
+}
+
+/**
+ * Checks for common domain typos to prevent user lock-out.
+ */
+export function isTypoDomain(email: string): { isTypo: boolean; suggestion?: string } {
+  const commonTypos: Record<string, string> = {
+    "gmol.com": "gmail.com",
+    "gmaill.com": "gmail.com",
+    "gamil.com": "gmail.com",
+    "yaho.com": "yahoo.com",
+    "outlok.com": "outlook.com",
+    "hotmai.com": "hotmail.com",
+  };
+
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (domain && commonTypos[domain]) {
+    return { isTypo: true, suggestion: commonTypos[domain] };
+  }
+  return { isTypo: false };
 }
 
 /**
@@ -49,6 +65,14 @@ export function validate(key: keyof typeof REGEX, value: string): string | null 
       default: return "Invalid format.";
     }
   }
+
+  if (key === "EMAIL") {
+    const typoCheck = isTypoDomain(sanitized);
+    if (typoCheck.isTypo) {
+      return `Typo detected? Did you mean @${typoCheck.suggestion}?`;
+    }
+  }
+
   return null;
 }
 

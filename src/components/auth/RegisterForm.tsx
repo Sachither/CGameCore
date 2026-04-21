@@ -87,6 +87,22 @@ export default function RegisterForm() {
         return;
       }
 
+      // 0.5 Check Phone Availability
+      const phoneAvailabilityRes = await fetch(
+        `/api/identity-check?field=phone&value=${encodeURIComponent(formData.phone)}`
+      );
+      const phoneData = await phoneAvailabilityRes.json();
+
+      if (!phoneData.success) {
+        throw new Error(phoneData.error || "Unable to verify phone availability.");
+      }
+
+      if (!phoneData.available) {
+        setError("PHONE NUMBER ALREADY IN USE. EACH ACCOUNT REQUIRES A UNIQUE LINE.");
+        setLoading(false);
+        return;
+      }
+
       // 1. Create Auth User
       setError("COMMUNICATING WITH FIREBASE...");
       const userCredential = await createUserWithEmailAndPassword(
@@ -102,10 +118,35 @@ export default function RegisterForm() {
         displayName: formData.username
       });
 
-      // 3. Reserve Name 
+      // 3. Reserve Name & Phone
       setError("CLAIMING GAMERTAG...");
-      await setDoc(doc(db, "usernames", lowerUsername), {
-        uid: user.uid
+      const normalizedPhone = formData.phone.replace(/[^0-9]/g, "");
+      
+      await Promise.all([
+        setDoc(doc(db, "usernames", lowerUsername), {
+          uid: user.uid
+        }),
+        setDoc(doc(db, "phones", normalizedPhone), {
+          uid: user.uid
+        })
+      ]);
+
+      // 4. Create User Profile
+      setError("PREPARING YOUR VAULT...");
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        username: formData.username,
+        email: formData.email,
+        phone: formData.phone,
+        avatarId: Math.floor(Math.random() * 20),
+        balanceCoins: 0,
+        totalWins: 0,
+        totalMatches: 0,
+        lifetimeDeposits: 0,
+        lifetimeWagered: 0,
+        createdAt: new Date().toISOString(), // Use simple ISO string for client-side initial write
+        status: "ACTIVE",
+        role: "USER"
       });
 
       setError("SUCCESS! SYNCING SECURE SESSION...");
