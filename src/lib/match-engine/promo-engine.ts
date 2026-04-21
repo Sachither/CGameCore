@@ -131,7 +131,7 @@ export async function spurnPromoTournamentInternal(promoId: string) {
 
         transaction.set(matchRef, {
           game: 'CODM',
-          format: 'br',
+          format: 'tournament',
           challengeFee: 0,
           status: 'WAITING', // Reverted to WAITING to force manual link
           playerIds: participants,

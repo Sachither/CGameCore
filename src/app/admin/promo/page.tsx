@@ -1,4 +1,5 @@
 "use client";
+// [TACTICAL INTEGRITY CHECK: 1.1] Force Segment Refresh
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { createPromoEventAction, deletePromoEventAction } from "@/app/actions/promo-actions";

@@ -4,7 +4,8 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
 import { getAuditLogsAction, toggleSystemLockdownAction } from "@/app/actions/admin-actions";
 import { syncPlatformRatesAction } from "@/app/actions/rate-actions";
-import { ShieldAlert, History, Lock, Unlock, Loader2, AlertTriangle, TrendingUp, RefreshCcw, Landmark } from "lucide-react";
+import { ShieldAlert, History, Lock, Unlock, Loader2, AlertTriangle, TrendingUp, RefreshCcw, Landmark, Trash2, Database, Eraser } from "lucide-react";
+import { resetPlatformFinancesAction, purgeFinancialLogsAction } from "@/app/actions/admin-financial-actions";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -18,6 +19,7 @@ export default function SuperAdminSystemPage() {
   const [globalAuditView, setGlobalAuditView] = useState(false);
   const [rates, setRates] = useState<any>(null);
   const [ratesLoading, setRatesLoading] = useState(false);
+  const [financeLoading, setFinanceLoading] = useState(false);
   
   // Strict Super Admin Check (Supports modern role and legacy boolean)
   const isSuperAdmin = profile?.role === 'SUPER_ADMIN' || profile?.isSuperAdmin === true;
@@ -87,6 +89,38 @@ export default function SuperAdminSystemPage() {
       console.error("Rate sync failed", e);
     }
     setRatesLoading(false);
+  };
+
+  const handleResetFinances = async () => {
+    if (!user) return;
+    if (!window.confirm("CRITICAL PROTOCOL: This will reset all aggregate profit/deposit stats to ZERO. This action is IRREVERSIBLE. Proceed?")) return;
+    
+    setFinanceLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await resetPlatformFinancesAction(idToken);
+      if (res.success) alert("TREASURY RESET SUCCESSFUL. Aggregate stats are now zero.");
+      else alert("Reset failed: " + res.error);
+    } catch (e) {
+      console.error(e);
+    }
+    setFinanceLoading(false);
+  };
+
+  const handlePurgeLogs = async () => {
+    if (!user) return;
+    if (!window.confirm("NUKE PROTOCOL: This will PERMANENTLY DELETE current transaction ledger entries (up to 500 records). Proceed?")) return;
+    
+    setFinanceLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await purgeFinancialLogsAction(idToken);
+      if (res.success) alert(`PURGE SUCCESSFUL. ${res.count} records removed from ledger.`);
+      else alert("Purge failed: " + res.error);
+    } catch (e) {
+      console.error(e);
+    }
+    setFinanceLoading(false);
   };
 
   if (loading || (!isSuperAdmin)) return (
@@ -184,6 +218,53 @@ export default function SuperAdminSystemPage() {
               ))}
            </div>
         </div>
+
+         {/* NUKE PROTOCOL: FINANCE */}
+         <div className="p-8 bg-[#0a0a0a] border border-red-500/20 rounded-sm relative overflow-hidden">
+            <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+               <Trash2 className="w-32 h-32 text-red-500 font-black" />
+            </div>
+            
+            <div className="flex items-center gap-3 mb-6 relative z-10">
+               <div className="p-2 rounded-sm bg-red-500/10 text-red-500">
+                  <Database className="w-5 h-5" />
+               </div>
+               <div>
+                  <h2 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">Nuke Protocol: Finance</h2>
+                  <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Permanent Data Purge & Treasury Reset</p>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
+               <div className="bg-red-500/5 border border-red-500/10 p-6 rounded-sm">
+                  <h3 className="text-xs font-black text-red-500 uppercase tracking-widest mb-2">Reset Financial Stats</h3>
+                  <p className="text-[9px] text-gray-500 font-bold leading-relaxed mb-6 uppercase tracking-widest">
+                     Zero out aggregate Profit, Deposits, and Payout stats. Use this to clear test-mode data residuals.
+                  </p>
+                  <button 
+                    onClick={handleResetFinances}
+                    disabled={financeLoading}
+                    className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                  >
+                    {financeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Eraser className="w-3.5 h-3.5" /> Wipe Platform Stats</>}
+                  </button>
+               </div>
+
+               <div className="bg-red-500/5 border border-red-500/10 p-6 rounded-sm">
+                  <h3 className="text-xs font-black text-red-500 uppercase tracking-widest mb-2">Purge Transaction Ledger</h3>
+                  <p className="text-[9px] text-gray-500 font-bold leading-relaxed mb-6 uppercase tracking-widest">
+                     Atomically delete internal transaction records. WARNING: This makes past matches un-auditable.
+                  </p>
+                  <button 
+                    onClick={handlePurgeLogs}
+                    disabled={financeLoading}
+                    className="w-full py-3 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/20 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                  >
+                    {financeLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <><Trash2 className="w-3.5 h-3.5" /> Purge Logs</>}
+                  </button>
+               </div>
+            </div>
+         </div>
 
         {/* AUDIT LOGS */}
         <div className="p-8 bg-[#0a0a0a] border border-white/5 rounded-sm">

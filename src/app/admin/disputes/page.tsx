@@ -1,4 +1,5 @@
 "use client";
+// [TACTICAL INTEGRITY CHECK: 1.1] Force Segment Refresh
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getDisputedMatchesAction, resolveDisputeAction, cancelStaleMatchAction, triggerAdminInterventionAction, getUserAuditHistoryAction, alertPlayersOfAdminPresence } from "@/app/actions/admin-actions";
