@@ -51,65 +51,27 @@ export function verifyWebhookSignature(
  * Verify NowPayments-style sorted JSON signature
  */
 export function verifyNowPaymentsSignature(
-  payload: Record<string, any>,
+  rawBody: string,
   signature: string,
-  secret: string,
-  rawBody?: string
+  secret: string
 ): boolean {
   try {
     const cleanSignature = signature.trim().toLowerCase();
     const signatureBuffer = Buffer.from(cleanSignature);
 
-    // Prepare sorted payload
-    const sortedPayloadStr = JSON.stringify(payload, Object.keys(payload).sort());
-    
-    // Define the candidate strings and secrets
-    const candidateStrings = [sortedPayloadStr];
-    if (rawBody) candidateStrings.push(rawBody);
+    // NowPayments signs the raw request body exactly as sent
+    const hash = crypto
+      .createHmac("sha512", secret)
+      .update(rawBody)
+      .digest("hex");
 
-    const candidateSecrets = [
-      { key: secret, label: "UTF8_STRING" },
-    ];
-    
-    // Try Base64 secret as well if it looks like one
-    if (secret.includes('/') || secret.includes('+')) {
-      try {
-        candidateSecrets.push({ 
-          key: Buffer.from(secret, 'base64').toString('binary'), 
-          label: "BASE64_DECODED" 
-        });
-      } catch (e) {}
+    const hashBuffer = Buffer.from(hash);
+
+    if (hashBuffer.length !== signatureBuffer.length) {
+       return false;
     }
 
-    // Brute-force verification
-    for (const candString of candidateStrings) {
-      for (const candSec of candidateSecrets) {
-        const hash = crypto
-          .createHmac("sha512", candSec.key)
-          .update(candString)
-          .digest("hex");
-
-        const hashBuffer = Buffer.from(hash);
-
-        if (hashBuffer.length === signatureBuffer.length) {
-          if (crypto.timingSafeEqual(hashBuffer, signatureBuffer)) {
-            console.log(`[WebhookSecurity] NowPayments verification SUCCESS using ${candSec.label} and ${candString === rawBody ? "RAW_BODY" : "SORTED_JSON"}`);
-            return true;
-          }
-        }
-      }
-    }
-
-    // If none matched, log detailed mismatch for the primary expected method (Sorted JSON + UTF8 Secret)
-    const primaryHash = crypto.createHmac("sha512", secret).update(sortedPayloadStr).digest("hex");
-    
-    console.warn("[WebhookSecurity] NowPayments multi-method signature mismatch detailed check:", {
-      payloadKeys: Object.keys(payload).sort().join(","),
-      hashPreview: `${primaryHash.substring(0, 4)}...${primaryHash.substring(primaryHash.length - 4)}`,
-      sigPreview: `${cleanSignature.substring(0, 4)}...${cleanSignature.substring(cleanSignature.length - 4)}`
-    });
-
-    return false;
+    return crypto.timingSafeEqual(hashBuffer, signatureBuffer);
   } catch (error) {
     console.error("[WebhookSecurity] NowPayments signature verification error:", error);
     return false;

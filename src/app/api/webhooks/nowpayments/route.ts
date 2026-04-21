@@ -27,24 +27,11 @@ export async function POST(req: Request) {
     const payload = JSON.parse(rawBody);
     const signature = req.headers.get("x-nowpayments-sig") || "";
 
-    // DEEP DIAGNOSTIC: Log headers and payload structure
-    console.log("[NowPayments Webhook] DEBUG: Incoming IPN", {
-      headers: {
-        "x-nowpayments-sig": signature ? "EXISTS" : "MISSING",
-        "content-type": req.headers.get("content-type"),
-      },
-      order_id: payload.order_id,
-      payment_status: payload.payment_status,
-      payment_id: payload.payment_id,
-      all_keys: Object.keys(payload).sort().join(",")
-    });
-
-    // 4.2 FIX: Use constant-time signature verification with multi-method fallback
-    const isValid = verifyNowPaymentsSignature(payload, signature, NOWPAYMENTS_IPN_SECRET, rawBody);
+    // 4.2 FIX: Use constant-time signature verification (Raw Body Method)
+    const isValid = verifyNowPaymentsSignature(rawBody, signature, NOWPAYMENTS_IPN_SECRET);
 
     if (!isValid) {
-       console.error("[NowPayments Webhook] SECURITY: Invalid Signature detected. Check IPN Secret match.");
-       // Additional debug: first 20 chars of sorted payload string
+       console.error("[NowPayments Webhook] SECURITY: Invalid Signature detected.");
        return NextResponse.json({ error: "Invalid Signature" }, { status: 401 });
     }
     
