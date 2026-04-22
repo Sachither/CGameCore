@@ -83,11 +83,11 @@ export default function TournamentSection() {
                 <Info className="w-8 h-8 text-accent" />
               </div>
               <div className="flex-1">
-                <h4 className="text-lg font-black text-white uppercase tracking-wider mb-2">The $1.00 Commitment Policy</h4>
+                <h4 className="text-lg font-black text-white uppercase tracking-wider mb-2">THE $1.00 ANTI-CHEAT SHIELD</h4>
                 <p className="text-sm text-gray-400 leading-relaxed font-bold">
-                  Registration is 100% Free. However, a <span className="text-white font-black">$1.00 (100 Coins)</span> commitment fee is required only when joining a tournament.
-                  We <span className="text-accent underline">do not</span> take your money upon registration; the fee simply ensures every participant is professional, prevents ghost-players from clogging the brackets,
-                  and allows us to verify your identity for instant cash withdrawals.
+                  Registration is 100% Free. To ensure professional brackets, we use a <span className="text-white font-black">$1.00 (100 Coins)</span> Anti-Cheat Shield for tournament entries.
+                  This <span className="text-accent underline">Security Lock</span> prevents ghost-players, bots, and cheaters from ruining the competition. 
+                  Your $1 remains in your wallet—we don't take it upon registration—it simply verifies you are a real, committed operative.
                 </p>
               </div>
             </div>

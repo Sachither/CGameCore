@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 export default function HeroSection() {
   return (
-    <div className="relative overflow-hidden pt-32 pb-20 lg:pt-48 lg:pb-32">
+    <div className="relative overflow-hidden pt-40 pb-20 lg:pt-56 lg:pb-32">
       {/* Background glow effects */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-accent/20 blur-[120px] rounded-full pointer-events-none" />
       
