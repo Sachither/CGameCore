@@ -34,12 +34,12 @@ export default function TournamentSection() {
             </span>
             <span className="text-[10px] font-black text-accent uppercase tracking-widest">Active Deployment</span>
           </div>
-          
+
           <h2 className="text-4xl md:text-6xl font-black uppercase italic tracking-tighter text-white mb-6">
             CASH <span className="text-accent">PRIZE</span> POOLS
           </h2>
           <p className="text-gray-400 max-w-2xl text-lg font-medium leading-relaxed">
-            The arena is open. Operatives are currently competing for the highest stakes on the continent. 
+            The arena is open. Operatives are currently competing for the highest stakes on the continent.
             Secure your slot and secure the bag.
           </p>
         </div>
@@ -50,7 +50,7 @@ export default function TournamentSection() {
               <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                 <Trophy className="w-24 h-24 text-white" />
               </div>
-              
+
               <div className="flex items-center gap-4 mb-6">
                 <div className="p-3 bg-black/50 border border-surface-border rounded-sm group-hover:border-accent/20 transition-colors">
                   {t.icon}
@@ -68,7 +68,7 @@ export default function TournamentSection() {
 
               <div className="flex items-center gap-3 py-4 border-t border-surface-border">
                 <ShieldCheck className="w-4 h-4 text-accent" />
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Verified Payout via Nexus Protocol</span>
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Verified Payout via Flutterwave/Nowpayments</span>
               </div>
             </div>
           ))}
@@ -85,8 +85,8 @@ export default function TournamentSection() {
               <div className="flex-1">
                 <h4 className="text-lg font-black text-white uppercase tracking-wider mb-2">The $1.00 Commitment Policy</h4>
                 <p className="text-sm text-gray-400 leading-relaxed font-bold">
-                  Registration is 100% Free. However, a <span className="text-white font-black">$1.00 (100 Coins)</span> commitment fee is required only when joining a tournament. 
-                  We <span className="text-accent underline">do not</span> take your money upon registration; the fee simply ensures every participant is professional, prevents ghost-players from clogging the brackets, 
+                  Registration is 100% Free. However, a <span className="text-white font-black">$1.00 (100 Coins)</span> commitment fee is required only when joining a tournament.
+                  We <span className="text-accent underline">do not</span> take your money upon registration; the fee simply ensures every participant is professional, prevents ghost-players from clogging the brackets,
                   and allows us to verify your identity for instant cash withdrawals.
                 </p>
               </div>
