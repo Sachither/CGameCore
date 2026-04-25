@@ -6,6 +6,9 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { validate, sanitize } from '@/lib/validation-utils';
+import { useToast } from "@/context/ToastContext";
+import GoogleLoginButton from "./GoogleLoginButton";
+import { sendWelcomeEmailAction } from '@/app/actions/user-actions';
 
 export default function RegisterForm() {
   const router = useRouter();
@@ -17,7 +20,8 @@ export default function RegisterForm() {
     email: "",
     phone: "",
     password: "",
-    confirmPassword: ""
+    confirmPassword: "",
+    referralCode: (typeof window !== 'undefined' ? localStorage.getItem('pending_referral_code') : "") || ""
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -131,11 +135,34 @@ export default function RegisterForm() {
         })
       ]);
 
+      // 3.5 Check Referral Code (Optional)
+      let referrerUid = null;
+      if (formData.referralCode) {
+        setError("VERIFYING REFERRAL CODE...");
+        const referralRes = await fetch(
+          `/api/identity-check?field=referralCode&value=${encodeURIComponent(formData.referralCode)}`
+        );
+        const referralData = await referralRes.json();
+        
+        if (referralData.success && referralData.exists) {
+          referrerUid = referralData.uid;
+        } else if (formData.referralCode.length > 0) {
+          // If they entered something invalid, we let them know but don't block registration unless you want to be strict
+          console.warn("Invalid referral code provided.");
+        }
+      }
+
       // 4. Create User Profile
       setError("PREPARING YOUR VAULT...");
+      
+      // Generate a code for the new user
+      const myReferralCode = formData.username.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase() + 
+                           Math.random().toString(36).substring(2, 6).toUpperCase();
+
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         username: formData.username,
+        usernameLower: formData.username.toLowerCase(),
         email: formData.email,
         phone: formData.phone,
         avatarId: Math.floor(Math.random() * 20),
@@ -144,13 +171,21 @@ export default function RegisterForm() {
         totalMatches: 0,
         lifetimeDeposits: 0,
         lifetimeWagered: 0,
-        createdAt: new Date().toISOString(), // Use simple ISO string for client-side initial write
+        createdAt: new Date().toISOString(),
         status: "ACTIVE",
-        role: "USER"
+        role: "USER",
+        referredBy: referrerUid,
+        myReferralCode: myReferralCode
+      });
+
+      // 5. Send Welcome Email (Fire and forget, don't block registration)
+      sendWelcomeEmailAction(formData.email, formData.username, myReferralCode).catch(e => {
+        console.error("Failed to send welcome email:", e);
       });
 
       setError("SUCCESS! SYNCING SECURE SESSION...");
-      // Redirect is now handled by AuthProvider to prevent race conditions
+      // Explicit redirect to ensure immediate transition
+      router.push('/dashboard');
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/configuration-not-found') {
@@ -243,6 +278,23 @@ export default function RegisterForm() {
           />
         </div>
 
+        <div>
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Referral Code (Optional)</label>
+          <input 
+            type="text" 
+            name="referralCode"
+            value={formData.referralCode}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck="false"
+            className="w-full bg-surface-hover border border-surface-border focus:border-accent text-accent px-4 py-3 rounded-sm outline-none transition-all placeholder-gray-700 font-black text-xs tracking-widest"
+            placeholder="CREATOR_CODE"
+            suppressHydrationWarning
+          />
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Password</label>
@@ -298,6 +350,14 @@ export default function RegisterForm() {
              "Enter The Lobby"
           )}
         </button>
+        <div className="flex items-center gap-4 my-6">
+          <div className="h-px bg-surface-border flex-1"></div>
+          <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">OR</span>
+          <div className="h-px bg-surface-border flex-1"></div>
+        </div>
+
+        <GoogleLoginButton text="Onboard with Google" />
+
       </form>
 
       <div className="mt-8 text-center text-sm text-sub relative z-10 font-bold uppercase tracking-widest text-[9px]">

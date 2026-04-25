@@ -1,10 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   searchUserAction,
   setBanStatusAction,
   adjustUserBalanceAction,
+  upgradeToPartnerAction,
 } from "@/app/actions/admin-actions";
 import {
   Search, Users, ShieldCheck, ShieldOff, Ban, Coins,
@@ -28,7 +29,7 @@ interface UserDoc {
   createdAt?: any;
 }
 
-function ConfirmActionModal({ isOpen, onClose, onConfirm, title, message, confirmText, loading, showInput, inputValue, onInputChange, durationHours, onDurationChange }: {
+function ConfirmActionModal({ isOpen, onClose, onConfirm, title, message, confirmText, loading, showInput, inputValue, onInputChange, durationHours, onDurationChange, type }: {
   isOpen: boolean,
   onClose: () => void,
   onConfirm: () => void,
@@ -40,17 +41,20 @@ function ConfirmActionModal({ isOpen, onClose, onConfirm, title, message, confir
   inputValue?: string,
   onInputChange?: (val: string) => void,
   durationHours?: number,
-  onDurationChange?: (val: number) => void
+  onDurationChange?: (val: number) => void,
+  type?: 'BAN' | 'PARTNER' | 'ROLE'
 }) {
   if (!isOpen) return null;
+
+  const isPartner = type === 'PARTNER';
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-sm bg-[#0a0a0a] border border-red-500/30 rounded-sm shadow-[0_0_50px_rgba(239,68,68,0.2)] p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        <div className="absolute top-0 left-0 w-full h-1 bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
+      <div className="relative w-full max-w-sm bg-[#0a0a0a] border border-white/10 rounded-sm shadow-2xl p-6 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className={`absolute top-0 left-0 w-full h-1 ${isPartner ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]'}`} />
         <div className="flex items-center gap-3 mb-4">
-           <AlertTriangle className="w-6 h-6 text-red-500" />
+           {isPartner ? <ShieldCheck className="w-6 h-6 text-blue-500" /> : <AlertTriangle className="w-6 h-6 text-red-500" />}
            <h3 className="text-sm font-black uppercase text-white italic tracking-tighter">{title}</h3>
         </div>
         <p className="text-[11px] text-gray-400 font-bold leading-relaxed mb-4 uppercase tracking-wider">
@@ -60,21 +64,28 @@ function ConfirmActionModal({ isOpen, onClose, onConfirm, title, message, confir
         {showInput && (
            <div className="mb-6 space-y-4">
               <div>
-                 <p className="text-[8px] text-gray-600 font-black uppercase tracking-widest mb-1.5 px-1">Lockdown Duration</p>
+                 <p className="text-[8px] text-gray-600 font-black uppercase tracking-widest mb-1.5 px-1">
+                   {isPartner ? "Clearance Window" : "Lockdown Duration"}
+                 </p>
                  <div className="grid grid-cols-4 gap-1.5">
-                    {[
+                    {(isPartner ? [
+                      { l: '5M (TEST)', v: 0.083333 }, // 5 / 60 (Hours)
+                      { l: '30D', v: 720 },
+                      { l: '60D', v: 1440 },
+                      { l: '90D', v: 2160 },
+                    ] : [
                       { l: '24H', v: 24 },
                       { l: '48H', v: 48 },
                       { l: '7D', v: 168 },
                       { l: 'PERM', v: 0 }
-                    ].map((d) => (
+                    ]).map((d) => (
                        <button
                          key={d.l}
                          type="button"
                          onClick={() => onDurationChange?.(d.v)}
                          className={`py-2 text-[9px] font-black uppercase tracking-widest border rounded-sm transition-all ${
                             durationHours === d.v 
-                            ? 'bg-red-500 border-red-500 text-black shadow-[0_0_10px_rgba(239,68,68,0.3)]' 
+                            ? (isPartner ? 'bg-blue-600 border-blue-600 text-white' : 'bg-red-500 border-red-500 text-black') 
                             : 'bg-black border-white/10 text-gray-500 hover:text-white'
                          }`}
                        >
@@ -85,14 +96,28 @@ function ConfirmActionModal({ isOpen, onClose, onConfirm, title, message, confir
               </div>
 
               <div>
-                 <p className="text-[8px] text-gray-600 font-black uppercase tracking-widest mb-1.5 px-1">Tactical Justification</p>
-                 <textarea 
-                   value={inputValue}
-                   onChange={(e) => onInputChange?.(e.target.value)}
-                   placeholder="Identify the breach..."
-                   className="w-full bg-black/50 border border-red-500/20 focus:border-red-500/50 text-white p-3 text-[11px] font-bold rounded-sm outline-none transition-all placeholder-gray-800 min-h-[80px] resize-none"
-                 />
-                 <p className="text-[8px] text-red-500/50 font-black uppercase tracking-widest mt-1">Audit Log Required</p>
+                 <p className="text-[8px] text-gray-600 font-black uppercase tracking-widest mb-1.5 px-1">
+                   {isPartner ? "Operational Purpose" : "Tactical Justification"}
+                 </p>
+                 {isPartner ? (
+                    <input 
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) => onInputChange?.(e.target.value)}
+                      placeholder="Custom Code (Optional)"
+                      className="w-full bg-black/50 border border-blue-500/20 focus:border-blue-500/50 text-white px-3 py-2.5 text-[11px] font-bold rounded-sm outline-none transition-all placeholder-gray-800"
+                    />
+                 ) : (
+                    <textarea 
+                      value={inputValue}
+                      onChange={(e) => onInputChange?.(e.target.value)}
+                      placeholder="Explain the security breach..."
+                      className="w-full bg-black/50 border border-red-500/20 focus:border-red-500/50 text-white p-3 text-[11px] font-bold rounded-sm outline-none transition-all placeholder-gray-800 min-h-[80px] resize-none"
+                    />
+                 )}
+                 <p className={`text-[8px] font-black uppercase tracking-widest mt-1 ${isPartner ? 'text-blue-500/50' : 'text-red-500/50'}`}>
+                   {isPartner ? "Code auto-generates if empty" : "Audit Log Required"}
+                 </p>
               </div>
            </div>
         )}
@@ -103,8 +128,8 @@ function ConfirmActionModal({ isOpen, onClose, onConfirm, title, message, confir
            </button>
            <button 
               onClick={onConfirm} 
-              disabled={loading || (showInput && !inputValue?.trim())}
-              className="flex-1 py-3 bg-red-500 text-black text-[9px] font-black uppercase tracking-widest rounded-sm hover:translate-y-[-1px] transition-all shadow-[0_4px_15px_rgba(239,68,68,0.3)] disabled:opacity-50 text-center uppercase"
+              disabled={loading || (!isPartner && showInput && !inputValue?.trim())}
+              className={`flex-1 py-3 text-black text-[9px] font-black uppercase tracking-widest rounded-sm hover:translate-y-[-1px] transition-all shadow-xl disabled:opacity-50 text-center uppercase ${isPartner ? 'bg-blue-500 text-white' : 'bg-red-500'}`}
            >
               {loading ? <Loader2 className="w-3 h-3 animate-spin mx-auto" /> : confirmText}
            </button>
@@ -128,7 +153,9 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
   const [banDuration, setBanDuration] = useState(24);
   const [feedback, setFeedback] = useState("");
   const [adjustMode, setAdjustMode] = useState<'ADD' | 'DEDUCT'>('ADD');
-  const [showConfirm, setShowConfirm] = useState<{ open: boolean, type: 'ROLE' | 'BAN', payload?: any }>({ open: false, type: 'ROLE' });
+  const [showConfirm, setShowConfirm] = useState<{ open: boolean, type: 'ROLE' | 'BAN' | 'PARTNER', payload?: any }>({ open: false, type: 'ROLE' });
+  const [customPartnerCode, setCustomPartnerCode] = useState("");
+  const [partnerDuration, setPartnerDuration] = useState(2160); // Default 90 days (2160 hours)
 
   const act = async (fn: () => Promise<{ success: boolean; error?: string }>, label: string) => {
     setLoading(true);
@@ -164,6 +191,19 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
     const idToken = await adminUser.getIdToken();
     await act(() => setUserRoleAction(idToken, u.uid, newRole), `Clearance set to ${newRole}`);
     setShowConfirm({ open: false, type: 'ROLE' });
+  };
+
+  const handlePartnerCommit = async () => {
+    if (!adminUser) return;
+    const idToken = await adminUser.getIdToken();
+    const durationDays = partnerDuration / 24;
+    await act(
+      () => upgradeToPartnerAction(idToken, u.uid, customPartnerCode, durationDays), 
+      `Upgraded to Partner (${durationDays} Days)`
+    );
+    setShowConfirm({ open: false, type: 'PARTNER' });
+    setCustomPartnerCode("");
+    setPartnerDuration(2160);
   };
 
   const handleBalanceAdjust = async () => {
@@ -320,10 +360,23 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
                <div className="absolute bottom-full left-0 w-full mb-2 bg-[#111] border border-white/10 rounded-sm shadow-2xl opacity-0 group-hover/role:opacity-100 pointer-events-none group-hover/role:pointer-events-auto transition-all p-1.5 z-20">
                   <p className="text-[8px] text-gray-600 font-black uppercase tracking-widest mb-1.5 px-2">Select Clearance level</p>
                   {((adminProfile?.role === 'SUPER_ADMIN' || adminProfile?.isSuperAdmin) 
-                    ? ['USER', 'MODERATOR', 'ADMIN', 'SUPER_ADMIN'] 
-                    : ['USER', 'MODERATOR', 'ADMIN']
+                    ? ['USER', 'MODERATOR', 'ADMIN', 'SUPER_ADMIN', 'PARTNER'] 
+                    : ['USER', 'MODERATOR', 'ADMIN', 'PARTNER']
                   ).map((role) => (
-                    <button key={role} onClick={() => setShowConfirm({ open: true, type: 'ROLE', payload: role })} className={`w-full text-left px-3 py-2 rounded-sm text-[9px] font-black uppercase tracking-widest transition-colors flex items-center justify-between group/item ${(u.role || (u.isAdmin ? 'ADMIN' : 'USER')) === role ? 'bg-red-500/10 text-red-400' : 'hover:bg-white/5 text-gray-400 hover:text-white'}`}>{role.replace('_', ' ')}{(u.role || (u.isAdmin ? 'ADMIN' : 'USER')) === role && <UserCheck className="w-3 h-3" />}</button>
+                    <button 
+                      key={role} 
+                      onClick={() => {
+                        if (role === 'PARTNER') {
+                          setShowConfirm({ open: true, type: 'PARTNER' });
+                        } else {
+                          setShowConfirm({ open: true, type: 'ROLE', payload: role });
+                        }
+                      }} 
+                      className={`w-full text-left px-3 py-2 rounded-sm text-[9px] font-black uppercase tracking-widest transition-colors flex items-center justify-between group/item ${(u.role || (u.isAdmin ? 'ADMIN' : 'USER')) === role ? 'bg-red-500/10 text-red-400' : 'hover:bg-white/5 text-gray-400 hover:text-white'}`}
+                    >
+                      {role.replace('_', ' ')}
+                      {(u.role || (u.isAdmin ? 'ADMIN' : 'USER')) === role && <UserCheck className="w-3 h-3" />}
+                    </button>
                   ))}
                </div>
             </div>
@@ -333,16 +386,17 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
         <ConfirmActionModal 
            isOpen={showConfirm.open}
            onClose={() => setShowConfirm(prev => ({ ...prev, open: false }))}
-           onConfirm={showConfirm.type === 'BAN' ? handleBanCommit : handleRoleCommit}
-           title={showConfirm.type === 'BAN' ? (u.isBanned ? "Lift Suspension" : "Security Lockdown") : "Clearance Upgrade"}
-           message={showConfirm.type === 'BAN' ? (u.isBanned ? `Confirming restoration for ${u.username}.` : `Locking out ${u.username}. Audit log required.`) : `Confirming clearance elevation for ${u.username}.`}
-           confirmText={showConfirm.type === 'BAN' ? (u.isBanned ? "Authorize Lift" : "Initiate Lockdown") : "Execute"}
+           onConfirm={showConfirm.type === 'BAN' ? handleBanCommit : (showConfirm.type === 'PARTNER' ? handlePartnerCommit : handleRoleCommit)}
+           title={showConfirm.type === 'BAN' ? (u.isBanned ? "Lift Suspension" : "Security Lockdown") : (showConfirm.type === 'PARTNER' ? "Partner Induction" : "Clearance Upgrade")}
+           message={showConfirm.type === 'BAN' ? (u.isBanned ? `Confirming restoration for ${u.username}.` : `Locking out ${u.username}. Audit log required.`) : (showConfirm.type === 'PARTNER' ? `Assigning ${u.username} to the Tactical Partner program.` : `Confirming clearance elevation for ${u.username}.`)}
+           confirmText={showConfirm.type === 'BAN' ? (u.isBanned ? "Authorize Lift" : "Initiate Lockdown") : (showConfirm.type === 'PARTNER' ? "Authorize Partner" : "Execute")}
            loading={loading}
-           showInput={showConfirm.type === 'BAN' && !u.isBanned}
-           inputValue={banJustification}
-           onInputChange={setBanJustification}
-           durationHours={banDuration}
-           onDurationChange={setBanDuration}
+           showInput={(showConfirm.type === 'BAN' && !u.isBanned) || showConfirm.type === 'PARTNER'}
+           inputValue={showConfirm.type === 'BAN' ? banJustification : customPartnerCode}
+           onInputChange={showConfirm.type === 'BAN' ? setBanJustification : setCustomPartnerCode}
+           durationHours={showConfirm.type === 'PARTNER' ? partnerDuration : banDuration}
+           onDurationChange={showConfirm.type === 'PARTNER' ? setPartnerDuration : setBanDuration}
+           type={showConfirm.type}
         />
       </div>
     </div>
@@ -357,19 +411,37 @@ export default function AdminUsersPage() {
   const [error, setError] = useState("");
   const [selected, setSelected] = useState<UserDoc | null>(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (query.trim().length >= 2) {
+        handleSearch();
+      } else if (query.trim().length === 0) {
+        setResults([]);
+        setError("");
+      }
+    }, 400); // 400ms debounce for tactical scanning
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const handleSearch = async () => {
     if (!user || !query.trim()) return;
     setLoading(true);
     setError("");
-    const idToken = await user.getIdToken();
-    const result = await searchUserAction(idToken, query.trim());
-    if (result.success) {
-      setResults((result.users as UserDoc[]) || []);
-      if (!result.users?.length) setError("No operators found.");
-    } else {
-      setError(result.error || "Search failed.");
+    try {
+      const idToken = await user.getIdToken();
+      const result = await searchUserAction(idToken, query.trim());
+      if (result.success) {
+        setResults((result.users as UserDoc[]) || []);
+        if (!result.users?.length) setError("No operators found.");
+      } else {
+        setError(result.error || "Search failed.");
+      }
+    } catch (err: any) {
+      setError("COMM_LINK_FAILURE: Unable to reach Operator Index.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (

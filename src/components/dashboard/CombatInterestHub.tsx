@@ -134,7 +134,7 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
   const isLocked = weekendOnly && !isWeekend;
 
   return (
-    <div className="bg-surface border border-surface-border rounded-sm p-5 hover:border-accent/40 transition-all group relative overflow-hidden">
+    <div className={`bg-surface border border-surface-border rounded-sm p-5 hover:border-accent/40 transition-all group relative overflow-hidden ${segment === 'alcatraz' ? 'opacity-40 blur-[2px] pointer-events-none select-none' : ''}`}>
       {/* Background Glow */}
       <div className="absolute inset-0 bg-accent/5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
       

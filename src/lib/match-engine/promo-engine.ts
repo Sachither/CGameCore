@@ -339,7 +339,7 @@ async function distributePromoPrizes(
     championBadge: {
       title: 'PROMO RUSH CHAMPION',
       tournament: circuit.title,
-      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + 24 * 3600 * 1000), // 24 hours
       awardedAt: admin.firestore.FieldValue.serverTimestamp()
     }
   });

@@ -6,6 +6,7 @@ import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
 import { validate } from '@/lib/validation-utils';
+import GoogleLoginButton from './GoogleLoginButton';
 
 export default function LoginForm() {
   const router = useRouter();
@@ -33,6 +34,9 @@ export default function LoginForm() {
       setError("LOGGING IN TO CORE...");
       await signInWithEmailAndPassword(auth, email, password);
       setError("SUCCESS! SYNCING PROFILE...");
+      
+      // Explicit redirect to ensure immediate transition
+      router.push('/dashboard');
       
       // FAIL-SAFE: If the redirect takes more than 10s, release the button
       setTimeout(() => {
@@ -136,6 +140,14 @@ export default function LoginForm() {
           )}
         </button>
 
+
+        <div className="flex items-center gap-4 my-6">
+          <div className="h-px bg-surface-border flex-1"></div>
+          <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">OR</span>
+          <div className="h-px bg-surface-border flex-1"></div>
+        </div>
+
+        <GoogleLoginButton text="Secure Link with Google" />
 
       </form>
 

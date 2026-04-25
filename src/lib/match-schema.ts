@@ -52,6 +52,9 @@ export interface Match {
   adminAlertAt?: any;
   isPromo?: boolean;
   promoId?: string;
+  isPartnerTournament?: boolean;
+  partnerName?: string;
+  overseers?: { [uid: string]: any };
 }
 
 export interface ChallengeInterest {

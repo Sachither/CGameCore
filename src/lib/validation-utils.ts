@@ -18,6 +18,9 @@ export const REGEX = {
   
   // Account Number: Exactly 10 digits
   ACCOUNT_NUMBER: /^\d{10}$/,
+
+  // Referral Code: Alphanumeric, 3-10 chars
+  REFERRAL_CODE: /^[a-zA-Z0-9]{3,10}$/,
 };
 
 export function sanitize(input: string): string {
@@ -62,6 +65,7 @@ export function validate(key: keyof typeof REGEX, value: string): string | null 
       case "PHONE": return "Invalid phone format. Use 081... or +234...";
       case "AMOUNT": return "Amount must be a positive number.";
       case "ACCOUNT_NUMBER": return "Account number must be 10 digits.";
+      case "REFERRAL_CODE": return "Referral code must be 3-10 alphanumeric chars.";
       default: return "Invalid format.";
     }
   }

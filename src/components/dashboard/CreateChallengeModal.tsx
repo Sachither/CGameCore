@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
-import { createMatch, findActiveMatchByType, Match } from "@/lib/match-service";
+import { createMatch, joinMatch, findActiveMatchByType, Match } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
 import { X, Loader2, Swords, ShieldCheck, Users, Trophy, Flame, Crosshair } from "lucide-react";
@@ -60,12 +60,6 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   const handleCreate = async () => {
     if (!user || !profile) return;
     
-    if (existingMatchId) {
-      router.push(`/match/${existingMatchId}`);
-      onClose();
-      return;
-    }
-
     if (!inGameName.trim()) {
       toast.error("Tactical Error", `Please enter your exact ${game} In-Game Name so opponents can invite you.`);
       return;
@@ -76,6 +70,14 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
     setLoading(true);
     try {
       const idToken = await user.getIdToken();
+
+      if (existingMatchId) {
+        await joinMatch(idToken, profile.username, profile.avatarId, existingMatchId, sanitizedIGN);
+        router.push(`/match/${existingMatchId}`);
+        onClose();
+        return;
+      }
+
       const matchId = await createMatch(
         idToken, 
         profile.username, 
@@ -91,7 +93,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
       router.push(`/match/${matchId}`);
       onClose();
     } catch (err: any) {
-      toast.error("Deployment Error", err.message || "Failed to create challenge.");
+      toast.error("Deployment Error", err.message || "Failed to process request.");
     }
     setLoading(false);
   };
@@ -160,6 +162,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                  {getFormatsForGame().map((f) => (
                    <button 
                      key={f}
+                     disabled={f === 'alcatraz'}
                      onClick={() => {
                        setFormat(f);
                        if (f === 'br' || f === 'alcatraz') setMaxPlayers(20);
@@ -167,7 +170,9 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                        else if (f === 'FFA') setMaxPlayers(8);
                        else setMaxPlayers(2);
                      }}
-                     className={`py-4 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all border ${format === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600 hover:border-accent/20'}`}
+                     className={`py-4 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all border 
+                       ${f === 'alcatraz' ? 'bg-black border-surface-border text-gray-800 opacity-50 cursor-not-allowed blur-[1px]' : 
+                       (format === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600 hover:border-accent/20')}`}
                    >
                      {f.toUpperCase()}
                    </button>

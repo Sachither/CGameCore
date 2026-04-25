@@ -6,7 +6,7 @@ import { db } from "@/lib/firebase";
 import { Match, joinMatch } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
-import { Loader2, Swords, User, ChevronRight, Plus, Search } from "lucide-react";
+import { Loader2, Swords, User, ChevronRight, Plus, Search, ShieldCheck } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import CreateChallengeModal from "./CreateChallengeModal";
 
@@ -20,6 +20,7 @@ export default function LiveChallengeList() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [joiningMatch, setJoiningMatch] = useState<Match | null>(null);
   const [inGameName, setInGameName] = useState("");
+  const [joinReferralCode, setJoinReferralCode] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
   const router = useRouter();
 
@@ -38,7 +39,7 @@ export default function LiveChallengeList() {
       const sorted = docs
         .filter(d => d.format !== 'league' && d.format !== 'tournament')
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
-        .slice(0, 10);
+        .slice(0, 20); // Show more challenges
       
       setChallenges(sorted);
       setLoading(false);
@@ -55,23 +56,37 @@ export default function LiveChallengeList() {
     if (profile && joiningMatch) {
       const tag = joiningMatch.game === 'CODM' ? profile.codTag : profile.efootballTag;
       setInGameName(tag || "");
+      setJoinReferralCode("");
     }
   }, [profile, joiningMatch]);
 
   const confirmJoin = async () => {
     if (!user || !profile || !joiningMatch) return;
-    if (!inGameName.trim()) {
+    
+    const isPartnerOverseer = joiningMatch.isPartnerTournament && joiningMatch.creatorId === user.uid;
+    
+    if (!inGameName.trim() && !isPartnerOverseer) {
        toast.error("Deployment Error", "Please enter your exact In-Game Name.");
        return;
     }
+
     setJoinLoading(true);
     try {
       const idToken = await user.getIdToken();
-      await joinMatch(idToken, profile.username, profile.avatarId, joiningMatch.id!, inGameName.trim());
+      await joinMatch(idToken, profile.username, profile.avatarId, joiningMatch.id!, inGameName.trim(), joinReferralCode.trim());
+      setJoiningMatch(null); // Close modal immediately
+      
+      if (isPartnerOverseer) {
+        toast.info("Overseer Link Established", "Entering Command Center as an observer.");
+      }
+      
       router.push(`/match/${joiningMatch.id}`);
     } catch (err: any) {
       toast.error("Deployment Failure", err.message || "Failed to join challenge.");
-      setJoiningMatch(null);
+      // Don't close the modal if it's a code error so they can try again
+      if (!err.message?.includes("EXCLUSIVE_ACCESS") && !err.message?.includes("INVALID_CODE")) {
+        setJoiningMatch(null);
+      }
     }
     setJoinLoading(false);
   };
@@ -121,17 +136,22 @@ export default function LiveChallengeList() {
         <div className="flex overflow-x-auto gap-4 pb-6 snap-x snap-mandatory no-scrollbar">
           {challenges.map((c) => {
             const creator = Object.values(c.players).find(p => p.uid === c.creatorId);
-            
             const target = c.maxPlayers || 2;
-
             const current = Object.keys(c.players).length;
             const isFull = current >= target;
+            const isPartnerMatch = !!c.isPartnerTournament;
             
             return (
               <div 
                 key={c.id} 
-                className="min-w-[280px] sm:min-w-[320px] snap-start bg-surface border border-surface-border p-5 rounded-sm relative group hover:border-accent/40 transition-all"
+                className={`min-w-[280px] sm:min-w-[320px] snap-start bg-surface border p-5 rounded-sm relative group hover:scale-[1.02] transition-all duration-300 ${isPartnerMatch ? 'border-yellow-500/40 shadow-[0_0_15px_rgba(234,179,8,0.1)]' : 'border-surface-border hover:border-accent/40'}`}
               >
+                {isPartnerMatch && (
+                  <div className="absolute top-2 right-2 flex items-center gap-1 bg-yellow-500/10 border border-yellow-500/30 px-2 py-0.5 rounded-sm">
+                    <span className="text-[7px] font-black text-yellow-500 uppercase tracking-widest">Partner Exclusive</span>
+                  </div>
+                )}
+
                 {isFull && (
                    <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-20 flex items-center justify-center rounded-sm">
                       <div className="border-2 border-red-500/50 px-4 py-2 rotate-[-10deg] shadow-[0_0_20px_rgba(239,68,68,0.2)]">
@@ -141,7 +161,7 @@ export default function LiveChallengeList() {
                 )}
 
                 <div className="flex items-center gap-4 mb-5">
-                  <div className="w-12 h-12 bg-black border border-surface-border rounded-sm rotate-45 flex items-center justify-center overflow-hidden shrink-0">
+                  <div className={`w-12 h-12 bg-black border rounded-sm rotate-45 flex items-center justify-center overflow-hidden shrink-0 ${isPartnerMatch ? 'border-yellow-500/40' : 'border-surface-border'}`}>
                     <div 
                       className="w-[200%] h-[200%] -rotate-45"
                       style={{
@@ -152,7 +172,7 @@ export default function LiveChallengeList() {
                     />
                   </div>
                    <div>
-                    <div className="text-white font-black italic uppercase tracking-tighter text-base group-hover:text-accent transition-colors">
+                    <div className={`text-white font-black italic uppercase tracking-tighter text-base group-hover:text-accent transition-colors ${isPartnerMatch ? 'text-yellow-500' : ''}`}>
                       {creator?.username || "Operator"}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
@@ -162,9 +182,9 @@ export default function LiveChallengeList() {
                       <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-[2px] bg-white/5 text-sub border border-white/10">
                         {c.format}
                       </span>
-                      {c.weaponClass && c.weaponClass !== 'NONE' && (
-                        <span className="text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-[2px] bg-white text-black">
-                          {c.weaponClass}
+                      {isPartnerMatch && (
+                        <span className="text-[8px] font-black uppercase text-yellow-500/60 tracking-widest italic ml-1">
+                           by {c.partnerName || "Partner"}
                         </span>
                       )}
                     </div>
@@ -184,11 +204,11 @@ export default function LiveChallengeList() {
 
                 <button 
                   onClick={() => !isFull && setJoiningMatch(c)}
-                  disabled={isFull}
-                  className={`w-full py-3 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isFull ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-main hover:bg-main-hover text-accent shadow-[0_0_15px_rgba(0,255,102,0.1)]'}`}
+                  disabled={isFull && c.creatorId !== user?.uid}
+                  className={`w-full py-3 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isFull ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (isPartnerMatch ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-main hover:bg-main-hover text-accent shadow-[0_0_15px_rgba(0,255,102,0.1)]')}`}
                 >
-                  {isFull ? "Host Assignment Pending" : "Join Combat Duel"}
-                  {!isFull && <ChevronRight className="w-3 h-3" />}
+                  {isFull ? (c.creatorId === user?.uid ? "Enter War Room" : "Arena Locked") : (c.creatorId === user?.uid ? "Enter War Room" : (isPartnerMatch ? "Enlist in Creator Cup" : "Join Combat Duel"))}
+                  {(!isFull || c.creatorId === user?.uid) && <ChevronRight className="w-3 h-3" />}
                 </button>
               </div>
             );
@@ -203,15 +223,19 @@ export default function LiveChallengeList() {
         />
       )}
 
-      {/* JOIN CONFIRMATION MODAL WITH IGN CAPTURE */}
+      {/* JOIN CONFIRMATION MODAL WITH IGN & PARTNER GATING */}
       {joiningMatch && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 sm:p-0">
           <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={() => setJoiningMatch(null)} />
           <div className="bg-surface border border-surface-border w-full max-w-sm rounded-sm relative overflow-hidden animate-in zoom-in-95 fade-in duration-200 shadow-2xl p-6">
              <div className="flex items-center gap-3 mb-6">
-                <div className="bg-accent/20 p-2 rounded-full"><Swords className="w-5 h-5 text-accent" /></div>
+                <div className={`p-2 rounded-full ${joiningMatch.isPartnerTournament ? 'bg-yellow-500/20' : 'bg-accent/20'}`}>
+                  <Swords className={`w-5 h-5 ${joiningMatch.isPartnerTournament ? 'text-yellow-500' : 'text-accent'}`} />
+                </div>
                 <div>
-                   <h3 className="text-sm font-black uppercase text-white italic tracking-tighter">Combat Briefing</h3>
+                   <h3 className="text-sm font-black uppercase text-white italic tracking-tighter">
+                     {joiningMatch.isPartnerTournament ? "Influencer Clearance" : "Combat Briefing"}
+                   </h3>
                    <p className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Pre-Deployment Validation</p>
                 </div>
              </div>
@@ -219,28 +243,56 @@ export default function LiveChallengeList() {
              <div className="space-y-4 mb-6">
                 <div className="bg-black border border-surface-border p-4 rounded-sm">
                    <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mb-1">Target Entry Fee</p>
-                   <p className="text-xl font-black text-white italic tracking-tighter">{joiningMatch.challengeFee} CR</p>
+                   <p className="text-xl font-black text-white italic tracking-tighter">
+                     {joiningMatch.creatorId === user?.uid ? "0.00 (OVERSEER)" : `${joiningMatch.challengeFee} CR`}
+                   </p>
                 </div>
 
-                <div className="space-y-2">
-                   <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em]">Your Exact {joiningMatch.game} Name</label>
-                   <input
-                     type="text"
-                     value={inGameName}
-                     onChange={e => setInGameName(e.target.value)}
-                     placeholder="e.g. xX_Sniper_Xx"
-                     className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm"
-                   />
-                   <p className="text-[9px] text-gray-500 font-bold mt-1 uppercase tracking-widest">Required for opponents to add you in-game.</p>
-                </div>
+                {joiningMatch.creatorId !== user?.uid && (
+                  <>
+                    <div className="space-y-2">
+                       <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em]">Your Exact {joiningMatch.game} Name</label>
+                       <input
+                         type="text"
+                         value={inGameName}
+                         onChange={e => setInGameName(e.target.value)}
+                         placeholder="e.g. xX_Sniper_Xx"
+                         className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm"
+                       />
+                    </div>
+
+                    {joiningMatch.isPartnerTournament && profile?.referredBy !== joiningMatch.creatorId && (
+                      <div className="space-y-3 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-sm mb-4">
+                        <div className="flex items-center gap-2 mb-1">
+                           <ShieldCheck className="w-3 h-3 text-yellow-500" />
+                           <label className="text-[9px] text-yellow-500 font-black uppercase tracking-[0.2em]">Neural Clearance Required</label>
+                        </div>
+                        <input
+                          type="text"
+                          value={joinReferralCode}
+                          onChange={e => setJoinReferralCode(e.target.value.toUpperCase())}
+                          placeholder="ENTER PARTNER CODE"
+                          className="w-full bg-black border border-yellow-500/30 focus:border-yellow-500 text-yellow-500 py-3 px-4 rounded-sm outline-none font-black text-sm tracking-widest transition-all text-center"
+                        />
+                        <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest text-center">Required for non-recruits to join this Creator Cup.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                
+                {joiningMatch.creatorId === user?.uid && (
+                  <p className="text-[10px] text-yellow-500/60 font-bold uppercase tracking-widest text-center py-2 italic">
+                    Entering as Overseer. No rewards/fee applied.
+                  </p>
+                )}
              </div>
 
              <div className="flex gap-3">
                <button onClick={() => setJoiningMatch(null)} className="flex-1 py-3 text-[10px] font-black uppercase text-gray-500 hover:text-white border border-surface-border hover:bg-black rounded-sm">Cancel</button>
                <button 
                  onClick={confirmJoin}
-                 disabled={joinLoading || !inGameName.trim()}
-                 className="flex-1 py-3 text-[10px] font-black uppercase bg-accent hover:bg-accent-hover text-black shadow-lg rounded-sm flex justify-center disabled:opacity-20"
+                 disabled={joinLoading || (joiningMatch.creatorId !== user?.uid && !inGameName.trim())}
+                 className={`flex-1 py-3 text-[10px] font-black uppercase shadow-lg rounded-sm flex justify-center disabled:opacity-20 ${joiningMatch.isPartnerTournament ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-accent hover:bg-accent-hover text-black'}`}
                >
                  {joinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Deploy"}
                </button>

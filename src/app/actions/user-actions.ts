@@ -2,6 +2,8 @@
 
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
+import { sendTacticalEmail } from "@/lib/mail";
+import { getWelcomeEmailTemplate } from "@/lib/mail-templates";
 
 /**
  * CLEANUP: Process User Account Deletion
@@ -225,6 +227,189 @@ export async function cleanupDeletedUserAccountAction(idToken: string) {
     return { success: true };
   } catch (error: any) {
     console.error("[UserAction] cleanupDeletedUserAccountAction error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: Get Partner/Referral Stats
+ */
+export async function getPartnerStatsAction(idToken: string) {
+  const uid = await getVerifiedUid(idToken);
+  
+  try {
+    // 1. Get total recruits
+    const recruitsSnap = await adminDb.collection("users")
+      .where("referredBy", "==", uid)
+      .get();
+    
+    const recruits = recruitsSnap.docs.map(doc => ({
+      username: doc.data().username,
+      createdAt: typeof doc.data().createdAt === 'string' 
+        ? doc.data().createdAt 
+        : (doc.data().createdAt?.toDate?.()?.toISOString() || null),
+      totalMatches: doc.data().totalMatches || 0
+    }));
+
+    // 2. Get commission history
+    const earningsSnap = await adminDb.collection("transactions")
+      .where("uid", "==", uid)
+      .where("category", "==", "PARTNER_COMMISSION")
+      .orderBy("createdAt", "desc")
+      .limit(20)
+      .get();
+    
+    const earnings = earningsSnap.docs.map(doc => ({
+      amount: doc.data().amount,
+      description: doc.data().description,
+      createdAt: doc.data().createdAt?.toDate?.()?.toISOString() || null
+    }));
+
+    // 3. Get Active Tactical Summons (Admin requires presence)
+    const summonsSnap = await adminDb.collection("matches")
+      .where("creatorId", "==", uid)
+      .where("status", "==", "DISPUTED")
+      .where("partnerSummoned", "==", true)
+      .get();
+    
+    const activeSummons = summonsSnap.docs.map(doc => ({
+      id: doc.id,
+      game: doc.data().game
+    }));
+
+    // 4. Get Live Operational Feed (All active matches in partner's domain)
+    const liveMatchesSnap = await adminDb.collection("matches")
+      .where("creatorId", "==", uid)
+      .where("status", "in", ["WAITING", "READY", "IN_PROGRESS", "WAITING_FOR_OPPONENT", "DISPUTED"])
+      .limit(15)
+      .get();
+    
+    const liveMatches = liveMatchesSnap.docs.map(doc => {
+      const data = doc.data();
+      const pList = Object.values(data.players || {});
+      return {
+        id: doc.id,
+        game: data.game,
+        format: data.format,
+        status: data.status,
+        round: data.round || null,
+        players: pList.map((p: any) => ({ username: p.username, team: p.team })),
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null
+      };
+    });
+
+    return { 
+      success: true, 
+      stats: {
+        totalRecruits: recruitsSnap.size,
+        recruits,
+        recentEarnings: earnings,
+        activeSummons,
+        liveMatches
+      }
+    };
+  } catch (error: any) {
+    console.error("[UserAction] getPartnerStats error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: Create Partner Tournament (Influencer Lobbies)
+ * Rules: Max 1 per game type, must be a PARTNER.
+ */
+export async function createPartnerTournamentAction(
+  idToken: string,
+  game: 'CODM' | 'EFOOTBALL',
+  entryFee: number,
+  format: 'BR' | 'FFA' | 'tournament' = 'tournament',
+  maxPlayers: number = 8,
+  weaponClass: 'ALL GUNS' | 'SHOTGUN' | 'SNIPER' = 'ALL GUNS'
+) {
+  const uid = await getVerifiedUid(idToken);
+  
+  // 🛡️ VALIDATION: Only allow specific strategic entry tiers
+  const allowedFees = [100, 200, 500, 1000]; // $1, $2, $5, $10
+  if (!allowedFees.includes(entryFee)) {
+    throw new Error("UNAUTHORIZED_FEE: Please select a tactical entry tier ($1, $2, $5, or $10).");
+  }
+
+  // 🛡️ VALIDATION: Player count logic
+  if (game === 'CODM') {
+    if (format === 'BR') {
+      const allowedBR = [2, 4, 20, 30, 50, 100];
+      if (!allowedBR.includes(maxPlayers)) throw new Error("Invalid BR player count.");
+    } else if (format === 'FFA') {
+      const allowedFFA = [2, 3, 4, 5, 6, 7, 8];
+      if (!allowedFFA.includes(maxPlayers)) throw new Error("Invalid FFA player count.");
+    }
+  } else if (game === 'EFOOTBALL') {
+    // Standardizing eFootball Elite to 16, 8, 4 or 2 player knockouts
+    const allowedEF = [2, 4, 8, 16];
+    if (!allowedEF.includes(maxPlayers)) maxPlayers = 16;
+  }
+
+  try {
+    const userRef = adminDb.collection("users").doc(uid);
+    const userSnap = await userRef.get();
+    
+    if (!userSnap.exists) throw new Error("Profile not found.");
+    const profile = userSnap.data()!;
+    
+    // 🛡️ SECURITY: Only Partners or Admins can create specialized lobbies
+    if (profile.role !== 'PARTNER' && profile.role !== 'ADMIN' && profile.role !== 'SUPER_ADMIN') {
+      throw new Error("UNAUTHORIZED: This command requires 'PARTNER' level clearance.");
+    }
+
+    // 🛡️ ANTI-SPAM: Check for existing active tournaments by this partner
+    const activeLobbies = await adminDb.collection("matches")
+      .where("creatorId", "==", uid)
+      .where("game", "==", game)
+      .where("status", "in", ["WAITING", "READY"])
+      .get();
+    
+    if (!activeLobbies.empty) {
+      throw new Error(`DEPLOYMENT_BLOCKED: You already have an active ${game} lobby. It must be filled or closed before you can spurn another.`);
+    }
+
+    // Create the Match document (Gathering format)
+    const matchRef = adminDb.collection("matches").doc();
+    const matchData = {
+      game,
+      format: game === 'CODM' ? format : 'tournament', // eFootball always uses tournament (knockout)
+      challengeFee: entryFee,
+      status: 'WAITING',
+      playerIds: [],
+      players: {},
+      creatorId: uid,
+      isPartnerTournament: true,
+      partnerName: profile.username,
+      maxPlayers: maxPlayers,
+      weaponClass: game === 'CODM' && format === 'FFA' ? weaponClass : 'ALL GUNS',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 6 * 3600 * 1000)), // 6 hour window
+    };
+
+    await matchRef.set(matchData);
+
+    return { success: true, matchId: matchRef.id };
+  } catch (error: any) {
+    console.error("[UserAction] createPartnerTournament error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: Send Welcome Email
+ * Dispatches the tactical onboarding sequence to a new operative.
+ */
+export async function sendWelcomeEmailAction(email: string, username: string, referralCode: string) {
+  try {
+    const html = getWelcomeEmailTemplate(username, referralCode);
+    const res = await sendTacticalEmail(email, "OPERATIVE ENLISTED: Welcome to the Arena", html);
+    return res;
+  } catch (error: any) {
+    console.error("[UserAction] sendWelcomeEmail error:", error);
     return { success: false, error: error.message };
   }
 }

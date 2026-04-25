@@ -3,6 +3,8 @@
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { Match, MatchPlayer, Circuit, CircuitTie } from "@/lib/match-schema";
+import { getSummonEmailTemplate, getMatchStartEmailTemplate } from "@/lib/mail-templates";
+import { sendTacticalEmail } from "@/lib/mail";
 import { getVerifiedUid, getVerifiedIdentity, getVerifiedAdminUid } from "@/lib/server-utils";
 import { sanitize } from "@/lib/validation-utils";
 import { checkRateLimit } from "@/lib/rate-limiter";
@@ -44,19 +46,76 @@ import {
 } from "@/lib/fraud-detection";
 
 /**
+ * SHARED HELPER: Dispatch In-App Notifications for Match Resolution
+ * Ensures consistent messaging across all resolution paths (Admin, Consensus, Auto-Nuke)
+ */
+async function dispatchMatchResolutionNotifications(matchId: string, status: string, championUid?: string | null) {
+  try {
+     const closedSnap = await adminDb.collection("matches").doc(matchId).get();
+     if (!closedSnap.exists) return;
+     const closedData = closedSnap.data() as Match;
+     
+     // Handle DISPUTED matches
+     if (status === 'DISPUTED' || closedData?.status === 'DISPUTED') {
+        const gameLabel = `${closedData.game} ${closedData.format.toUpperCase()}`;
+        for (const pid of Object.keys(closedData.players)) {
+           await createNotificationInternal(
+              pid,
+              "⚖️ Match Under Review",
+              `Your ${gameLabel} match has conflicting results and is now under tribunal review.`,
+              "DISPUTE"
+           );
+        }
+     }
+     
+     // Handle CLOSED matches (agreed results)
+     const finalChampion = championUid || closedData.championUid;
+     if ((status === 'CLOSED' || closedData?.status === 'CLOSED') && finalChampion) {
+        const reward = closedData.rewardAmount || 0;
+        const gameLabel = `${closedData.game} ${closedData.format.toUpperCase()}`;
+
+        for (const pid of Object.keys(closedData.players)) {
+           if (pid === finalChampion) {
+              await createNotificationInternal(
+                 pid,
+                 "🏆 Victory Confirmed",
+                 `You won the ${gameLabel} match! ${reward > 0 ? `${reward} CR credited.` : 'Points updated.'}`,
+                 "MATCH"
+              );
+           } else {
+              await createNotificationInternal(
+                 pid,
+                 "Combat Result: Defeat",
+                 `Your ${gameLabel} match resolved. Opponent victory verified.`,
+                 "MATCH"
+              );
+           }
+        }
+     }
+  } catch (notifError) {
+     console.warn("[MatchAction] Post-match notification error:", notifError);
+  }
+}
+
+/**
  * INTERNAL HELPER: The Finalization Sequence
  * Handles payouts, standings updates, and knockout advancement.
  * MUST be called within a transaction.
  */
-async function internalFinalizeMatchClosure(
+export async function internalFinalizeMatchClosure(
   transaction: admin.firestore.Transaction,
   matchRef: admin.firestore.DocumentReference,
   matchData: Match,
   championUid: string,
   operatorUid: string, // Who triggered it (Admin or Player)
-  circuitData?: any // Pass circuit data if already fetched
+  circuitData?: any, // Pass circuit data if already fetched
+  overridePlayers?: Record<string, any> // fresh submission data to avoid stale doc reads
 ): Promise<{ needsTournamentCleanup: boolean; circuitId?: string }> {
-  let victoryReward = matchData.circuitId ? 0 : Math.floor((matchData.challengeFee * 2) * 0.8);
+  // 1.0 FINANCIAL CALCULATIONS (DYNAMIC SCALING)
+  const actualPlayers = matchData.playerIds?.length || 2;
+  const totalStake = matchData.challengeFee * actualPlayers;
+  const platformRake = Math.floor(totalStake * 0.20);
+  let victoryReward = matchData.circuitId ? 0 : (totalStake - platformRake);
 
   // HARDENING: One-off Promo matches (like CODM BR) that aren't part of a circuit
   if (matchData.isPromo && !matchData.circuitId && !victoryReward) {
@@ -77,17 +136,15 @@ async function internalFinalizeMatchClosure(
   });
 
   // 1. Update Core Profile Stats (Universal for all match types)
-  // This ensures that tournament/circuit matches still contribute to the user's 
-  // "totalMatches" count, which is required for withdrawal eligibility.
   const playerIds = Object.keys(matchData.players);
   const gameKey = matchData.game; // 'CODM' or 'EFOOTBALL'
 
   for (const pid of playerIds) {
     const userRef = adminDb.collection("users").doc(pid);
     const isWinner = pid === championUid;
-    const playerMatchData = (matchData.players as any)[pid];
+    // CRITICAL: use overridePlayers if available, otherwise fallback to doc state
+    const playerMatchData = (overridePlayers?.[pid] || matchData.players[pid] || {}) as any;
 
-    // Build tactical stat updates
     const statsUpdate: any = {
       totalMatches: admin.firestore.FieldValue.increment(1),
       ...(isWinner && { totalWins: admin.firestore.FieldValue.increment(1) })
@@ -97,33 +154,106 @@ async function internalFinalizeMatchClosure(
       statsUpdate[`stats.EFOOTBALL.matches`] = admin.firestore.FieldValue.increment(1);
       statsUpdate[`stats.EFOOTBALL.goalsFor`] = admin.firestore.FieldValue.increment(playerMatchData.scoreFor || 0);
       statsUpdate[`stats.EFOOTBALL.goalsAgainst`] = admin.firestore.FieldValue.increment(playerMatchData.scoreAgainst || 0);
-      if (isWinner) {
-        statsUpdate[`stats.EFOOTBALL.wins`] = admin.firestore.FieldValue.increment(1);
-      }
+      if (isWinner) statsUpdate[`stats.EFOOTBALL.wins`] = admin.firestore.FieldValue.increment(1);
     } else if (gameKey === 'CODM') {
       statsUpdate[`stats.CODM.matches`] = admin.firestore.FieldValue.increment(1);
       statsUpdate[`stats.CODM.kills`] = admin.firestore.FieldValue.increment(playerMatchData.kills || 0);
-      if (isWinner) {
-        statsUpdate[`stats.CODM.wins`] = admin.firestore.FieldValue.increment(1);
-      }
+      if (isWinner) statsUpdate[`stats.CODM.wins`] = admin.firestore.FieldValue.increment(1);
     }
-
     transaction.update(userRef, statsUpdate);
   }
 
-  // 1.5 PROMO SYSTEM SYNC (The "Mission Accomplished" Bridge)
-  // If this match or its parent circuit is part of a promotional campaign,
-  // propagate the closure status to the admin deployment record.
-  const promoId = (matchData as any).promoId || circuitData?.promoId;
-  if (promoId) {
-    const promoRef = adminDb.collection("promo_events").doc(promoId);
-    transaction.update(promoRef, {
-      status: 'COMPLETED',
-      finalizedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
+  // 1.8 PARTNER COMMISSION ENGINE
+  let partnerCommissionPaid = 0;
+  try {
+    // A. [CREATOR COMMISSION] If this is a Partner Lobby, the Creator gets the Partner Share of the Rake
+    if (matchData.isPartnerTournament && matchData.creatorId) {
+      const creatorRef = adminDb.collection("users").doc(matchData.creatorId);
+      const creatorSnap = await transaction.get(creatorRef);
+      
+      if (creatorSnap.exists) {
+        const creatorData = creatorSnap.data()!;
+        const expiryDate = creatorData.partnerExpiresAt?.seconds ? new Date(creatorData.partnerExpiresAt.seconds * 1000) : null;
+        
+        // 🔒 [CONTRACT CHECK] Only pay if Partner Contract is active
+        if (creatorData.role === 'PARTNER' && expiryDate && expiryDate > new Date()) {
+          partnerCommissionPaid = Math.floor(platformRake * 0.50);
+          if (partnerCommissionPaid > 0) {
+            transaction.update(creatorRef, {
+              balanceCoins: admin.firestore.FieldValue.increment(partnerCommissionPaid)
+            });
+            
+            const partLogRef = adminDb.collection("transactions").doc();
+            transaction.set(partLogRef, {
+              uid: matchData.creatorId,
+              type: "CREDIT",
+              category: "PARTNER_COMMISSION",
+              description: `Lobby Creator Commission: ${matchData.game} ${matchData.format}`,
+              amount: partnerCommissionPaid,
+              status: "COMPLETED",
+              createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+          }
+        } else {
+          console.log(`[Commission] Creator ${matchData.creatorId} contract expired or invalid. Rake reverts to platform.`);
+        }
+      }
+    } 
+    // B. [RECRUIT COMMISSION] Otherwise, check for referrers (Influencer Recruits)
+    else {
+      const playerUsers = await transaction.getAll(...playerIds.map(pid => adminDb.collection("users").doc(pid)));
+      
+      for (const userSnap of playerUsers) {
+        if (!userSnap.exists) continue;
+        const profile = userSnap.data()!;
+        const referrerUid = profile.referredBy;
+        
+        if (referrerUid) {
+          const referrerRef = adminDb.collection("users").doc(referrerUid);
+          const referrerSnap = await transaction.get(referrerRef);
+          
+          if (referrerSnap.exists) {
+            const referrerData = referrerSnap.data()!;
+            const expiryDate = referrerData.partnerExpiresAt?.seconds ? new Date(referrerData.partnerExpiresAt.seconds * 1000) : null;
+            
+            // 🔒 [LIFECYCLE CHECK] Verify the recruit's account is < 90 days old
+            const accountAgeMs = Date.now() - new Date(profile.createdAt).getTime();
+            const isEligible = accountAgeMs < (90 * 24 * 60 * 60 * 1000);
+
+            // 🔒 [CONTRACT CHECK] Only pay if Influencer's Contract is active AND recruit is eligible
+            if (referrerData.role === 'PARTNER' && expiryDate && expiryDate > new Date() && isEligible) {
+              const rakePerPlayer = Math.floor(matchData.challengeFee * 0.20);
+              const commission = Math.floor(rakePerPlayer * 0.50); 
+              
+              if (commission > 0) {
+                partnerCommissionPaid += commission;
+                transaction.update(referrerRef, {
+                  balanceCoins: admin.firestore.FieldValue.increment(commission)
+                });
+                
+                const commLogRef = adminDb.collection("transactions").doc();
+                transaction.set(commLogRef, {
+                  uid: referrerUid,
+                  type: "CREDIT",
+                  category: "PARTNER_COMMISSION",
+                  description: `Recruit Commission: ${profile.username} @ ${matchData.game}`,
+                  amount: commission,
+                  status: "COMPLETED",
+                  createdAt: admin.firestore.FieldValue.serverTimestamp()
+                });
+              }
+            } else {
+               console.log(`[Commission] Referrer ${referrerUid} contract expired. Rake reverts to platform.`);
+            }
+          }
+        }
+      }
+    }
+  } catch (commError) {
+    console.error("[MatchAction] Partner Commission error:", commError);
   }
 
-  // 2. Payout Winner (only for casual matches outside of a managed circuit)
+  // 2. Payout Winner & Track Platform Finances
   if (!matchData.circuitId && victoryReward > 0) {
     const winnerRef = adminDb.collection("users").doc(championUid);
     transaction.update(winnerRef, {
@@ -141,11 +271,11 @@ async function internalFinalizeMatchClosure(
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    const platformCut = (matchData.challengeFee * 2) - victoryReward;
+    const finalPlatformCut = platformRake - partnerCommissionPaid;
     const statsRef = adminDb.collection("stats").doc("platform_finances");
     transaction.set(statsRef, {
-      totalPayouts: admin.firestore.FieldValue.increment(victoryReward),
-      totalPlatformCut: admin.firestore.FieldValue.increment(platformCut),
+      totalPayouts: admin.firestore.FieldValue.increment(victoryReward + partnerCommissionPaid),
+      totalPlatformCut: admin.firestore.FieldValue.increment(finalPlatformCut),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
   }
@@ -198,7 +328,7 @@ async function internalFinalizeMatchClosure(
          let p1G = 0;
          let p2G = 0;
          
-         if (ties) {
+         if (ties && Array.isArray(ties)) {
             tieIdx = (ties as any[]).findIndex(t => t?.matchId1 === matchRef.id || t?.matchId2 === matchRef.id || (t as any)?.matchId3 === matchRef.id);
             if (tieIdx !== -1) {
                const tie = (ties as any[])[tieIdx];
@@ -380,7 +510,8 @@ export async function joinMatchAction(
   _ignoredUsername: string,
   _ignoredAvatarId: number,
   matchId: string,
-  inGameName: string
+  inGameName: string,
+  referralCode?: string
 ) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
   const username = profile.username || "Unknown";
@@ -399,83 +530,132 @@ export async function joinMatchAction(
 
       if (matchData.status !== 'WAITING') throw new Error("Arena is no longer accepting players.");
       
-      // 🔒 [SECURITY] H-002 FIX: Prevent double-join race condition
-      // Double-check player not already joined (defense against concurrent joins)
-      if (matchData.players[uid]) throw new Error("You are already in this combat session.");
+      // [PARTNER-OVERSEER] Allow creator to join as an observer without paying
+      const isPartnerOverseer = matchData.isPartnerTournament && matchData.creatorId === uid;
 
-      // 🔒 [SECURITY] H-001 FIX: Enforce whitelist only for bracket matches
+      if (matchData.players[uid] && !isPartnerOverseer) throw new Error("You are already in this combat session.");
+
+      // [PARTNER-GATE] Check referral status for influencer tournaments
+      if (matchData.isPartnerTournament && !isPartnerOverseer) {
+        const partnerId = matchData.creatorId;
+        const isAlreadyRecruit = userData.referredBy === partnerId;
+
+        if (!isAlreadyRecruit) {
+          if (!referralCode) {
+             throw new Error(`EXCLUSIVE_ACCESS: This tournament is reserved for ${matchData.partnerName || 'Partner'}'s recruits. Enter their referral code to join.`);
+          }
+          
+          // Verify Referral Code
+          const partnerSnap = await transaction.get(adminDb.collection("users").doc(partnerId));
+          const partnerData = partnerSnap.data();
+          if (partnerData?.myReferralCode !== referralCode) {
+             throw new Error("INVALID_CODE: The referral code provided does not match this Partner's clearance.");
+          }
+
+          // [AUTO-RECRUIT] Successfully verified - link them to the partner
+          transaction.update(userRef, { referredBy: partnerId });
+        }
+      }
+
+      // [WHITELIST] Check for bracket matches
       if (matchData.circuitId || matchData.round) {
-         // Tournament/Circuit matches REQUIRE explicit whitelist
          if (!matchData.playerIds || !matchData.playerIds.includes(uid)) {
             throw new Error("Neural Lockdown: You are not authorized for this bracket match.");
          }
       }
-      // Open 1v1/FFA/tournament lobbies should be joinable by any eligible player.
 
-      // 🔒 [SECURITY] H-004 FIX: Prevent negative balance via race condition
-      // Check balance and atomically deduct in single operation
-      const currentBalance = userData.balanceCoins || 0;
-      const newBalance = currentBalance - matchData.challengeFee;
-      
-      if (newBalance < 0) {
-        throw new Error("Insufficient balance to join this challenge.");
-      }
+      const updates: any = {};
+      const userUpdates: any = {};
 
-      // Prepare user updates
-      const userUpdates: any = {
-        balanceCoins: newBalance,  // Use SET value instead of increment
-        lifetimeWagered: admin.firestore.FieldValue.increment(matchData.challengeFee)
-      };
-
-      // Auto-save gaming name to profile if not already set (first-time input)
-      const tagField = matchData.game === 'CODM' ? 'codTag' : 'efootballTag';
-      if (inGameName && inGameName.trim() && !userData[tagField]) {
-        userUpdates[tagField] = sanitize(inGameName);
-      }
-
-      transaction.update(userRef, userUpdates);
-
-      const playerCount = Object.keys(matchData.players).length;
-      const target = matchData.maxPlayers || 2;
-      const isFull = (playerCount + 1) >= target;
-
-      const player: MatchPlayer = {
-        uid, username, avatarId, ready: false, inGameName,
-        team: matchData.format === 'FFA' ? 'alpha' : (playerCount % 2 === 0 ? 'alpha' : 'bravo')
-      };
-
-      const updatedPlayersList = [...Object.values(matchData.players), player];
-      const updates: any = {
-        [`players.${uid}`]: player,
-        playerIds: admin.firestore.FieldValue.arrayUnion(uid)
-      };
-
-      if (isFull && matchData.format === 'tournament' && !matchData.circuitId) {
-        const circuitId = await initializeCircuit(transaction, matchRef, matchData as any as EngineMatch, updatedPlayersList as any as EnginePlayer[], uid);
-        if (circuitId) {
-          updates.circuitId = circuitId;
+      if (!isPartnerOverseer) {
+        // [FINANCIAL] Balance Check & Deduction
+        const currentBalance = userData.balanceCoins || 0;
+        if (currentBalance < matchData.challengeFee) {
+          throw new Error("Insufficient balance to join this challenge.");
         }
-        updates.status = 'COMPLETED';
-      } else if (isFull) {
-        updates.status = 'READY';
 
-        // Designate a host candidate atomically — picks a random player and flags them.
-        // This is what triggers the "Accept / Pass Host" card in MatchStatusPanel.
-        const isGatheringFormat = matchData.format === 'league' || matchData.format === 'tournament';
-        if (!isGatheringFormat && !matchData.hostUid) {
-          const allPlayers = updatedPlayersList;
-          const candidate = allPlayers[Math.floor(Math.random() * allPlayers.length)];
-          // 🔒 FIX H-007: Avoid duplicate field update if candidate is same as joining player
-          if (candidate.uid === uid) {
-            updates[`players.${uid}`].isHostCandidate = true;
-          } else {
-            updates[`players.${candidate.uid}.isHostCandidate`] = true;
+        userUpdates.balanceCoins = admin.firestore.FieldValue.increment(-matchData.challengeFee);
+        userUpdates.lifetimeWagered = admin.firestore.FieldValue.increment(matchData.challengeFee);
+
+        // Auto-save gaming name
+        const tagField = matchData.game === 'CODM' ? 'codTag' : 'efootballTag';
+        if (inGameName && inGameName.trim() && !userData[tagField]) {
+          userUpdates[tagField] = sanitize(inGameName);
+        }
+
+        transaction.update(userRef, userUpdates);
+
+        // [ROSTER] Player Addition
+        const playerCount = Object.keys(matchData.players).length;
+        const target = matchData.maxPlayers || 2;
+        if (playerCount >= target) throw new Error("Arena is full.");
+
+        const player: MatchPlayer = {
+          uid, username, avatarId, ready: false, inGameName,
+          team: matchData.format === 'FFA' ? 'alpha' : (playerCount % 2 === 0 ? 'alpha' : 'bravo')
+        };
+
+        const updatedPlayersList = [...Object.values(matchData.players), player];
+        updates[`players.${uid}`] = player;
+        updates.playerIds = admin.firestore.FieldValue.arrayUnion(uid);
+
+        const isFull = (playerCount + 1) >= target;
+        const updatedPlayersMap = { ...matchData.players, [uid]: player };
+
+        // [TRANSITION] Full Logic
+        if (isFull && matchData.format === 'tournament' && !matchData.circuitId) {
+          const circuitId = await initializeCircuit(transaction, matchRef, matchData as any as EngineMatch, updatedPlayersList as any as EnginePlayer[], uid);
+          if (circuitId) {
+            updates.circuitId = circuitId;
+            updates.status = 'COMPLETED';
+          }
+        } else if (isFull) {
+          updates.status = 'READY';
+          // Host candidacy
+          const isGatheringFormat = matchData.format === 'league' || matchData.format === 'tournament';
+          if (!isGatheringFormat && !matchData.hostUid) {
+            const candidate = updatedPlayersList[Math.floor(Math.random() * updatedPlayersList.length)];
+            if (candidate.uid === uid) {
+              updates[`players.${uid}`].isHostCandidate = true;
+            } else {
+              updates[`players.${candidate.uid}.isHostCandidate`] = true;
+            }
           }
         }
+
+        // [BROADCAST] Notify ALL operatives that deployment is imminent
+        if (isFull) {
+           const playersInRoom = Object.keys(updatedPlayersMap);
+           // We need to fetch emails outside the transaction if we want to be clean, 
+           // but since we are sending emails after the transaction commits (in a promise catch/then or just floating),
+           // we can gather IDs here and fire them off.
+           
+           // HELPER: Batch notify after transaction completes
+           (async () => {
+              try {
+                 const emails: string[] = [];
+                 const playerDocs = await Promise.all(playersInRoom.map(pid => adminDb.collection("users").doc(pid).get()));
+                 playerDocs.forEach(doc => {
+                    if (doc.exists && doc.data()?.email) emails.push(doc.data()?.email);
+                 });
+
+                 const html = getMatchStartEmailTemplate("Operative", matchId, matchData.game);
+                 await Promise.all(emails.map(email => 
+                    sendTacticalEmail(email, `DEPLOYMENT IMMINENT: ${matchData.game} Match Ready`, html)
+                 ));
+              } catch (e) {
+                 console.error("[MatchAction] Global notification failure:", e);
+              }
+           })();
+        }
+      } else {
+        // [OVERSEER] Non-player addition
+        updates[`overseers.${uid}`] = { uid, username, avatarId, role: 'PARTNER' };
       }
-      
+
       transaction.update(matchRef, updates);
     });
+
     return { success: true };
   } catch (error: any) {
     console.error("[MatchAction] joinMatch error:", error);
@@ -637,7 +817,7 @@ export async function submitMatchResultAction(
             updates.status = 'CLOSED';
             updates.finalizationAttemptId = attemptId;
             
-            const finalizeResult = await internalFinalizeMatchClosure(transaction, matchRef, matchData, (winners[0] as any).uid, uid, circuitData);
+            const finalizeResult = await internalFinalizeMatchClosure(transaction, matchRef, matchData, (winners[0] as any).uid, uid, circuitData, updatedPlayers);
             if (finalizeResult.needsTournamentCleanup && finalizeResult.circuitId) {
                pendingTournamentCleanup = finalizeResult.circuitId;
             }
@@ -778,70 +958,7 @@ export async function submitMatchResultAction(
 
     // PHASE 3: POST-MATCH NOTIFICATIONS
     // Send win/loss in-app alerts to all players after the match is settled.
-    try {
-      const closedSnap = await adminDb.collection("matches").doc(matchId).get();
-      const closedData = closedSnap.data() as Match;
-      
-      // Handle DISPUTED matches - notify admin/moderators
-      if (closedData?.status === 'DISPUTED') {
-        const gameLabel = `${closedData.game} ${closedData.format.toUpperCase()}`;
-        const playersList = Object.values(closedData.players);
-        const claims = playersList.map((p: any) => `${p.username}: ${p.claim}`).join(' vs ');
-        
-        // Get all admin/moderators
-        const staffQuery = await adminDb
-          .collection("users")
-          .where("role", "in", ["ADMIN", "MODERATOR", "SUPER_ADMIN"])
-          .get();
-        
-        for (const staffDoc of staffQuery.docs) {
-          await createNotificationInternal(
-            staffDoc.id,
-            "⚠️ Match Disputed - Tribunal Investigation",
-            `${gameLabel} match #${matchId.substring(0, 8)} requires manual review. Players submitted conflicting results: ${claims}`,
-            "DISPUTE"
-          );
-        }
-        
-        // Notify all players that match is under review
-        for (const pid of Object.keys(closedData.players)) {
-          await createNotificationInternal(
-            pid,
-            "⚖️ Match Under Review",
-            `Your ${gameLabel} match has conflicting results and is now under tribunal review. Admin will contact you with findings.`,
-            "DISPUTE"
-          );
-        }
-      }
-      
-      // Handle CLOSED matches (agreed results) - notify with win/loss
-      if (closedData?.status === 'CLOSED' && closedData?.championUid) {
-        const winnerUid = closedData.championUid;
-        const reward = closedData.rewardAmount || 0;
-        const gameLabel = `${closedData.game} ${closedData.format.toUpperCase()}`;
-
-        for (const pid of Object.keys(closedData.players)) {
-          if (pid === winnerUid) {
-            await createNotificationInternal(
-              pid,
-              "🏆 Victory Confirmed",
-              `You won the ${gameLabel} match! ${reward > 0 ? `${reward} CR has been credited to your vault.` : 'Circuit points have been updated.'}`,
-              "MATCH"
-            );
-          } else {
-            await createNotificationInternal(
-              pid,
-              "Combat Result: Defeat",
-              `Your ${gameLabel} match has been resolved. Your opponent's victory was verified. Better luck next time, Operative.`,
-              "MATCH"
-            );
-          }
-        }
-      }
-    } catch (notifError) {
-      console.warn("[MatchAction] Post-match notification error:", notifError);
-      // Non-fatal
-    }
+    await dispatchMatchResolutionNotifications(matchId, 'RESOLVED'); // Helper will check actual doc status
 
     return { success: true };
   } catch (error: any) {
@@ -894,6 +1011,9 @@ export async function executeMatchClosureAction(idToken: string, matchId: string
     if (pendingTournamentCleanup) {
        await cleanupTournamentData(pendingTournamentCleanup);
     }
+
+    // PHASE 3: POST-MATCH NOTIFICATIONS
+    await dispatchMatchResolutionNotifications(matchId, 'CLOSED');
 
     return { success: true };
   } catch (error: any) {
@@ -1148,7 +1268,9 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
          const targetSize = matchData.maxPlayers || (matchData.round ? 2 : 12);
          const isFull = playersList.length >= targetSize;
          const isHost = matchData.hostUid === uid || (matchData as any).creatorId === uid;
-         if (isFull && isHost) {
+         
+         // TACTICAL OVERRIDE FIX: Only allow for large lobbies. 1v1 matches MUST both be ready.
+         if (isFull && isHost && targetSize > 2) {
             allReady = true;
          }
       }
@@ -1254,6 +1376,10 @@ export async function claimTechnicalWinAction(idToken: string, matchId: string) 
       
       await resolveTechnicalWin(transaction, matchRef, matchData as any as EngineMatch, uid);
     });
+
+    // PHASE 3: POST-MATCH NOTIFICATIONS
+    await dispatchMatchResolutionNotifications(matchId, 'CLOSED', uid);
+
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1282,6 +1408,31 @@ export async function applyExpirationExtractionAction(idToken: string, matchId: 
 
          if (matchData.status === 'CLOSED' || matchData.status === 'COMPLETED') return;
 
+         if (matchData.status === 'WAITING') {
+            // MATCHMAKING FAILED: Nobody joined before the lobby expired. Refund the creator.
+            for (const pid of matchData.playerIds) {
+               transaction.update(adminDb.collection("users").doc(pid), {
+                  balanceCoins: admin.firestore.FieldValue.increment(matchData.challengeFee || 0),
+               });
+               const logRef = adminDb.collection("transactions").doc();
+               transaction.set(logRef, {
+                  uid: pid,
+                  type: "CREDIT",
+                  category: "MATCH_REFUND",
+                  description: "Matchmaking expired before opponent joined. Refund processed.",
+                  amount: matchData.challengeFee || 0,
+                  status: "COMPLETED",
+                  createdAt: admin.firestore.FieldValue.serverTimestamp()
+               });
+            }
+            transaction.update(matchRef, {
+               status: 'CLOSED',
+               disputeReason: 'MATCHMAKING_EXPIRED_REFUNDED',
+               resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+            return;
+         }
+
          if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
             await resolveDoubleNoShow(transaction, matchRef, matchData as any as EngineMatch);
          } else if (claimCount === 1) {
@@ -1300,6 +1451,10 @@ export async function applyExpirationExtractionAction(idToken: string, matchId: 
             return;
          }
       });
+
+      // PHASE 3: POST-MATCH NOTIFICATIONS
+      await dispatchMatchResolutionNotifications(matchId, 'RESOLVED');
+
       return { success: true };
    } catch (error: any) {
       return { success: false, error: error.message };
@@ -1358,6 +1513,9 @@ export async function adminResolveMatchAction(
          circuitSnap?.exists ? circuitSnap.data() : null
       );
     });
+
+    // PHASE 3: POST-MATCH NOTIFICATIONS
+    await dispatchMatchResolutionNotifications(matchId, 'CLOSED', winnerUid);
 
     return { success: true };
   } catch (error: any) {
@@ -1472,6 +1630,106 @@ export async function pingOpponentAction(idToken: string, matchId: string) {
     return result;
   } catch (error: any) {
     console.error("[PingAction] Failure:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: Summon Admin for Judgement
+ * Flags a match as DISPUTED and alerts the command center.
+ */
+export async function setMatchDisputedAction(idToken: string, matchId: string, reason: string) {
+  const uid = await getVerifiedUid(idToken);
+  const matchRef = adminDb.collection("matches").doc(matchId);
+  
+  try {
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const matchSnap = await transaction.get(matchRef);
+      if (!matchSnap.exists) throw new Error("Match de-synchronized.");
+      
+      const matchData = matchSnap.data()!;
+      if (!matchData.playerIds.includes(uid)) throw new Error("UNAUTHORIZED: Only participants can summon judgement.");
+      
+      transaction.update(matchRef, {
+        status: 'DISPUTED',
+        disputeReason: reason,
+        disputeTriggeredBy: uid,
+        disputeAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Log the dispute for audit
+      const auditRef = adminDb.collection("admin_audit_log").doc();
+      transaction.set(auditRef, {
+        action: 'MATCH_DISPUTE',
+        matchId,
+        uid,
+        reason,
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return { success: true };
+    });
+
+    return result;
+  } catch (error: any) {
+    console.error("[MatchAction] setMatchDisputed error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: Summon Partner to Dispute
+ * Called by Admins to bring the lobby creator into the judgement process.
+ */
+export async function summonPartnerAction(idToken: string, matchId: string) {
+  const uid = await getVerifiedUid(idToken);
+  
+  try {
+    // 1. Verify caller is Admin
+    const adminRef = adminDb.collection("users").doc(uid);
+    const adminSnap = await adminRef.get();
+    if (adminSnap.data()?.role !== 'ADMIN' && adminSnap.data()?.role !== 'SUPER_ADMIN') {
+      throw new Error("UNAUTHORIZED: Only Command Center Staff can summon Partners.");
+    }
+
+    const matchRef = adminDb.collection("matches").doc(matchId);
+    const matchSnap = await matchRef.get();
+    if (!matchSnap.exists) throw new Error("Match not found.");
+    
+    const matchData = matchSnap.data()!;
+    const partnerUid = matchData.creatorId;
+    if (!partnerUid) throw new Error("This is not a Partner-created lobby.");
+
+    await matchRef.update({
+      partnerSummoned: true,
+      partnerSummonedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 2. Fetch Partner Data for Email
+    const partnerRef = adminDb.collection("users").doc(partnerUid);
+    const partnerSnap = await partnerRef.get();
+    const partnerData = partnerSnap.data();
+
+    // 3. Dispatch In-App Notification
+    const nRef = partnerRef.collection("notifications").doc();
+    await nRef.set({
+      type: 'TACTICAL_SUMMONS',
+      title: 'COMMAND CENTER SUMMONS',
+      message: `You are required for judgement in Match #${matchId.slice(-6)}. Open your Partner Portal immediately.`,
+      matchId,
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // 4. Dispatch Critical Email Alert
+    if (partnerData?.email) {
+      const emailHtml = getSummonEmailTemplate(partnerData.username, matchId);
+      await sendTacticalEmail(partnerData.email, "CRITICAL ALERT: Command Center Summons", emailHtml);
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[MatchAction] summonPartner error:", error);
     return { success: false, error: error.message };
   }
 }

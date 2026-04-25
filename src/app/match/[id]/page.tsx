@@ -3,7 +3,8 @@ import React, { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { Match } from "@/lib/match-service";
+import { Match, leaveMatch } from "@/lib/match-service";
+import { setMatchDisputedAction } from "@/app/actions/match-actions";
 import Link from 'next/link';
 import { useAuth } from "@/components/auth/AuthProvider";
 import MatchRoster from "@/components/match/MatchRoster";
@@ -11,7 +12,7 @@ import MatchChat from "@/components/match/MatchChat";
 import MatchStatusPanel from "@/components/match/MatchStatusPanel";
 import LeaveMatchModal from "../../../components/match/LeaveMatchModal";
 import MatchRules from "@/components/match/MatchRules";
-import { Loader2, ShieldCheck, Swords } from "lucide-react";
+import { Loader2, ShieldCheck, Swords, ShieldAlert } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 
 export default function ActiveMatchPage({ params }: { params: Promise<{ id: string }> }) {
@@ -25,6 +26,9 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
    const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
    const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
    const [lastKnownCircuitId, setLastKnownCircuitId] = useState<string | null>(null);
+   const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
+   const [disputeReason, setDisputeReason] = useState("");
+   const [isDisputing, setIsDisputing] = useState(false);
    const lastMatchRef = React.useRef<Match | null>(null);
 
    useEffect(() => {
@@ -70,7 +74,9 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                if (autoRedirectTimeoutId) clearTimeout(autoRedirectTimeoutId);
                setLoading(false);
                setTimeout(() => {
-                  router.push("/dashboard");
+                  const targetId = lastKnownCircuitId || (lastMatchRef.current as any)?.leagueId;
+                  const targetUrl = targetId ? `/dashboard/tournaments/view/${targetId}` : "/dashboard";
+                  router.push(targetUrl);
                }, 100);
             } else if (!lastMatchRef.current && !autoRedirectTimeoutId && !hasRedirected) {
                // Match never existed from the start - show error with manual escape button
@@ -116,14 +122,23 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       };
    }, [id]);
 
-   if (loading) {
-      return (
-         <div className="w-full min-h-screen bg-black flex flex-col items-center justify-center">
-            <Loader2 className="w-8 h-8 text-accent animate-spin mb-4" />
-            <p className="text-[10px] font-black uppercase text-gray-500 tracking-[0.4em]">Establishing Neural Link...</p>
-         </div>
-      );
-   }
+    if (loading) {
+       return (
+          <div className="w-full min-h-screen bg-black flex flex-col items-center justify-center p-12">
+             <div className="relative mb-12">
+                <div className="absolute inset-0 bg-accent/20 blur-3xl animate-pulse rounded-full" />
+                <Loader2 className="w-16 h-16 text-accent animate-spin relative z-10" />
+             </div>
+             <div className="space-y-3 text-center">
+                <p className="text-[12px] font-black uppercase text-white tracking-[0.6em] animate-pulse">Establishing Neural Link</p>
+                <div className="h-1 w-64 bg-white/10 rounded-full overflow-hidden mx-auto">
+                   <div className="h-full bg-accent animate-pulse w-1/2" />
+                </div>
+                <p className="text-[8px] font-black uppercase text-gray-600 tracking-[0.2em] mt-2 italic">Securing Operations Theater #{id.slice(-6).toUpperCase()}</p>
+             </div>
+          </div>
+       );
+    }
 
    // If match still null, show professional 'Not Found' state
    if (!match) {
@@ -203,14 +218,42 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                      View Group Stages & Tables
                   </button>
                )}
-               <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-black border border-surface-border px-3 py-1.5 rounded-[3px]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                  Live Combat Operations
-               </div>
-            </div>
-         </div>
+                <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-black border border-surface-border px-3 py-1.5 rounded-[3px]">
+                   <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
+                   Live Combat Operations
+                </div>
+             </div>
+
+             {match?.status !== 'CLOSED' && match?.status !== 'DISPUTED' && (
+               <button
+                  onClick={() => setIsDisputeModalOpen(true)}
+                  className="bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest hover:bg-red-500/20 transition-all mr-6 flex items-center gap-2"
+               >
+                  <ShieldAlert className="w-3 h-3" />
+                  Summon Judgement
+               </button>
+             )}
+          </div>
 
          <div className="w-full max-w-[100rem] mx-auto p-4 sm:p-6 lg:p-8 flex-1">
+            {/* TACTICAL VIEWER BANNER */}
+            {match?.overseers?.[user?.uid || ''] && (
+               <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-sm flex items-center justify-between animate-in slide-in-from-top-4 duration-500">
+                  <div className="flex items-center gap-4">
+                     <div className="w-10 h-10 bg-yellow-500/20 border border-yellow-500/40 rounded-sm flex items-center justify-center rotate-45 shrink-0">
+                        <ShieldCheck className="w-5 h-5 text-yellow-500 -rotate-45" />
+                     </div>
+                     <div>
+                        <h4 className="text-[11px] font-black text-yellow-500 uppercase tracking-[0.2em] italic">Tactical Viewer Mode // Active</h4>
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">You are monitoring this mission as an Overseer. Deployment controls restricted.</p>
+                     </div>
+                  </div>
+                  <div className="hidden sm:block text-[9px] font-black text-yellow-500/60 uppercase tracking-widest border border-yellow-500/20 px-3 py-1 rounded-sm">
+                     Observer Clearance: Alpha-1
+                  </div>
+               </div>
+            )}
+
             {/* Tactical Header */}
             <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface border border-surface-border p-6 rounded-sm shadow-xl relative overflow-hidden">
                {match?.game === 'CODM' && (
@@ -340,6 +383,57 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                   >
                      Extract Now
                   </button>
+               </div>
+            </div>
+         )}
+         {/* DISPUTE MODAL */}
+         {isDisputeModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200">
+               <div className="bg-[#0a0a0a] border border-red-500/30 p-6 rounded-sm max-w-md w-full shadow-2xl">
+                  <div className="flex items-center gap-3 mb-4">
+                     <ShieldAlert className="w-6 h-6 text-red-500 animate-pulse" />
+                     <h3 className="text-xl font-black italic uppercase tracking-tighter text-white">Summon Judgement</h3>
+                  </div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6">
+                     State your reason for initiating a dispute. False claims will result in severe penalties.
+                  </p>
+                  <textarea
+                     value={disputeReason}
+                     onChange={(e) => setDisputeReason(e.target.value)}
+                     placeholder="E.g., Opponent disconnected, incorrect score submitted..."
+                     className="w-full h-32 bg-black border border-white/10 text-white p-3 rounded-sm mb-6 text-sm resize-none focus:outline-none focus:border-red-500 transition-colors"
+                  />
+                  <div className="flex gap-3">
+                     <button
+                        onClick={() => {
+                           setIsDisputeModalOpen(false);
+                           setDisputeReason("");
+                        }}
+                        className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-widest rounded-sm transition-all"
+                        disabled={isDisputing}
+                     >
+                        Cancel
+                     </button>
+                     <button
+                        onClick={async () => {
+                           if (!disputeReason.trim() || !user) return;
+                           setIsDisputing(true);
+                           const idToken = await user.getIdToken();
+                           const res = await setMatchDisputedAction(idToken, id as string, disputeReason);
+                           if (res.success) {
+                              showInfoToast("JUDGEMENT SUMMONED", "Admin support has been alerted.");
+                              setIsDisputeModalOpen(false);
+                           } else {
+                              showInfoToast("ERROR", "Failed to summon judgement.");
+                           }
+                           setIsDisputing(false);
+                        }}
+                        disabled={!disputeReason.trim() || isDisputing}
+                        className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black uppercase tracking-widest rounded-sm transition-all disabled:opacity-50 flex items-center justify-center"
+                     >
+                        {isDisputing ? <Loader2 className="w-4 h-4 animate-spin" /> : "Initiate Protocol"}
+                     </button>
+                  </div>
                </div>
             </div>
          )}

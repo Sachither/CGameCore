@@ -4,7 +4,10 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { Match, Circuit } from "@/lib/match-service";
 import { purgeMatchDataInternal } from "@/lib/match-cleanup";
+import { internalFinalizeMatchClosure } from "./match-actions";
 import { decryptData } from "@/lib/encryption-utils";
+import { sendTacticalEmail } from "@/lib/mail";
+import { getExtractionEmailTemplate, getPartnerUpgradeEmailTemplate, getPartnerRevokedEmailTemplate } from "@/lib/mail-templates";
 
 // ─── INTERNAL HELPERS ────────────────────────────────────────────────────────
 
@@ -79,6 +82,15 @@ export async function resolveDisputeAction(
       if (latestMatch.status !== "DISPUTED") {
         throw new Error("CHAIN_PREVENTION: Match must be in DISPUTED status. Current status: " + latestMatch.status);
       }
+
+      // Fetch Circuit Data if this is a tournament match
+      let circuitData: any = null;
+      if (latestMatch.circuitId) {
+        const circuitSnap = await transaction.get(adminDb.collection("circuits").doc(latestMatch.circuitId));
+        if (circuitSnap.exists) {
+          circuitData = circuitSnap.data();
+        }
+      }
       
       // Re-validate winner inside transaction (double-check)
       const latestPlayers = Object.keys(latestMatch.players);
@@ -94,7 +106,19 @@ export async function resolveDisputeAction(
         resolvedBy: adminUid
       });
 
-      if (winnerId === "REFUND") {
+      // ── STEP 1.5: Finalization & Advancement ──────────────────────────────
+      if (winnerId !== "REFUND") {
+        // Use the shared finalization logic to handle stats, circuit advancement, etc.
+        // We pass the match data and the chosen winner.
+        await internalFinalizeMatchClosure(
+          transaction,
+          matchRef,
+          latestMatch,
+          winnerId,
+          adminUid,
+          circuitData // CRITICAL: Pass circuit data for advancement
+        );
+      } else {
         // Void match — refund all players and undo wager tracking
         for (const uid of players) {
           const userRef = adminDb.collection("users").doc(uid);
@@ -113,56 +137,16 @@ export async function resolveDisputeAction(
             createdAt: admin.firestore.FieldValue.serverTimestamp()
           });
         }
-      } else {
-        // Award win to specified player
-        const playersCount = players.length;
-        const totalPool = fee * playersCount;
-        const netPool = Math.floor(totalPool * 0.8); // 20% platform fee
 
-        const winnerRef = adminDb.collection("users").doc(winnerId);
-        transaction.update(winnerRef, {
-          balanceCoins: admin.firestore.FieldValue.increment(netPool),
-          totalWins: admin.firestore.FieldValue.increment(1),
-          totalMatches: admin.firestore.FieldValue.increment(1),
-          "intervention.active": false
-        });
-
-        // Update loser's match count & notifications
-        const loserIds = players.filter((p) => p !== winnerId);
-        for (const loserUid of loserIds) {
-          const loserRef = adminDb.collection("users").doc(loserUid);
-          transaction.update(loserRef, {
-            totalMatches: admin.firestore.FieldValue.increment(1),
-            "intervention.active": false
-          });
-
-          const loserNoteRef = adminDb.collection("users").doc(loserUid).collection("notifications").doc();
-          transaction.set(loserNoteRef, {
-            title: "Tribunal Verdict: Defeat",
-            message: `The Dispute Tribunal has ruled against your claim for Match #${matchId.slice(0, 8)}. Verdict is final.`,
-            type: "DISPUTE",
-            read: false,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-          });
-        }
-
-        const winnerNoteRef = winnerRef.collection("notifications").doc();
-        transaction.set(winnerNoteRef, {
-          title: "Tribunal Verdict: Victory",
-          message: `The Dispute Tribunal has awarded you the victory for Match #${matchId.slice(0, 8)}. Credits added.`,
-          type: "DISPUTE",
-          read: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        // Mark resolution as complete for REFUND case
+        transaction.update(matchRef, {
+          status: "CLOSED",
+          resolution: "REFUND",
+          resolutionNotes: `Voided by admin ${adminUid}`,
+          resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+          resolvedBy: adminUid
         });
       }
-      
-      // Mark resolution as complete
-      // FIX M-005: Preserve resolution details
-      transaction.update(matchRef, {
-        status: "CLOSED",
-        resolution: winnerId === "REFUND" ? "REFUND" : "ADMIN_AWARD",
-        resolutionNotes: `Resolved by admin ${adminUid}`
-      });
     });
 
     // ── STEP 2: Initiate Nuke Protocol (Purge) ──────────────────────────────
@@ -395,16 +379,118 @@ export async function setUserRoleAction(
     });
 
     // NOTIFICATION: Role Elevation/Change
+    let notificationMsg = `Your operator clearance has been upgraded to: ${role}. Access to tactical dashboards has been adjusted.`;
+    if (previousRole === 'PARTNER' && role === 'USER') {
+      notificationMsg = `Your Tactical Partner clearance has been revoked. Access to the Partner Portal has been removed.`;
+      
+      // Send Email for revocation
+      if (userSnap.exists && userSnap.data()?.email) {
+        const username = userSnap.data()?.username || "Operative";
+        const email = userSnap.data()!.email;
+        await sendTacticalEmail(
+          email,
+          "Contract Terminated",
+          getPartnerRevokedEmailTemplate(username)
+        ).catch(e => console.error("Failed to send partner revoke email", e));
+      }
+    }
+
     await createNotificationInternal(
       targetUid,
       "Clearance Level Modified",
-      `Your operator clearance has been upgraded to: ${role}. Access to tactical dashboards has been adjusted.`,
+      notificationMsg,
       "SYSTEM"
     );
 
     return { success: true };
   } catch (error: any) {
     console.error("[AdminAction] setUserRole error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * ADMIN ACTION: UPGRADE USER TO PARTNER (INFLUENCER)
+ */
+export async function upgradeToPartnerAction(
+  idToken: string,
+  targetUid: string,
+  customCode?: string,
+  durationDays: number = 90
+) {
+  const adminUid = await getVerifiedAdminUid(idToken, true);
+
+  try {
+    const userRef = adminDb.collection("users").doc(targetUid);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) throw new Error("User not found.");
+    
+    const userData = userSnap.data()!;
+    const username = userData.username || "OPERATIVE";
+
+    // Generate code if none provided
+    const referralCode = customCode?.trim().toUpperCase() || 
+      `${username.slice(0, 4).toUpperCase()}${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+
+    // Calculate expiry based on durationDays (max 90 as per protocol)
+    const finalDuration = Math.min(durationDays || 90, 90);
+    const expiry = admin.firestore.Timestamp.fromDate(
+      new Date(Date.now() + finalDuration * 24 * 60 * 60 * 1000)
+    );
+
+    await adminDb.runTransaction(async (transaction) => {
+      // 1. Update user document
+      transaction.update(userRef, {
+        role: 'PARTNER',
+        myReferralCode: referralCode,
+        partnerCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        partnerExpiresAt: expiry,
+        partnerApprovedBy: adminUid
+      });
+
+      // 2. Set custom claims for security
+      await adminAuth.setCustomUserClaims(targetUid, {
+        role: 'PARTNER'
+      });
+
+      // 3. Audit Log
+      const auditRef = adminDb.collection("admin_audit_log").doc();
+      transaction.set(auditRef, {
+        action: "UPGRADE_PARTNER",
+        adminUid,
+        targetUid,
+        referralCode,
+        expiry: expiry.toDate().toISOString(),
+        timestamp: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    // 4. Dynamic Formatting & Notification
+    let displayDuration = `${finalDuration} days`;
+    if (finalDuration < 1) {
+      const mins = Math.round(finalDuration * 24 * 60);
+      displayDuration = mins >= 60 ? `${Math.round(mins / 60)} hours` : `${mins} minutes`;
+    }
+
+    await createNotificationInternal(
+      targetUid,
+      "Tactical Partner Clearance Granted",
+      `Your account has been upgraded to PARTNER status. Access your Partner Portal now. Code: ${referralCode}. Expiry: ${displayDuration}.`,
+      "SYSTEM"
+    );
+
+    // 5. Send Induction Email
+    if (userData.email) {
+      await sendTacticalEmail(
+        userData.email,
+        "Tactical Partner Clearance Granted",
+        getPartnerUpgradeEmailTemplate(username, displayDuration, referralCode)
+      ).catch(e => console.error("Failed to send partner induction email", e));
+    }
+
+    return { success: true, referralCode };
+  } catch (error: any) {
+    console.error("[AdminAction] upgradeToPartner error:", error);
     return { success: false, error: error.message };
   }
 }
@@ -640,12 +726,11 @@ export async function searchUserAction(idToken: string, query: string) {
   }
   
   // 🔒 [SECURITY] M-008 FIX: Username search injection prevention
-  // Sanitize query - allow only alphanumeric, underscore, hyphen, 2-32 chars
   const sanitizedQuery = query.trim();
-  const usernameRegex = /^[a-zA-Z0-9_-]{2,32}$/;
+  const usernameRegex = /^[a-zA-Z0-9_ -]{2,32}$/;
   
   // For UID search, allow full UUID format (must be exact)
-  const uidRegex = /^[a-zA-Z0-9_-]{20,}$/; // Firebase UIDs are typically 28+ chars
+  const uidRegex = /^[a-zA-Z0-9_-]{20,}$/;
   
   const isValidUsername = usernameRegex.test(sanitizedQuery);
   const isValidUid = uidRegex.test(sanitizedQuery);
@@ -653,29 +738,66 @@ export async function searchUserAction(idToken: string, query: string) {
   if (!isValidUsername && !isValidUid) {
     return {
       success: false,
-      error: "Invalid search query. Username must be 2-32 characters (alphanumeric, _ or -), or provide a valid UID.",
+      error: "Invalid search query. Use alphanumeric characters, spaces, _ or - (2-32 chars).",
       users: []
     };
   }
   
   try {
-    // Try UID first (exact match) - only if it looks like a UID
+      const processUsers = async (docs: FirebaseFirestore.DocumentSnapshot[]) => {
+        const resultUsers = [];
+        for (const doc of docs) {
+          const data = doc.data();
+          if (!data) continue;
+          
+          // 🔒 [LAZY DOWNGRADE] Automatically demote expired partners when scanned
+          if (data.role === 'PARTNER' && data.partnerExpiresAt) {
+            const expiryDate = data.partnerExpiresAt.seconds ? new Date(data.partnerExpiresAt.seconds * 1000) : new Date(data.partnerExpiresAt);
+            if (expiryDate <= new Date()) {
+              try {
+                await adminAuth.setCustomUserClaims(doc.id, { role: 'USER', isAdmin: false, isSuperAdmin: false });
+                await doc.ref.update({ role: 'USER' });
+                data.role = 'USER'; // Reflect immediately in UI
+                console.log(`[LazyRevoke] Automatically downgraded expired partner: ${doc.id}`);
+              } catch (err) {
+                console.error(`[LazyRevoke] Failed to downgrade ${doc.id}`, err);
+              }
+            }
+          }
+          resultUsers.push(sanitizeData({ id: doc.id, ...data }));
+        }
+        return resultUsers;
+      };
+
     if (isValidUid) {
       const byUid = await adminDb.collection("users").doc(sanitizedQuery).get();
       if (byUid.exists) {
-        return { success: true, users: [sanitizeData({ id: byUid.id, ...byUid.data() })] };
+        return { success: true, users: await processUsers([byUid]) };
       }
     }
     
-    // Try username prefix match - only if it looks like a username
     if (isValidUsername) {
-      const snap = await adminDb
-        .collection("users")
+      const queryLower = sanitizedQuery.toLowerCase();
+      
+      // 🎯 SMART SEARCH: Try normalized lowercase field first
+      const snapLower = await adminDb.collection("users")
+        .where("usernameLower", ">=", queryLower)
+        .where("usernameLower", "<=", queryLower + "\uf8ff")
+        .limit(20)
+        .get();
+
+      if (!snapLower.empty) {
+        return { success: true, users: await processUsers(snapLower.docs) };
+      }
+
+      // 🏺 LEGACY FALLBACK: Search original username (case-sensitive prefix)
+      const snapLegacy = await adminDb.collection("users")
         .where("username", ">=", sanitizedQuery)
         .where("username", "<=", sanitizedQuery + "\uf8ff")
-        .limit(10)
+        .limit(20)
         .get();
-      return { success: true, users: snap.docs.map((d) => sanitizeData({ id: d.id, ...d.data() })) };
+        
+      return { success: true, users: await processUsers(snapLegacy.docs) };
     }
     
     return { success: true, users: [] };
@@ -905,6 +1027,15 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         notificationMessage,
         "SYSTEM"
       );
+
+      // 3. Dispatch Extraction Email (Tactical Success)
+      if (wData.email) {
+        const amountStr = `$${(fiatAmountUSD).toFixed(2)} (${currency})`;
+        const emailHtml = getExtractionEmailTemplate(wData.username, amountStr, wData.bankName || "Digital Extraction");
+        sendTacticalEmail(wData.email, "EXTRACTION COMPLETE: Funds Dispatched", emailHtml).catch(e => {
+          console.error("Failed to send extraction email:", e);
+        });
+      }
     });
 
     return { success: true, transferId };
@@ -1288,6 +1419,20 @@ export async function adminDeleteMatchAction(idToken: string, matchId: string, d
       siblingSnap.docs.forEach(d => {
         if (!idsToNuke.includes(d.id)) idsToNuke.push(d.id);
       });
+      // Also delete the circuit record itself
+      await adminDb.collection("circuits").doc(matchData.circuitId).delete();
+    }
+    
+    // If it's a league match
+    if (deleteCircuitMatches && matchData.leagueId) {
+       const siblingSnap = await adminDb.collection("matches")
+        .where("leagueId", "==", matchData.leagueId)
+        .get();
+      siblingSnap.docs.forEach(d => {
+        if (!idsToNuke.includes(d.id)) idsToNuke.push(d.id);
+      });
+      // Also delete the league record itself
+      await adminDb.collection("leagues").doc(matchData.leagueId).delete();
     }
 
     // Purge all collected matches (messages + doc)
@@ -1421,6 +1566,48 @@ export async function getAuditLogsAction(idToken: string, limit: number = 100) {
   } catch (error: any) {
     console.error("[AdminAction] getAuditLogs error:", error);
     return { success: false, error: error.message, logs: [] };
+  }
+}
+
+/**
+ * ADMIN: DELETE STALE CIRCUIT BY ID
+ */
+export async function adminDeleteCircuitByIdAction(idToken: string, circuitId: string) {
+  const adminUid = await getVerifiedAdminUid(idToken);
+  try {
+    await adminDb.collection("circuits").doc(circuitId).delete();
+    
+    const auditRef = adminDb.collection("admin_audit_log").doc();
+    await auditRef.set({
+      action: "ADMIN_DELETE_CIRCUIT",
+      circuitId,
+      adminUid,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * ADMIN: DELETE STALE LEAGUE BY ID
+ */
+export async function adminDeleteLeagueByIdAction(idToken: string, leagueId: string) {
+  const adminUid = await getVerifiedAdminUid(idToken);
+  try {
+    await adminDb.collection("leagues").doc(leagueId).delete();
+    
+    const auditRef = adminDb.collection("admin_audit_log").doc();
+    await auditRef.set({
+      action: "ADMIN_DELETE_LEAGUE",
+      leagueId,
+      adminUid,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
   }
 }
 

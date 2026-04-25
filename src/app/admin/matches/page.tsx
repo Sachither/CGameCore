@@ -5,6 +5,7 @@ import {
   getAllActiveMatchesAction,
   adminForceCloseMatchAction,
   adminDeleteMatchAction,
+  adminDeleteCircuitByIdAction,
 } from "@/app/actions/admin-actions";
 import {
   Loader2,
@@ -220,6 +221,7 @@ export default function AdminMatchesPage() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [filterType, setFilterType] = useState("ALL");
+  const [manualNukeId, setManualNukeId] = useState("");
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -274,6 +276,23 @@ export default function AdminMatchesPage() {
       await fetchMatches(); // refresh since multiple could be gone
     } else {
       showToast((res as any).error || "Failed.", false);
+    }
+    setActionLoading(null);
+  };
+
+  const handleManualNuke = async () => {
+    if (!manualNukeId.trim()) return;
+    if (!user || !confirm(`⚠️ Permanently delete circuit/league ${manualNukeId}? This cannot be undone.`)) return;
+    
+    setActionLoading("manual-nuke");
+    const idToken = await user.getIdToken();
+    const res = await adminDeleteCircuitByIdAction(idToken, manualNukeId.trim());
+    
+    if (res.success) {
+      showToast(`Successfully nuked Circuit ${manualNukeId}.`, true);
+      setManualNukeId("");
+    } else {
+      showToast(res.error || "Failed to delete.", false);
     }
     setActionLoading(null);
   };
@@ -391,6 +410,27 @@ export default function AdminMatchesPage() {
           <option value="LEAGUE">League Only</option>
           <option value="CASUAL">Casual Only</option>
         </select>
+      </div>
+
+      {/* Manual Nuke Tool */}
+      <div className="flex flex-wrap gap-3 items-center p-4 bg-red-500/5 border border-red-500/20 rounded-sm">
+        <ShieldAlert className="w-4 h-4 text-red-500" />
+        <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">Manual Purge:</span>
+        <input
+          type="text"
+          placeholder="Paste Circuit / League ID to Nuke..."
+          value={manualNukeId}
+          onChange={e => setManualNukeId(e.target.value)}
+          className="flex-1 bg-black border border-red-500/20 focus:border-red-500 text-white py-2 px-3 rounded-sm outline-none text-[10px] font-bold uppercase tracking-widest placeholder:text-red-500/40"
+        />
+        <button
+          onClick={handleManualNuke}
+          disabled={!manualNukeId.trim() || !!actionLoading}
+          className="flex items-center gap-2 px-4 py-2 bg-red-900/30 border border-red-700/40 text-red-300 hover:bg-red-900/50 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+        >
+          {actionLoading === "manual-nuke" ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+          Nuke Document
+        </button>
       </div>
 
       {/* Error state */}

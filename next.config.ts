@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  allowedDevOrigins: ['fdce-197-211-63-170.ngrok-free.app'],
+  allowedDevOrigins: ['09f2-197-211-63-56.ngrok-free.app'],
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb',

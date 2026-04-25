@@ -1,4 +1,4 @@
-﻿import admin from "firebase-admin";
+import admin from "firebase-admin";
 import { adminDb } from "@/lib/firebase-admin";
 
 /**
@@ -8,7 +8,9 @@ export async function cleanupTournamentData(circuitId: string) {
    try {
       console.log(`[CLEANUP] Starting tournament cleanup for circuit: ${circuitId}`);
 
-      // 1. Delete all matches in this circuit
+      // [HISTORY PRESERVATION] We no longer delete matches or the circuit document 
+      // so that players can view their tournament history and brackets in the dashboard.
+      /*
       const matchesSnap = await adminDb.collection("matches")
          .where("circuitId", "==", circuitId)
          .get();
@@ -17,6 +19,8 @@ export async function cleanupTournamentData(circuitId: string) {
       matchesSnap.docs.forEach(doc => {
          batch.delete(doc.ref);
       });
+      */
+      const batch = adminDb.batch();
 
       // 2. Delete all competition chat messages
       const chatSnap = await adminDb.collection("competition_chats")
@@ -41,8 +45,8 @@ export async function cleanupTournamentData(circuitId: string) {
       });
 
       // 5. Delete the circuit document itself
-      const circuitRef = adminDb.collection("circuits").doc(circuitId);
-      batch.delete(circuitRef);
+      // const circuitRef = adminDb.collection("circuits").doc(circuitId);
+      // batch.delete(circuitRef);
 
       await batch.commit();
 

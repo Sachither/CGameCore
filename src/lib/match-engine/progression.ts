@@ -106,7 +106,7 @@ export async function pushMatchNotification(
         // With bye system: if started with odd players, one had a bye
         // So we expect: number of SF matches (which is floor(QF winners / 2))
         const initialQFWinners = circuit.qfWinners?.length || 0;
-        const expectedSFMatches = Math.floor(initialQFWinners / 2);
+        const expectedSFMatches = 2;
         
         if (sfWinners.length === expectedSFMatches) {
            await spawnFinal(transaction, circuitRef, { ...circuit, sfWinners }, operatorUid);
@@ -171,7 +171,9 @@ async function spawnQuarterFinals(
             [p1]: { ...circuit.players[p1], ready: false, team: 'alpha', isHost: true },
             [p2]: { ...circuit.players[p2], ready: false, team: 'bravo', isHost: false }
          },
-         creatorId: operatorUid, createdAt: admin.firestore.FieldValue.serverTimestamp()
+         creatorId: (circuit as any).creatorId || operatorUid, 
+         isPartnerTournament: !!(circuit as any).isPartnerTournament,
+         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
       // Notify both players
@@ -224,7 +226,9 @@ async function spawnSemiFinals(
             [p1]: { ...circuit.players[p1], ready: false, team: 'alpha', isHost: true },
             [p2]: { ...circuit.players[p2], ready: false, team: 'bravo', isHost: false }
          },
-         creatorId: operatorUid, createdAt: admin.firestore.FieldValue.serverTimestamp()
+         creatorId: (circuit as any).creatorId || operatorUid, 
+         isPartnerTournament: !!(circuit as any).isPartnerTournament,
+         createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
       // Notify both players
@@ -273,7 +277,9 @@ async function spawnFinal(
             [p1]: { ...(circuit.players[p1] || createGhostPlayer(p1, 'alpha')), ready: false, team: 'alpha', isHost: true },
             [p2]: { ...(circuit.players[p2] || createGhostPlayer(p2, 'bravo')), ready: false, team: 'bravo', isHost: false }
       },
-      creatorId: operatorUid, createdAt: admin.firestore.FieldValue.serverTimestamp()
+      creatorId: (circuit as any).creatorId || operatorUid, 
+      isPartnerTournament: !!(circuit as any).isPartnerTournament,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
    });
    
    pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'FINAL', '3 Hours');
@@ -296,9 +302,9 @@ export async function distributeCircuitPrizes(
    winnerUid: string | null,
    runnerUpUid: string | null
 ) {
-   const totalPlayers = 16; // 16-player tournament
-   const challengeFee = circuitData.challengeFee || 0;
-   const totalStake = totalPlayers * challengeFee;
+    const totalPlayers = Object.keys(circuitData.players || {}).length;
+    const challengeFee = circuitData.challengeFee || 0;
+    const totalStake = totalPlayers * challengeFee;
    
    // Apply 20% Platform Fee
    const platformFee = Math.floor(totalStake * 0.2);
@@ -318,6 +324,12 @@ export async function distributeCircuitPrizes(
    // 1. Calculate Shares
    let winnerShare = netPrizePool;
    let runnerUpShare = 0;
+
+   // [PROMO-OVERRIDE] If this is a promo circuit, use the fixed prize pool
+   if (circuitData.isPromo) {
+      const prizeUSD = Number(circuitData.totalPool) || 35;
+      winnerShare = prizeUSD * 100;
+   }
 
    if (isSplit && runnerUpUid && winnerUid) {
       winnerShare = Math.floor(netPrizePool * 0.75); // 75% for winner
@@ -342,12 +354,28 @@ export async function distributeCircuitPrizes(
    transaction.set(winLogRef, {
       uid: finalWinnerUid,
       type: "CREDIT",
-      category: "TOURNAMENT_PRIZE",
+      category: circuitData.isPromo ? "PROMO_PRIZE" : "TOURNAMENT_PRIZE",
       description: `1ST PLACE: ${circuitData.title}`,
       amount: winnerShare,
       status: "COMPLETED",
       createdAt: admin.firestore.FieldValue.serverTimestamp()
    });
+
+   // 2.1 Update the FINAL match document for History & Notifications
+   const matchesSnap = await adminDb.collection("matches")
+      .where("circuitId", "==", circuitRef.id)
+      .where("round", "==", "FINAL")
+      .limit(1)
+      .get();
+   
+   if (!matchesSnap.empty) {
+      transaction.update(matchesSnap.docs[0].ref, {
+         championUid: finalWinnerUid,
+         rewardAmount: winnerShare,
+         status: 'CLOSED', // Ensure it's marked as finished for history
+         resolvedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+   }
 
    // 3. Pay Runner Up (if split)
    if (runnerUpShare > 0 && runnerUpUid) {
@@ -375,11 +403,48 @@ export async function distributeCircuitPrizes(
       });
    }
 
-   // 3b. Track platform payouts and fee revenue
+   // 3b. Handle Partner Commission & Platform Finances
+   const isPartnerTournament = !!(circuitData as any).isPartnerTournament;
+   const creatorId = (circuitData as any).creatorId;
+   let partnerCommission = 0;
+
+   if (isPartnerTournament && creatorId) {
+      const partnerRef = adminDb.collection("users").doc(creatorId);
+      const partnerSnap = await transaction.get(partnerRef);
+      
+      if (partnerSnap.exists) {
+         const partnerData = partnerSnap.data()!;
+         const expiryDate = partnerData.partnerExpiresAt?.seconds ? new Date(partnerData.partnerExpiresAt.seconds * 1000) : null;
+         
+         // 🔒 [CONTRACT CHECK] Only pay if Partner Contract is active
+         if (partnerData.role === 'PARTNER' && expiryDate && expiryDate > new Date()) {
+            partnerCommission = Math.floor(platformFee * 0.5);
+            if (partnerCommission > 0) {
+               transaction.update(partnerRef, {
+                  balanceCoins: admin.firestore.FieldValue.increment(partnerCommission)
+               });
+      
+               const partLogRef = adminDb.collection("transactions").doc();
+               transaction.set(partLogRef, {
+                  uid: creatorId,
+                  type: "CREDIT",
+                  category: "PARTNER_COMMISSION",
+                  description: `Partner Revenue Share: ${circuitData.title} (#${circuitRef.id.slice(-6)})`,
+                  amount: partnerCommission,
+                  status: "COMPLETED",
+                  createdAt: admin.firestore.FieldValue.serverTimestamp()
+               });
+            }
+         } else {
+            console.log(`[TournamentCommission] Creator ${creatorId} contract expired. Rake reverts to platform.`);
+         }
+      }
+   }
+
    const statsRef = adminDb.collection("stats").doc("platform_finances");
    transaction.set(statsRef, {
-      totalPayouts: admin.firestore.FieldValue.increment(winnerShare + runnerUpShare),
-      totalPlatformCut: admin.firestore.FieldValue.increment(platformFee),
+      totalPayouts: admin.firestore.FieldValue.increment(winnerShare + runnerUpShare + partnerCommission),
+      totalPlatformCut: admin.firestore.FieldValue.increment(platformFee - partnerCommission),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
    }, { merge: true });
 

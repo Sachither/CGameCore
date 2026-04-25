@@ -3,6 +3,8 @@
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { getVerifiedUid } from "@/lib/server-utils";
+import { sendTacticalEmail } from "@/lib/mail";
+import { getSecurityAlertEmailTemplate } from "@/lib/mail-templates";
 
 /**
  * Session context for token binding validation
@@ -62,9 +64,20 @@ export async function validateSessionContextAction(
       // userAgent: clientUserAgent,
     };
 
-    // Store session for tracking (optional - can be used for audit)
     const sessionRef = adminDb.collection("user_sessions").doc(sessionId);
     await sessionRef.set(sessionData);
+
+    // 🔒 [TACTICAL EMAIL] Security Alert on Login
+    if (userData.email) {
+      const emailHtml = getSecurityAlertEmailTemplate(
+        userData.username || "Operative", 
+        clientIp || "Protected Origin", 
+        clientUserAgent || "Authorized Device"
+      );
+      sendTacticalEmail(userData.email, "SECURITY ALERT: New Access Detected", emailHtml).catch(e => {
+        console.error("Failed to send security alert email:", e);
+      });
+    }
 
     // Clean up expired sessions (run periodically)
     const expiredSessions = await adminDb

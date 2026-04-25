@@ -13,6 +13,25 @@ export async function GET(req: Request) {
     return NextResponse.json({ success: false, error: "Missing field or value." }, { status: 400 });
   }
 
+  if (field === "referralCode") {
+    const normalized = value.trim().toUpperCase();
+    const query = await adminDb.collection("users")
+      .where("myReferralCode", "==", normalized)
+      .limit(1)
+      .get();
+    
+    if (query.empty) {
+      return NextResponse.json({ success: true, exists: false });
+    } else {
+      return NextResponse.json({ 
+        success: true, 
+        exists: true, 
+        uid: query.docs[0].id,
+        username: query.docs[0].data().username
+      });
+    }
+  }
+
   if (field !== "username" && field !== "phone") {
     console.log(`[IdentityCheck] Invalid field: ${field}`);
     return NextResponse.json({ success: false, error: "Invalid field." }, { status: 400 });

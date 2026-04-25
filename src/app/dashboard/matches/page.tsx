@@ -34,10 +34,9 @@ export default function MyMatchesPage() {
         .filter(m => activeStatuses.includes(m.status))
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
 
-      // History: only CLOSED matches (completed results). COMPLETED is a gathering lobby
-      // status meaning players have been deployed into sub-matches — not a finished match.
+      // History: CLOSED (finished matches) or COMPLETED (finalized tournament lobbies)
       const history = myInvolved
-        .filter(m => m.status === 'CLOSED')
+        .filter(m => m.status === 'CLOSED' || m.status === 'COMPLETED')
         .sort((a, b) => {
           const aTime = (b as any).resolvedAt?.seconds || b.createdAt?.seconds || 0;
           const bTime = (a as any).resolvedAt?.seconds || a.createdAt?.seconds || 0;
@@ -181,7 +180,8 @@ export default function MyMatchesPage() {
                      let prizeString = '--';
                      const isCircuitMatch = !!match.circuitId;
                      if (isCircuitMatch) {
-                        prizeString = isWinner ? (match.round === 'FINAL' ? '🏆 Champion' : 'Advanced') : '--';
+                        const reward = (match as any).rewardAmount || 0;
+                        prizeString = isWinner ? (match.round === 'FINAL' ? (reward > 0 ? `+${reward}` : '🏆 Champion') : 'Advanced') : '--';
                      } else {
                         prizeString = isWinner ? `+${(match as any).rewardAmount || 0}` : '--';
                      }

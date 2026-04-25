@@ -525,7 +525,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
         })()}
 
 
-        {!isGatheringLobby && (isResolutionTimer || (timerSeconds !== null && !['CLOSED', 'COMPLETED'].includes(match.status))) && (
+        {!isGatheringLobby && match.status !== 'WAITING' && (isResolutionTimer || (timerSeconds !== null && !['CLOSED', 'COMPLETED'].includes(match.status))) && (
           <div className={`${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'bg-red-950 border-red-500 shadow-[0_0_30px_rgba(220,38,38,0.2)]' : 'bg-black border-accent shadow-[0_0_30px_rgba(0,255,102,0.15)]'} border-2 p-6 rounded-sm flex flex-col items-center justify-center text-center relative overflow-hidden group animate-in fade-in zoom-in`}>
             {isUrgent && <div className="absolute inset-0 bg-red-600/5 animate-pulse pointer-events-none" />}
             
@@ -611,7 +611,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
           </div>
         )}
 
-        {['IN_PROGRESS', 'RESOLVING', 'WAITING_FOR_OPPONENT', 'READY'].includes(match.status) && isPlayerInMatch && !hasGhostOpponent && (!isGatheringLobby || (match as any).isPromo || match.format === 'br') && (
+        {['IN_PROGRESS', 'RESOLVING', 'WAITING_FOR_OPPONENT'].includes(match.status) && isPlayerInMatch && !hasGhostOpponent && (!isGatheringLobby || (match as any).isPromo || match.format === 'br') && (
            <>
               {(me as any)?.claim ? (
                 <div className="flex flex-col gap-2 w-full">

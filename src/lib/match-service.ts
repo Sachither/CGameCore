@@ -139,9 +139,10 @@ export const joinMatch = async (
   username: string, 
   avatarId: number, 
   matchId: string,
-  inGameName: string
+  inGameName: string,
+  referralCode?: string
 ) => {
-  const result = await joinMatchAction(idToken, username, avatarId, matchId, inGameName);
+  const result = await joinMatchAction(idToken, username, avatarId, matchId, inGameName, referralCode);
   if (!result.success) throw new Error(result.error);
 };
 

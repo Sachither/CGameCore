@@ -59,11 +59,29 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
                          />
                          <div className="font-bold text-main uppercase tracking-tight flex items-center gap-2">
                            {p.username}
-                           {p.championBadge && new Date(p.championBadge.expiresAt?.toDate?.() || p.championBadge.expiresAt) > new Date() && (
-                             <span className="px-2 py-0.5 bg-accent text-black text-[8px] font-black uppercase tracking-widest rounded-sm animate-pulse">
-                               {p.championBadge.title}
-                             </span>
-                           )}
+                           {(() => {
+                             if (!p.championBadge) return null;
+                             
+                             // Robust Expiry Check
+                             let expiry: Date | null = null;
+                             const exp = p.championBadge.expiresAt;
+                             if (exp) {
+                               if (typeof exp.toDate === 'function') expiry = exp.toDate();
+                               else if (exp instanceof Date) expiry = exp;
+                               else if (typeof exp === 'number') expiry = new Date(exp);
+                               else if (typeof exp === 'string') expiry = new Date(exp);
+                               else if (exp.seconds) expiry = new Date(exp.seconds * 1000);
+                             }
+
+                             if (expiry && expiry > new Date()) {
+                               return (
+                                 <span className="px-2 py-0.5 bg-accent text-black text-[8px] font-black uppercase tracking-widest rounded-sm animate-pulse">
+                                   {p.championBadge.title}
+                                 </span>
+                               );
+                             }
+                             return null;
+                           })()}
                          </div>
                       </div>
                     </td>

@@ -23,7 +23,7 @@ export interface UserProfile {
   createdAt: string;
   isAdmin?: boolean;
   isSuperAdmin?: boolean;
-  role?: 'USER' | 'MODERATOR' | 'ADMIN' | 'SUPER_ADMIN';
+  role?: 'USER' | 'MODERATOR' | 'ADMIN' | 'SUPER_ADMIN' | 'PARTNER';
   country?: string; // e.g. 'NG', 'GH', 'ZA', 'KE'
   currency?: string; // e.g. 'NGN', 'GHS', 'ZAR', 'KES'
   isBanned?: boolean;
@@ -45,6 +45,9 @@ export interface UserProfile {
     message?: string;
     timestamp?: any;
   };
+  referredBy?: string;
+  myReferralCode?: string;
+  partnerExpiresAt?: any;
 }
 
 interface AuthContextType {
@@ -95,11 +98,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearInterval(interval);
   }, [user, idToken, sessionId]);
 
-  // Hydration-safe cache loading
+  // Hydration-safe cache loading & Referral Tracking
   useEffect(() => {
     const cached = localStorage.getItem('cgame_profile');
     if (cached) {
       setProfile(JSON.parse(cached));
+    }
+
+    // 🔗 [REFERRAL TRACKING] Check URL for ?ref= or ?referral=
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const refCode = params.get('ref') || params.get('referral');
+      if (refCode) {
+        console.log(`[AuthProvider] Referral link detected: ${refCode}. Persisting to neural cache.`);
+        localStorage.setItem('pending_referral_code', refCode.toUpperCase());
+        
+        // Asynchronously resolve to UID for faster profile creation later
+        fetch(`/api/identity-check?field=referralCode&value=${encodeURIComponent(refCode)}`)
+          .then(res => res.json())
+          .then(data => {
+            if (data.success && data.exists) {
+              localStorage.setItem('pending_referral_uid', data.uid);
+              console.log(`[AuthProvider] Referral resolved to UID: ${data.uid}`);
+            }
+          })
+          .catch(err => console.error("Referral resolution failed:", err));
+      }
     }
   }, []);
 
@@ -173,10 +197,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                  return;
                }
 
+               // Check for pending referral (Influencer tracking)
+               const pendingReferralUid = typeof window !== 'undefined' ? localStorage.getItem('pending_referral_uid') : null;
+
                // Create profile with verified Firebase Auth data only
                const secureProfile = {
                  uid: firebaseUser.uid,
                  username: firebaseUser.displayName || firebaseUser.email.split('@')[0] || "Player",
+                 usernameLower: (firebaseUser.displayName || firebaseUser.email.split('@')[0] || "Player").toLowerCase(),
                  email: firebaseUser.email,
                  phone: firebaseUser.phoneNumber || null,
                  avatarId: Math.floor(Math.random() * 20),
@@ -189,9 +217,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                  emailVerified: firebaseUser.emailVerified,
                  // Require email verification before granting benefits
                  verificationRequired: !firebaseUser.emailVerified,
+                 referredBy: pendingReferralUid || null, // Link to influencer
                };
                await setDoc(docRef, secureProfile);
-               console.log("[AuthProvider] Secure profile created successfully");
+
+               // Clear pending referral after successful link
+               if (pendingReferralUid) localStorage.removeItem('pending_referral_uid');
+               if (typeof window !== 'undefined') localStorage.removeItem('pending_referral_code');
+               
+               console.log("[AuthProvider] Secure profile created successfully with referral tagging.");
              } catch (err) {
                console.error("[AuthProvider] Secure auto-repair failed:", err);
                setLoading(false);

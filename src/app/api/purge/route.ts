@@ -1,5 +1,6 @@
 import { adminDb } from "@/lib/firebase-admin";
 import { getVerifiedAdminUid } from "@/lib/server-utils";
+import { cleanupExpiredBadges } from "@/lib/cleanup-utils";
 import { NextResponse } from "next/server";
 
 export async function GET(req: Request) {
@@ -26,6 +27,10 @@ export async function GET(req: Request) {
       await doc.ref.delete();
       console.log(`Deleted Circuit: ${doc.id}`);
     }
+    
+    // 3. Clear expired champion badges
+    const badgesCleared = await cleanupExpiredBadges();
+    console.log(`✅ Cleared ${badgesCleared} expired champion badges`);
     
     return NextResponse.json({ success: true, message: "Purge complete." });
   } catch (error: any) {

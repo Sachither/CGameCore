@@ -1,6 +1,6 @@
 // Firebase Client SDK - Safe for browser use
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider } from "firebase/auth";
 import { initializeFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -18,6 +18,7 @@ const firebaseConfig = {
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
 // Enforce sticky session for instant dashboard recall
 setPersistence(auth, browserLocalPersistence).catch(() => {});
 
