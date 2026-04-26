@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getPartnerStatsAction, createPartnerTournamentAction } from '@/app/actions/user-actions';
 import { useRouter } from 'next/navigation';
-import { Users, TrendingUp, DollarSign, Copy, CheckCircle, ShieldAlert, Swords, Zap, Activity } from 'lucide-react';
+import { Users, TrendingUp, DollarSign, Copy, CheckCircle, ShieldAlert, Swords, Zap, Activity, Share2 } from 'lucide-react';
 
 export default function PartnerPortal() {
   const { user, profile, loading: authLoading } = useAuth();
@@ -81,6 +81,30 @@ export default function PartnerPortal() {
     navigator.clipboard.writeText(profile.myReferralCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShare = async () => {
+    const code = profile?.myReferralCode || "";
+    if (!code) return;
+    
+    const shareUrl = `${window.location.origin}/register?code=${code}`;
+    const shareText = `Join me on CGameCore! Use my recruitment code: ${code} to access elite tournaments.`;
+    
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: 'CGameCore Recruitment',
+          text: shareText,
+          url: shareUrl,
+        });
+      } catch (err) {
+        // User cancelled or share failed
+      }
+    } else {
+      navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   if (authLoading || (loading && !stats)) {
@@ -178,15 +202,24 @@ export default function PartnerPortal() {
           <div className="flex flex-col md:flex-row items-center gap-6">
             <div className="flex-1 w-full bg-black/40 border border-surface-border p-6 rounded-sm">
               <label className="block text-[10px] font-black text-accent uppercase tracking-[0.2em] mb-3">Your Operative Code</label>
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center flex-wrap gap-4">
                 <span className="text-2xl font-black tracking-widest text-white font-mono">{referralCode}</span>
-                <button 
-                  onClick={copyToClipboard}
-                  className="flex items-center gap-2 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent px-4 py-2 rounded-sm text-xs font-black uppercase transition-all"
-                >
-                  {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  {copied ? "COPIED" : "COPY CODE"}
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={copyToClipboard}
+                    className="flex items-center gap-2 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent px-4 py-2 rounded-sm text-xs font-black uppercase transition-all"
+                  >
+                    {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    {copied ? "COPIED" : "COPY CODE"}
+                  </button>
+                  <button 
+                    onClick={handleShare}
+                    className="flex items-center gap-2 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 text-blue-400 px-4 py-2 rounded-sm text-xs font-black uppercase transition-all"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    SHARE LINK
+                  </button>
+                </div>
               </div>
             </div>
             

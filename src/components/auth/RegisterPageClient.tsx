@@ -8,14 +8,21 @@ export default function RegisterPageClient() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    // SECURITY: Relaxed to prevent aggressive reloads during development/ngrok sessions
-    // If sensitive data detection is needed, we should check for specific keys instead
-    /*
-    if (searchParams.toString()) {
-      router.replace('/register');
+    const code = searchParams.get('code');
+    if (code) {
+      localStorage.setItem('pending_referral_code', code);
+      
+      // Background lookup for Google Auth compatibility (requires UID)
+      fetch(`/api/identity-check?field=referralCode&value=${encodeURIComponent(code)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.exists && data.uid) {
+            localStorage.setItem('pending_referral_uid', data.uid);
+          }
+        })
+        .catch(err => console.error("Referral lookup failed:", err));
     }
-    */
-  }, [searchParams, router]);
+  }, [searchParams]);
 
   return (
     <div className="min-h-[calc(100vh-80px)] pt-10 pb-20 flex items-center justify-center px-4">

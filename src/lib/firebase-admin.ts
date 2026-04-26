@@ -16,11 +16,18 @@ function getOrInitializeApp() {
   const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
   
-  // CRITICAL FIX: Sanitize private key by removing Windows carriage returns (\r)
-  // and properly converting escaped literal \n strings to actual newlines.
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY
-    ?.replace(/\\n/g, "\n")
-    .replace(/\r/g, "");
+  // CRITICAL FIX: Sanitize private key.
+  // 1. Remove surrounding quotes that often get included by Next.js/Windows .env parsing
+  // 2. Convert escaped literal \n strings to actual newline characters
+  // 3. Remove Windows carriage returns (\r)
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY?.trim();
+  
+  if (privateKey) {
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.substring(1, privateKey.length - 1);
+    }
+    privateKey = privateKey.replace(/\\n/g, "\n").replace(/\r/g, "");
+  }
 
   if (!projectId || !clientEmail || !privateKey) {
     console.error(
