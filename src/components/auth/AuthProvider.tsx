@@ -71,72 +71,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const pathnameRef = useRef(pathname);
 
-  useEffect(() => {
-    pathnameRef.current = pathname;
-  }, [pathname]);
-
+  // 🔄 Track internal auth lifecycle
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const redirectCooldown = useRef<number>(0);
 
-  // Hydration-safe cache loading
   useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
+
+  // 1. [HYDRATION] Load cached profile instantly to prevent flicker
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     const cached = localStorage.getItem('cgame_profile');
     if (cached) {
       try {
-        setProfile(JSON.parse(cached));
+        const data = JSON.parse(cached);
+        setProfile(data);
+        console.log("[AuthProvider] Hydrated from cache:", data.username);
       } catch (e) {
-        console.error("[AuthProvider] Cache parse error:", e);
+        localStorage.removeItem('cgame_profile');
       }
     }
   }, []);
 
-  // 🔗 [REFERRAL TRACKING] Only runs when pathname changes (e.g. landing with ?ref=)
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const refCode = params.get('ref') || params.get('referral');
-    
-    if (refCode) {
-      console.log(`[AuthProvider] Tactical Referral Detected: ${refCode}. Validating...`);
-      localStorage.setItem('pending_referral_code', refCode.toUpperCase());
-      fetch(`/api/identity-check?field=referralCode&value=${encodeURIComponent(refCode)}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success && data.exists && data.uid) {
-             console.log(`[AuthProvider] Referral Valid: ${data.username} (${data.uid})`);
-             localStorage.setItem('pending_referral_uid', data.uid);
-          }
-        })
-        .catch(err => console.error("[AuthProvider] Referral check failed:", err));
-    }
-  }, [pathname]);
-
-  // 🛡️ [CORE AUTH & PROFILE SESSION] Persistent across navigations
+  // 2. [AUTH OBSERVER] Single source of truth for Firebase
   useEffect(() => {
     let profileUnsub: (() => void) | null = null;
 
     const authUnsub = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
+      console.log("[AuthProvider] Auth State Changed:", firebaseUser?.email || "GUEST");
       
       if (firebaseUser) {
+        setUser(firebaseUser);
         const token = await firebaseUser.getIdToken();
         setIdToken(token);
 
-        // Subscribing to user profile in real-time
+        // Subscribe to Firestore Profile
         const docRef = doc(db, "users", firebaseUser.uid);
-        
         if (profileUnsub) profileUnsub();
         
-        profileUnsub = onSnapshot(docRef, async (docSnap) => {
+        profileUnsub = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data() as UserProfile;
             setProfile(data);
             
-            // Cache a safe version for speed
-            const safeProfileCache = {
+            // Sync cache
+            const safeCache = {
               uid: data.uid,
               username: data.username,
               avatarId: data.avatarId,
@@ -147,59 +132,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               country: data.country,
               currency: data.currency
             };
-            localStorage.setItem('cgame_profile', JSON.stringify(safeProfileCache));
+            localStorage.setItem('cgame_profile', JSON.stringify(safeCache));
+            
             setLoading(false);
+            setIsInitialized(true);
           } else {
-             // 🔒 [SECURITY] PHASE 7: Secure self-healing profile creation
-             if (pathnameRef.current === '/register' || pathnameRef.current === '/login') {
+            console.warn("[AuthProvider] No Firestore profile found for authed user.");
+            // Don't set loading false yet - allow registration or auto-repair to happen
+            // But if on dashboard, we might need a fallback
+            if (pathnameRef.current.startsWith('/dashboard')) {
+               // Initializing for a new user who just signed up
+               setIsInitialized(true); 
                setLoading(false);
-               return;
-             }
-
-             try {
-               if (!firebaseUser.email) {
-                 setLoading(false);
-                 return;
-               }
-
-               console.log("[AuthProvider] Profile missing. Initiating auto-repair...");
-               const pendingReferralUid = localStorage.getItem('pending_referral_uid');
-
-               const secureProfile = {
-                 uid: firebaseUser.uid,
-                 username: firebaseUser.displayName || firebaseUser.email.split('@')[0] || "Player",
-                 usernameLower: (firebaseUser.displayName || firebaseUser.email.split('@')[0] || "Player").toLowerCase(),
-                 email: firebaseUser.email,
-                 phone: firebaseUser.phoneNumber || null,
-                 avatarId: Math.floor(Math.random() * 20),
-                 balanceCoins: 0,
-                 totalWins: 0,
-                 totalMatches: 0,
-                 lifetimeDeposits: 0,
-                 lifetimeWagered: 0,
-                 createdAt: serverTimestamp(),
-                 emailVerified: firebaseUser.emailVerified,
-                 verificationRequired: !firebaseUser.emailVerified,
-                 referredBy: pendingReferralUid || null,
-               };
-               
-               await setDoc(docRef, secureProfile, { merge: true });
-               if (pendingReferralUid) localStorage.removeItem('pending_referral_uid');
-               localStorage.removeItem('pending_referral_code');
-             } catch (err) {
-               console.error("[AuthProvider] Auto-repair failed:", err);
-               setLoading(false);
-             }
+            }
           }
         }, (err) => {
-           console.error("[AuthProvider] Snapshot error:", err);
-           setLoading(false);
+          console.error("[AuthProvider] Profile Sync Error:", err);
+          setLoading(false);
+          setIsInitialized(true);
         });
       } else {
+        // GUEST STATE
+        setUser(null);
         setProfile(null);
-        setSessionId(null);
         setIdToken(null);
         setLoading(false);
+        setIsInitialized(true);
       }
     });
 
@@ -207,40 +165,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authUnsub();
       if (profileUnsub) profileUnsub();
     };
-  }, [router]);
+  }, []);
 
-  // 🚦 [UNIFIED NAVIGATION BRAIN] Centralized redirect logic
+  // 3. [NAVIGATION BRAIN] The only place redirects are allowed
   useEffect(() => {
-    if (loading) return;
+    // 🛡️ Guard 1: Wait for full initialization
+    if (!isInitialized || loading) return;
 
-    const isDashboard = pathname.startsWith('/dashboard') || pathname.startsWith('/match') || pathname.startsWith('/profile') || pathname.startsWith('/wallet');
-    const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/';
+    // 🛡️ Guard 2: Redirect Cooldown (Prevent loops)
+    const now = Date.now();
+    if (now - redirectCooldown.current < 1500) {
+      console.log("[AuthProvider] Navigation logic debounced to prevent loop.");
+      return;
+    }
 
-    // 1. [GUEST -> LOGIN] Kick out of protected areas if no user
+    const currentPath = pathname;
+    const isDashboard = currentPath.startsWith('/dashboard') || 
+                        currentPath.startsWith('/match') || 
+                        currentPath.startsWith('/profile') || 
+                        currentPath.startsWith('/wallet') ||
+                        currentPath.startsWith('/admin');
+                        
+    const isAuthPage = currentPath === '/login' || 
+                       currentPath === '/register' || 
+                       currentPath === '/';
+
+    // SCENARIO A: GUEST on Protected Route
     if (!user && isDashboard) {
-      // 🛡️ [PERSISTENCE GUARD] Check if we have a local session cache
-      // If we do, don't kick yet - Firebase Auth might still be re-hydrating on a slow mobile network.
-      const hasCachedSession = localStorage.getItem('cgame_profile');
-      if (hasCachedSession) {
-        console.warn("[AuthProvider] Firebase user null but cache exists. Holding redirect for re-hydration...");
-        return;
+      // 🕵️ Persistence Check: If we have a cache, give Firebase 2 more seconds to find the user
+      const hasCache = localStorage.getItem('cgame_profile');
+      if (hasCache) {
+         console.warn("[AuthProvider] User null but cache exists. Holding for re-auth...");
+         return;
       }
 
-      console.log("[AuthProvider] Unauthorized access. Redirecting to Login...");
-      localStorage.removeItem('cgame_profile');
+      console.warn("[AuthProvider] Redirecting GUEST to Login from:", currentPath);
+      redirectCooldown.current = now;
       router.replace('/login');
       return;
     }
 
-    // 2. [LOGGED IN -> DASHBOARD] Move to dashboard if already authed
+    // SCENARIO B: LOGGED IN on Auth Page
     if (user && isAuthPage) {
-      // EXCEPTION: Allow /register only if profile is still missing (new signup)
-      if (pathname === '/register' && !profile) return;
-      
-      console.log("[AuthProvider] Session active. Moving to Dashboard...");
+      // Exception: Allow /register for profile creation phase
+      if (currentPath === '/register' && !profile) return;
+
+      console.log("[AuthProvider] Redirecting AUTHED to Dashboard from:", currentPath);
+      redirectCooldown.current = now;
       router.replace('/dashboard');
+      return;
     }
-  }, [user, profile, loading, pathname, router]);
+  }, [user, profile, loading, isInitialized, pathname, router]);
 
   const refreshProfile = async () => {
     if (!user) return;
