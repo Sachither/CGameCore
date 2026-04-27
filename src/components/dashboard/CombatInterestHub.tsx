@@ -50,6 +50,9 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
         setIsRegistered(false);
       }
       setLoading(false);
+    }, (err) => {
+      console.error("[CombatInterestHub] Queue listener error:", err);
+      setLoading(false);
     });
 
     return () => unsub();
@@ -265,17 +268,22 @@ const InterestCard = ({ game, segment, title, quota, icon, onRegistered, weekend
 };
 
 export default function CombatInterestHub() {
+  const { user } = useAuth();
   const [key, setKey] = useState(0);
   const [lockdownActive, setLockdownActive] = useState(false);
 
   useEffect(() => {
+    if (!user) return;
+    
     const unsub = onSnapshot(doc(db, "system", "config"), (doc) => {
        if (doc.exists()) {
           setLockdownActive(doc.data().lockdownActive || false);
        }
+    }, (err) => {
+       console.error("[CombatInterestHub] System config listener error:", err);
     });
     return () => unsub();
-  }, []);
+  }, [user]);
 
   return (
     <div className="mt-12">

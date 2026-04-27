@@ -40,7 +40,7 @@ export default function CompetitionChat({ competitionId, competitionTitle }: { c
   }, [competitionId]);
 
   useEffect(() => {
-    if (!q) return;
+    if (!q || !user) return;
 
     const getTime = (t: any) => {
       if (!t) return Date.now();
@@ -96,7 +96,7 @@ Good hunting, operatives.`,
     );
 
     return () => unsub();
-  }, [q]);
+  }, [q, user]);
 
   const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();

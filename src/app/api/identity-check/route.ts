@@ -21,13 +21,16 @@ export async function GET(req: Request) {
       .get();
     
     if (query.empty) {
+      console.log(`[IdentityCheck] No partner found for code: "${normalized}"`);
       return NextResponse.json({ success: true, exists: false });
     } else {
+      const partnerData = query.docs[0].data();
+      console.log(`[IdentityCheck] MATCH FOUND: Partner "${partnerData.username}" (UID: ${query.docs[0].id}) for code: "${normalized}"`);
       return NextResponse.json({ 
         success: true, 
         exists: true, 
         uid: query.docs[0].id,
-        username: query.docs[0].data().username
+        username: partnerData.username
       });
     }
   }

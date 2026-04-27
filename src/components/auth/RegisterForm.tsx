@@ -126,29 +126,37 @@ export default function RegisterForm() {
       setError("CLAIMING GAMERTAG...");
       const normalizedPhone = formData.phone.replace(/[^0-9]/g, "");
       
-      await Promise.all([
-        setDoc(doc(db, "usernames", lowerUsername), {
-          uid: user.uid
-        }),
-        setDoc(doc(db, "phones", normalizedPhone), {
-          uid: user.uid
-        })
-      ]);
+      try {
+        await Promise.all([
+          setDoc(doc(db, "usernames", lowerUsername), {
+            uid: user.uid
+          }),
+          setDoc(doc(db, "phones", normalizedPhone), {
+            uid: user.uid
+          })
+        ]);
+        console.log("[RegisterForm] Identity reservation successful.");
+      } catch (err) {
+        console.error("[RegisterForm] Identity reservation FAILED:", err);
+        throw err;
+      }
 
       // 3.5 Check Referral Code (Optional)
       let referrerUid = null;
       if (formData.referralCode) {
         setError("VERIFYING REFERRAL CODE...");
+        console.log(`[RegisterForm] Verifying referral code: ${formData.referralCode}`);
         const referralRes = await fetch(
           `/api/identity-check?field=referralCode&value=${encodeURIComponent(formData.referralCode)}`
         );
         const referralData = await referralRes.json();
+        console.log("[RegisterForm] Referral API Response:", referralData);
         
         if (referralData.success && referralData.exists) {
           referrerUid = referralData.uid;
-        } else if (formData.referralCode.length > 0) {
-          // If they entered something invalid, we let them know but don't block registration unless you want to be strict
-          console.warn("Invalid referral code provided.");
+          console.log(`[RegisterForm] RECRUITMENT LINK ESTABLISHED: ${referrerUid}`);
+        } else {
+          console.warn("[RegisterForm] No recruitment link found for this code.");
         }
       }
 
@@ -159,29 +167,41 @@ export default function RegisterForm() {
       const myReferralCode = formData.username.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase() + 
                            Math.random().toString(36).substring(2, 6).toUpperCase();
 
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        username: formData.username,
-        usernameLower: formData.username.toLowerCase(),
-        email: formData.email,
-        phone: formData.phone,
-        avatarId: Math.floor(Math.random() * 20),
-        balanceCoins: 0,
-        totalWins: 0,
-        totalMatches: 0,
-        lifetimeDeposits: 0,
-        lifetimeWagered: 0,
-        createdAt: new Date().toISOString(),
-        status: "ACTIVE",
-        role: "USER",
-        referredBy: referrerUid,
-        myReferralCode: myReferralCode
-      });
+      console.log(`[RegisterForm] Creating profile for UID: ${user.uid} with referredBy: ${referrerUid}`);
+      try {
+        await setDoc(doc(db, "users", user.uid), {
+          uid: user.uid,
+          username: formData.username,
+          usernameLower: formData.username.toLowerCase(),
+          email: formData.email,
+          phone: formData.phone,
+          avatarId: Math.floor(Math.random() * 20),
+          balanceCoins: 0,
+          totalWins: 0,
+          totalMatches: 0,
+          lifetimeDeposits: 0,
+          lifetimeWagered: 0,
+          createdAt: new Date().toISOString(),
+          status: "ACTIVE",
+          referredBy: referrerUid,
+          myReferralCode: myReferralCode
+        });
+        console.log("[RegisterForm] Profile successfully written to Firestore.");
+      } catch (err) {
+        console.error("[RegisterForm] Profile creation FAILED:", err);
+        throw err;
+      }
 
       // 5. Send Welcome Email (Fire and forget, don't block registration)
       sendWelcomeEmailAction(formData.email, formData.username, myReferralCode).catch(e => {
         console.error("Failed to send welcome email:", e);
       });
+
+      // 6. Cleanup Recruitment Data
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('pending_referral_code');
+        localStorage.removeItem('pending_referral_uid');
+      }
 
       setError("SUCCESS! SYNCING SECURE SESSION...");
       // Explicit redirect to ensure immediate transition

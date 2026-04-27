@@ -27,6 +27,8 @@ export default function PromoTournamentCard() {
   };
 
   useEffect(() => {
+    if (!user) return;
+    
     fetchInitialData();
 
     // 📡 REAL-TIME SMART LISTENER
@@ -53,7 +55,7 @@ export default function PromoTournamentCard() {
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   const handleJoin = async () => {
     const promo = promos[currentIndex];

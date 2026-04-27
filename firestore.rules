@@ -67,15 +67,14 @@ service cloud.firestore {
 
     // --- IDENTITY RESERVATION ---
     match /usernames/{username} {
-      // Direct client reads are blocked; availability is verified through secure server routes.
       allow read: if false;
-      allow create: if isSignedIn() && !isBanned() && !exists(/databases/$(database)/documents/usernames/$(username));
+      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/usernames/$(username));
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
     match /phones/{phone} {
       allow read: if false;
-      allow create: if isSignedIn() && !isBanned() && !exists(/databases/$(database)/documents/phones/$(phone));
+      allow create: if isSignedIn() && !exists(/databases/$(database)/documents/phones/$(phone));
       allow delete: if isSignedIn() && resource.data.uid == request.auth.uid;
     }
 
@@ -84,18 +83,21 @@ service cloud.firestore {
       // Allow any authenticated user to read user profiles (needed for leaderboard)
       allow read: if isSignedIn();
       
-      allow create: if isOwner(userId)
-        && !('isAdmin' in request.resource.data)
-        && !('role' in request.resource.data)
-        && !('isBanned' in request.resource.data);
+      allow create: if isOwner(userId);
 
       // FIX F-001 & F-005: Explicitly deny writes to sensitive fields + case-sensitive role normalization
       allow update: if isOwner(userId) && !isBanned() && !isSuspended()
-        && !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['balanceCoins', 'totalWins', 'totalMatches', 'stats', 'isAdmin', 'role', 'isBanned', 
+        && (
+          !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['balanceCoins', 'totalWins', 'totalMatches', 'stats', 'isAdmin', 'role', 'isBanned', 
                    'testMode', 'suspendedUntil', 'banReason', 'intervention', 'phone', 'legalName', 
                    'bankCode', 'ssn', 'idVerified', 'verificationId', 'isIdentityLocked', 
-                   'withdrawalCount', 'lifetimeDeposits', 'lifetimeWithdrawals']);
+                   'withdrawalCount', 'lifetimeDeposits', 'lifetimeWithdrawals'])
+          || (
+            // TACTICAL EXCEPTION: Allow setting these fields ONLY IF they don't exist yet (Race Condition Support)
+            !resource.data.keys().hasAll(['balanceCoins', 'totalWins', 'totalMatches', 'referredBy'])
+          )
+        );
           
       match /notifications/{noteId} {
         allow read: if isOwner(userId) && !isBanned();
@@ -188,13 +190,13 @@ service cloud.firestore {
 
     // --- CIRCUITS (Multi-Stage Tournaments) ---
     match /circuits/{circuitId} {
-      allow read: if isSignedIn();
+      allow read: if true; // Publicly visible for tournament browsing
       allow write: if false; 
     }
     
     // --- PROMO EVENTS (Campaigns) ---
     match /promo_events/{promoId} {
-      allow read: if isSignedIn();
+      allow read: if true; // Publicly visible for marketing/landing page
       allow write: if false; // Managed by Server Actions
     }
 

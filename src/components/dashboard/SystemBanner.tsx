@@ -63,6 +63,8 @@ export default function SystemBanner() {
       } else {
         setActiveNotification(null);
       }
+    }, (err) => {
+       console.error("[SystemBanner] Listener error:", err);
     });
 
     return () => unsub();

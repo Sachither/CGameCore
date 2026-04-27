@@ -243,6 +243,8 @@ export async function getPartnerStatsAction(idToken: string) {
       .where("referredBy", "==", uid)
       .get();
     
+    console.log(`[PartnerStats] Found ${recruitsSnap.size} recruits for Partner UID: ${uid}`);
+    
     const recruits = recruitsSnap.docs.map(doc => ({
       username: doc.data().username,
       createdAt: typeof doc.data().createdAt === 'string' 
