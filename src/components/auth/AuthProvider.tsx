@@ -197,7 +197,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       } else {
         setProfile(null);
-        localStorage.removeItem('cgame_profile');
         setSessionId(null);
         setIdToken(null);
         setLoading(false);
@@ -219,7 +218,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // 1. [GUEST -> LOGIN] Kick out of protected areas if no user
     if (!user && isDashboard) {
+      // 🛡️ [PERSISTENCE GUARD] Check if we have a local session cache
+      // If we do, don't kick yet - Firebase Auth might still be re-hydrating on a slow mobile network.
+      const hasCachedSession = localStorage.getItem('cgame_profile');
+      if (hasCachedSession) {
+        console.warn("[AuthProvider] Firebase user null but cache exists. Holding redirect for re-hydration...");
+        return;
+      }
+
       console.log("[AuthProvider] Unauthorized access. Redirecting to Login...");
+      localStorage.removeItem('cgame_profile');
       router.replace('/login');
       return;
     }
