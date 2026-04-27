@@ -23,77 +23,27 @@ export default function MatchReadyDispatcher() {
     let timeoutId: any = null;
     let isMounted = true;
 
-    // Subscribe to real-time match updates
+    // Subscribe to real-time match updates (Persistent across navigations)
     const unsubscribe = subscribeToUserActiveMatch(user.uid, (match) => {
-      // GUARD: Check if user has exited this specific match
-      const matchId = match?.id || "";
-      const hasUserExitedThisMatch = typeof window !== 'undefined' && sessionStorage.getItem(`match_ready_ack_${matchId}`) === 'true';
-      if (hasUserExitedThisMatch) {
-        // User has explicitly exited this match - don't show modal
-        if (timeoutId) clearTimeout(timeoutId);
-        if (isMounted) {
-          setIsVisible(false);
-          setActiveMatch(null);
-        }
-        return;
-      }
+      if (!isMounted) return;
 
-      // --- THE ELITE SHIELD (PRIMARY) ---
-      // Hard-Termination: If this is NOT a High-Stake match (500+ CR), 
-      // we immediately kill all alerts and exit. No timers, no flashes.
+      const matchId = match?.id || "";
+      
+      // GUARD: Check if this is NOT a High-Stake match (500+ CR)
       const isHighStake = (match?.challengeFee || 0) >= 450;
       
-      if (!match || !isHighStake) {
+      if (!match || !isHighStake || match.status === 'COMPLETED' || match.status === 'CLOSED') {
         if (timeoutId) clearTimeout(timeoutId);
-        if (isMounted) {
-          setIsVisible(false);
-          setActiveMatch(null);
-        }
+        setIsVisible(false);
+        setActiveMatch(null);
         return;
       }
 
       // Logic: Only alert for High Stakes that are READY or WAITING_FOR_OPPONENT
-      // and if the user is NOT already on the match page.
       if (match.status === 'READY' || match.status === 'WAITING_FOR_OPPONENT') {
-        const matchPath = `/match/${matchId}`;
-        
-        // Check if we are already there
-        if (pathname === matchPath) {
-          if (isMounted) {
-            setIsVisible(false);
-          }
-          return;
-        }
-
-        // Check if user has already exited THIS SPECIFIC match (redundant check)
-        const acknowledged = sessionStorage.getItem(`match_ready_ack_${matchId}`);
-        if (acknowledged) {
-          if (isMounted) {
-            setIsVisible(false);
-          }
-          return;
-        }
-
-        if (isMounted) {
-          setActiveMatch(match);
-        }
-        
-        // --- TACTICAL GRACE PERIOD ---
-        // Prevent "flashing" during redirects: Wait 1.5 seconds.
-        // If the user navigates to the match page in this time, the effect 
-        // cleans up and the notification never appears.
-        if (timeoutId) clearTimeout(timeoutId);
-        timeoutId = setTimeout(() => {
-          if (isMounted) {
-            setIsVisible(true);
-          }
-        }, 1500);
+        setActiveMatch(match);
       } else {
-        // Match exists and is High Stake, but not in a 'Ready' state
-        if (timeoutId) clearTimeout(timeoutId);
-        if (isMounted) {
-          setIsVisible(false);
-        }
+        setIsVisible(false);
       }
     });
 
@@ -102,7 +52,34 @@ export default function MatchReadyDispatcher() {
       if (timeoutId) clearTimeout(timeoutId);
       unsubscribe();
     };
-  }, [user, pathname]);
+  }, [user]);
+
+  // Handle visibility logic separately based on pathname and activeMatch state
+  useEffect(() => {
+    if (!activeMatch) return;
+    
+    const matchId = activeMatch.id;
+    const matchPath = `/match/${matchId}`;
+    
+    // Hard-Exits
+    if (pathname === matchPath) {
+      setIsVisible(false);
+      return;
+    }
+
+    const acknowledged = sessionStorage.getItem(`match_ready_ack_${matchId}`);
+    if (acknowledged) {
+      setIsVisible(false);
+      return;
+    }
+
+    // If we reach here, we have a valid high-stake match but we're not on the page
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [pathname, activeMatch]);
 
   const handleEnterArena = () => {
     if (!activeMatch?.id) return;

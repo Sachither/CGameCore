@@ -54,7 +54,8 @@ export async function pushMatchNotification(
     operatorUid: string,
     game: string,
     p1Goals?: number,
-    p2Goals?: number
+    p2Goals?: number,
+    partnerSnap?: admin.firestore.DocumentSnapshot
  ) {
      const is16Player = circuit.format === '16_TOURNAMENT';
 
@@ -114,12 +115,10 @@ export async function pushMatchNotification(
         return;
      }
 
-     if (round === 'FINAL') {
         // Tournament complete - distribute prizes
         const runnerUpUid = Object.keys(circuit.players).find(pid => pid !== tieWinner) || null;
-        await distributeCircuitPrizes(transaction, circuitRef, circuit, tieWinner, runnerUpUid);
+        await distributeCircuitPrizes(transaction, circuitRef, circuit, tieWinner, runnerUpUid, partnerSnap);
         return;
-     }
 }
 
 /**
@@ -300,7 +299,8 @@ export async function distributeCircuitPrizes(
    circuitRef: admin.firestore.DocumentReference,
    circuitData: EngineCircuit,
    winnerUid: string | null,
-   runnerUpUid: string | null
+   runnerUpUid: string | null,
+   partnerSnap?: admin.firestore.DocumentSnapshot // Optional pre-fetched snap
 ) {
     const totalPlayers = Object.keys(circuitData.players || {}).length;
     const challengeFee = circuitData.challengeFee || 0;
@@ -410,10 +410,11 @@ export async function distributeCircuitPrizes(
 
    if (isPartnerTournament && creatorId) {
       const partnerRef = adminDb.collection("users").doc(creatorId);
-      const partnerSnap = await transaction.get(partnerRef);
+      // Use pre-fetched snap if available, otherwise we risk a read-after-write error
+      const pSnap = partnerSnap || await transaction.get(partnerRef);
       
-      if (partnerSnap.exists) {
-         const partnerData = partnerSnap.data()!;
+      if (pSnap.exists) {
+         const partnerData = pSnap.data()!;
          const expiryDate = partnerData.partnerExpiresAt?.seconds ? new Date(partnerData.partnerExpiresAt.seconds * 1000) : null;
          
          // 🔒 [CONTRACT CHECK] Only pay if Partner Contract is active

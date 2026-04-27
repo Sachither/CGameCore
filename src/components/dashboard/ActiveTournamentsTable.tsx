@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { collection, query, onSnapshot, orderBy, where, getDocs, deleteDoc, doc } from "firebase/firestore";
+import { collection, query, onSnapshot, orderBy, where, getDocs, deleteDoc, doc, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { registerChallengeInterest, joinMatch } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -90,7 +90,9 @@ export default function ActiveTournamentsTable() {
     const searchWindow = new Date(Date.now() - 72 * 60 * 60 * 1000);
     const qCircuits = query(
       collection(db, "circuits"),
-      where("createdAt", ">", searchWindow)
+      where("createdAt", ">", searchWindow),
+      orderBy("createdAt", "desc"),
+      limit(15)
     );
     const unsubCircuits = onSnapshot(qCircuits, (snap) => {
       const allowedStatuses = ["FILLING", "KNOCKOUT_Q", "KNOCKOUT_S", "KNOCKOUT_F", "ACTIVE"];
@@ -147,7 +149,9 @@ export default function ActiveTournamentsTable() {
     // 1.1 Fetch Leagues from the last 72 hours
     const qLeagues = query(
       collection(db, "leagues"),
-      where("createdAt", ">", searchWindow)
+      where("createdAt", ">", searchWindow),
+      orderBy("createdAt", "desc"),
+      limit(10)
     );
     const unsubLeagues = onSnapshot(qLeagues, (snap) => {
       const allowedStatuses = ["FILLING", "ACTIVE", "GROUPS"];
@@ -193,7 +197,9 @@ export default function ActiveTournamentsTable() {
     // 2. Fetch Gathering Match Lobbies from the last 72 hours
     const qMatches = query(
       collection(db, "matches"),
-      where("createdAt", ">", searchWindow)
+      where("createdAt", ">", searchWindow),
+      orderBy("createdAt", "desc"),
+      limit(20)
     );
     const unsubMatches = onSnapshot(qMatches, (snap) => {
       const allowedStatuses = ["WAITING", "READY"];

@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { collection, query, where, onSnapshot } from "firebase/firestore";
+import { collection, query, where, onSnapshot, limit } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Match, joinMatch } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -27,11 +27,12 @@ export default function LiveChallengeList() {
   useEffect(() => {
     if (!user) return;
 
-    // Query only by status to avoid composite index requirement. Sort on client.
     const q = query(
       collection(db, "matches"),
-      where("status", "==", "WAITING")
+      where("status", "==", "WAITING"),
+      limit(20)
     );
+    // Note: removed orderBy temporarily to avoid index requirement during recovery
 
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Match));

@@ -22,10 +22,11 @@ export default function DepositRecoveryHeartbeat() {
       try {
         const idToken = await user.getIdToken();
         
-        // 1. Tactical Query Simplification: 
         const q = query(
           collection(db, "transactions"),
-          where("uid", "==", user.uid)
+          where("uid", "==", user.uid),
+          where("status", "==", "PENDING"),
+          where("type", "==", "DEPOSIT")
         );
 
         const snap = await getDocs(q);

@@ -117,15 +117,54 @@ export async function internalFinalizeMatchClosure(
   const platformRake = Math.floor(totalStake * 0.20);
   let victoryReward = matchData.circuitId ? 0 : (totalStake - platformRake);
 
-  // HARDENING: One-off Promo matches (like CODM BR) that aren't part of a circuit
   if (matchData.isPromo && !matchData.circuitId && !victoryReward) {
      const prizeUSD = (matchData as any).prizeUSD || 0;
-     victoryReward = prizeUSD * 100; // $1.00 USD = 100 Coins platform standard
+     victoryReward = prizeUSD * 100;
   }
 
   let needsTournamentCleanup = false;
   let tournamentCleanupCircuitId: string | null = null;
 
+  const playerIds = Object.keys(matchData.players);
+  const gameKey = matchData.game;
+
+  // --- 🛑 ATOMIC READ PHASE (CRITICAL: ALL READS BEFORE ANY WRITES) ---
+  
+  // A. [PARTNER READ] If partner lobby or circuit, fetch the partner/creator
+  let creatorSnap: admin.firestore.DocumentSnapshot | null = null;
+  const partnerId = matchData.isPartnerTournament ? matchData.creatorId : (circuitData?.isPartnerTournament ? circuitData.creatorId : null);
+  if (partnerId) {
+    creatorSnap = await transaction.get(adminDb.collection("users").doc(partnerId));
+  }
+
+  // B. [PLAYER & REFERRER READS] Fetch all players and their referrers
+  const playerUserSnaps = await transaction.getAll(...playerIds.map(pid => adminDb.collection("users").doc(pid)));
+  const referrerIds = playerUserSnaps
+    .map(s => s.exists ? s.data()?.referredBy : null)
+    .filter(id => !!id);
+  
+  const uniqueReferrerIds = Array.from(new Set(referrerIds));
+  let referrerSnaps: admin.firestore.DocumentSnapshot[] = [];
+  if (uniqueReferrerIds.length > 0) {
+    referrerSnaps = await transaction.getAll(...uniqueReferrerIds.map(rid => adminDb.collection("users").doc(rid)));
+  }
+  const referrersMap = new Map(referrerSnaps.map(s => [s.id, s]));
+
+  // C. [MATCH READS] If this is a circuit final, we might need the FINAL match doc for prize tracking
+  let finalMatchSnap: admin.firestore.QuerySnapshot | null = null;
+  if (matchData.circuitId && matchData.round === 'FINAL') {
+     // NOTE: We use adminDb.get() here because it's a query, not a direct transaction.get().
+     // This is slightly less atomic but avoids the transaction.get() read-after-write constraint 
+     // if called later.
+     finalMatchSnap = await adminDb.collection("matches")
+        .where("circuitId", "==", matchData.circuitId)
+        .where("round", "==", "FINAL")
+        .limit(1)
+        .get();
+  }
+
+  // --- ✅ WRITE PHASE (CRITICAL: NO READS ALLOWED AFTER THIS POINT) ---
+  
   transaction.update(matchRef, {
     status: 'CLOSED',
     rewardAmount: victoryReward,
@@ -135,14 +174,9 @@ export async function internalFinalizeMatchClosure(
     round: matchData.round || 'NONE'
   });
 
-  // 1. Update Core Profile Stats (Universal for all match types)
-  const playerIds = Object.keys(matchData.players);
-  const gameKey = matchData.game; // 'CODM' or 'EFOOTBALL'
-
   for (const pid of playerIds) {
     const userRef = adminDb.collection("users").doc(pid);
     const isWinner = pid === championUid;
-    // CRITICAL: use overridePlayers if available, otherwise fallback to doc state
     const playerMatchData = (overridePlayers?.[pid] || matchData.players[pid] || {}) as any;
 
     const statsUpdate: any = {
@@ -166,84 +200,43 @@ export async function internalFinalizeMatchClosure(
   // 1.8 PARTNER COMMISSION ENGINE
   let partnerCommissionPaid = 0;
   try {
-    // A. [CREATOR COMMISSION] If this is a Partner Lobby, the Creator gets the Partner Share of the Rake
-    if (matchData.isPartnerTournament && matchData.creatorId) {
-      const creatorRef = adminDb.collection("users").doc(matchData.creatorId);
-      const creatorSnap = await transaction.get(creatorRef);
+    if (matchData.isPartnerTournament && partnerId && creatorSnap?.exists) {
+      const creatorRef = adminDb.collection("users").doc(partnerId);
+      const creatorData = creatorSnap.data()!;
+      const expiryDate = creatorData.partnerExpiresAt?.seconds ? new Date(creatorData.partnerExpiresAt.seconds * 1000) : null;
       
-      if (creatorSnap.exists) {
-        const creatorData = creatorSnap.data()!;
-        const expiryDate = creatorData.partnerExpiresAt?.seconds ? new Date(creatorData.partnerExpiresAt.seconds * 1000) : null;
-        
-        // 🔒 [CONTRACT CHECK] Only pay if Partner Contract is active
-        if (creatorData.role === 'PARTNER' && expiryDate && expiryDate > new Date()) {
-          partnerCommissionPaid = Math.floor(platformRake * 0.50);
-          if (partnerCommissionPaid > 0) {
-            transaction.update(creatorRef, {
-              balanceCoins: admin.firestore.FieldValue.increment(partnerCommissionPaid)
-            });
-            
-            const partLogRef = adminDb.collection("transactions").doc();
-            transaction.set(partLogRef, {
-              uid: matchData.creatorId,
-              type: "CREDIT",
-              category: "PARTNER_COMMISSION",
-              description: `Lobby Creator Commission: ${matchData.game} ${matchData.format}`,
-              amount: partnerCommissionPaid,
-              status: "COMPLETED",
-              createdAt: admin.firestore.FieldValue.serverTimestamp()
-            });
-          }
-        } else {
-          console.log(`[Commission] Creator ${matchData.creatorId} contract expired or invalid. Rake reverts to platform.`);
+      if (creatorData.role === 'PARTNER' && expiryDate && expiryDate > new Date()) {
+        partnerCommissionPaid = Math.floor(platformRake * 0.50);
+        if (partnerCommissionPaid > 0) {
+          transaction.update(creatorRef, { balanceCoins: admin.firestore.FieldValue.increment(partnerCommissionPaid) });
+          transaction.set(adminDb.collection("transactions").doc(), {
+            uid: partnerId, type: "CREDIT", category: "PARTNER_COMMISSION",
+            description: `Lobby Creator Commission: ${matchData.game} ${matchData.format}`,
+            amount: partnerCommissionPaid, status: "COMPLETED", createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
         }
       }
-    } 
-    // B. [RECRUIT COMMISSION] Otherwise, check for referrers (Influencer Recruits)
-    else {
-      const playerUsers = await transaction.getAll(...playerIds.map(pid => adminDb.collection("users").doc(pid)));
-      
-      for (const userSnap of playerUsers) {
+    } else if (!matchData.isPartnerTournament) {
+      for (const userSnap of playerUserSnaps) {
         if (!userSnap.exists) continue;
         const profile = userSnap.data()!;
         const referrerUid = profile.referredBy;
-        
-        if (referrerUid) {
-          const referrerRef = adminDb.collection("users").doc(referrerUid);
-          const referrerSnap = await transaction.get(referrerRef);
-          
-          if (referrerSnap.exists) {
-            const referrerData = referrerSnap.data()!;
-            const expiryDate = referrerData.partnerExpiresAt?.seconds ? new Date(referrerData.partnerExpiresAt.seconds * 1000) : null;
-            
-            // 🔒 [LIFECYCLE CHECK] Verify the recruit's account is < 90 days old
-            const accountAgeMs = Date.now() - new Date(profile.createdAt).getTime();
-            const isEligible = accountAgeMs < (90 * 24 * 60 * 60 * 1000);
+        if (referrerUid && referrersMap.get(referrerUid)?.exists) {
+          const referrerSnap = referrersMap.get(referrerUid)!;
+          const referrerData = referrerSnap.data()!;
+          const expiryDate = referrerData.partnerExpiresAt?.seconds ? new Date(referrerData.partnerExpiresAt.seconds * 1000) : null;
+          const isEligible = (Date.now() - new Date(profile.createdAt).getTime()) < (90 * 24 * 3600 * 1000);
 
-            // 🔒 [CONTRACT CHECK] Only pay if Influencer's Contract is active AND recruit is eligible
-            if (referrerData.role === 'PARTNER' && expiryDate && expiryDate > new Date() && isEligible) {
-              const rakePerPlayer = Math.floor(matchData.challengeFee * 0.20);
-              const commission = Math.floor(rakePerPlayer * 0.50); 
-              
-              if (commission > 0) {
-                partnerCommissionPaid += commission;
-                transaction.update(referrerRef, {
-                  balanceCoins: admin.firestore.FieldValue.increment(commission)
-                });
-                
-                const commLogRef = adminDb.collection("transactions").doc();
-                transaction.set(commLogRef, {
-                  uid: referrerUid,
-                  type: "CREDIT",
-                  category: "PARTNER_COMMISSION",
-                  description: `Recruit Commission: ${profile.username} @ ${matchData.game}`,
-                  amount: commission,
-                  status: "COMPLETED",
-                  createdAt: admin.firestore.FieldValue.serverTimestamp()
-                });
-              }
-            } else {
-               console.log(`[Commission] Referrer ${referrerUid} contract expired. Rake reverts to platform.`);
+          if (referrerData.role === 'PARTNER' && expiryDate && expiryDate > new Date() && isEligible) {
+            const commission = Math.floor((matchData.challengeFee * 0.20) * 0.50); 
+            if (commission > 0) {
+              partnerCommissionPaid += commission;
+              transaction.update(adminDb.collection("users").doc(referrerUid), { balanceCoins: admin.firestore.FieldValue.increment(commission) });
+              transaction.set(adminDb.collection("transactions").doc(), {
+                uid: referrerUid, type: "CREDIT", category: "PARTNER_COMMISSION",
+                description: `Recruit Commission: ${profile.username} @ ${matchData.game}`,
+                amount: commission, status: "COMPLETED", createdAt: admin.firestore.FieldValue.serverTimestamp()
+              });
             }
           }
         }
@@ -255,27 +248,16 @@ export async function internalFinalizeMatchClosure(
 
   // 2. Payout Winner & Track Platform Finances
   if (!matchData.circuitId && victoryReward > 0) {
-    const winnerRef = adminDb.collection("users").doc(championUid);
-    transaction.update(winnerRef, {
-      balanceCoins: admin.firestore.FieldValue.increment(victoryReward)
-    });
-
-    const prizeLogRef = adminDb.collection("transactions").doc();
-    transaction.set(prizeLogRef, {
-      uid: championUid,
-      type: "CREDIT",
-      category: "MATCH_PRIZE",
+    transaction.update(adminDb.collection("users").doc(championUid), { balanceCoins: admin.firestore.FieldValue.increment(victoryReward) });
+    transaction.set(adminDb.collection("transactions").doc(), {
+      uid: championUid, type: "CREDIT", category: "MATCH_PRIZE",
       description: `1ST PLACE WINNER: ${matchData.game} ${matchData.format}`,
-      amount: victoryReward,
-      status: "COMPLETED",
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      amount: victoryReward, status: "COMPLETED", createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    const finalPlatformCut = platformRake - partnerCommissionPaid;
-    const statsRef = adminDb.collection("stats").doc("platform_finances");
-    transaction.set(statsRef, {
+    transaction.set(adminDb.collection("stats").doc("platform_finances"), {
       totalPayouts: admin.firestore.FieldValue.increment(victoryReward + partnerCommissionPaid),
-      totalPlatformCut: admin.firestore.FieldValue.increment(finalPlatformCut),
+      totalPlatformCut: admin.firestore.FieldValue.increment(platformRake - partnerCommissionPaid),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
   }
@@ -283,18 +265,13 @@ export async function internalFinalizeMatchClosure(
   // 2. Circuit Logic (Standings/Advancement)
   if (matchData.circuitId && circuitData) {
     const circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
-      
-    // Group Standings
-    if (matchData.group) {
+    if (matchData.group && circuitData.groups?.[matchData.group]) {
       const g = matchData.group;
-      const playersList = Object.values(matchData.players) as any[];
-      const winner = playersList.find(p => p.uid === championUid);
-      const loser = playersList.find(p => p.uid !== championUid);
-
-      if (winner && loser && circuitData.groups?.[g]) {
+      const winner = (Object.values(matchData.players) as any[]).find(p => p.uid === championUid);
+      const loser = (Object.values(matchData.players) as any[]).find(p => p.uid !== championUid);
+      if (winner && loser) {
         const winnerSF = (winner.scoreFor ?? winner.kills ?? 0);
         const loserSF = (loser.scoreFor ?? loser.kills ?? 0);
-        
         transaction.update(circuitRef, {
           matchesCompleted: admin.firestore.FieldValue.increment(1),
           [`groups.${g}.standings.${winner.uid}.played`]: admin.firestore.FieldValue.increment(1),
@@ -308,12 +285,8 @@ export async function internalFinalizeMatchClosure(
           [`groups.${g}.standings.${loser.uid}.ga`]: admin.firestore.FieldValue.increment(winnerSF),
         });
       }
-    } 
-    
-    // Knockout Advancement
-    else if (matchData.round) {
+    } else if (matchData.round) {
       if (circuitData.isPromo) {
-         // --- PROMO ENGINE REDIRECT ---
          const finalizeResult = await handlePromoAdvancement(transaction, circuitRef, circuitData, matchData.round, championUid, matchRef.id, operatorUid, matchData.game);
          if (finalizeResult?.needsTournamentCleanup) {
             needsTournamentCleanup = true;
@@ -322,34 +295,12 @@ export async function internalFinalizeMatchClosure(
       } else if (matchData.round === 'QR1') {
          await handleKnockoutAdvancement(transaction, circuitRef, circuitData, 'QR1', -1, championUid, matchRef.id, operatorUid, matchData.game);
       } else {
-         const roundKey = matchData.round.includes('QF') ? 'quarters' : (matchData.round.includes('SF') ? 'semis' : 'final');
-         const ties = roundKey === 'final' ? [circuitData.bracket?.final] : circuitData.bracket?.[roundKey];
-         let tieIdx = -1;
-         let p1G = 0;
-         let p2G = 0;
-         
-         if (ties && Array.isArray(ties)) {
-            tieIdx = (ties as any[]).findIndex(t => t?.matchId1 === matchRef.id || t?.matchId2 === matchRef.id || (t as any)?.matchId3 === matchRef.id);
-            if (tieIdx !== -1) {
-               const tie = (ties as any[])[tieIdx];
-               p1G = matchData.players[tie.p1]?.scoreFor ?? matchData.players[tie.p1]?.kills ?? 0;
-               p2G = matchData.players[tie.p2]?.scoreFor ?? matchData.players[tie.p2]?.kills ?? 0;
-            }
-         }
-
-         if (matchData.round === 'FINAL' && tieIdx === -1 && !circuitData.bracket?.final?.matchId1) {
-            // Legacy/Single Match Final fallback
-            const runnerUpUid = Object.keys(matchData.players).find(pid => pid !== championUid);
+         if (matchData.round === 'FINAL') {
             needsTournamentCleanup = true;
             tournamentCleanupCircuitId = matchData.circuitId;
-            await distributeCircuitPrizes(transaction, circuitRef, circuitData, championUid, runnerUpUid || null);
-         } else {
-            if (matchData.round === 'FINAL') {
-               needsTournamentCleanup = true;
-               tournamentCleanupCircuitId = matchData.circuitId;
-            }
-            await handleKnockoutAdvancement(transaction, circuitRef, circuitData, matchData.round, tieIdx, championUid, matchRef.id, operatorUid, matchData.game, p1G, p2G);
          }
+         // We pass null/undefined for tieIdx here as handleKnockoutAdvancement can infer it or we calculate it
+         await handleKnockoutAdvancement(transaction, circuitRef, circuitData, matchData.round, -1, championUid, matchRef.id, operatorUid, matchData.game, undefined, undefined, creatorSnap || undefined);
       }
     }
   }
