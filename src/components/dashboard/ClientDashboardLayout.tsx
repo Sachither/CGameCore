@@ -21,8 +21,12 @@ export default function ClientDashboardLayout({ children }: { children: React.Re
 
   // Route Protection: Redirect if not logged in (with a grace period for loading)
   useEffect(() => {
+    // Only redirect if we've mounted and we're sure there's no user session
+    if (loading) return;
+    
     setHasMounted(true);
-    if (!loading && !user) {
+    if (!user) {
+      console.warn("[DashboardLayout] No session detected. Redirecting to Entry Point...");
       router.push('/login');
     }
   }, [user, loading, router]);

@@ -186,8 +186,9 @@ if (firebaseUser) {
       setLoading(false);
 
       // AUTO-REDIRECT: If on auth pages, move to dashboard
-      if (pathname === '/login' || pathname === '/register' || pathname === '/') {
-        console.log("[AuthProvider] Session active. Redirecting to Dashboard...");
+      const currentPath = pathnameRef.current;
+      if (currentPath === '/login' || currentPath === '/register' || currentPath === '/') {
+        console.log(`[AuthProvider] Session active on "${currentPath}". Redirecting to Dashboard...`);
         router.replace('/dashboard');
       }
     } else {
@@ -195,8 +196,8 @@ if (firebaseUser) {
        // Skip if on registration page to avoid race condition with RegisterForm
        const currentPath = pathnameRef.current;
        console.log(`[AuthProvider] Missing profile detected. Current Path: "${currentPath}"`);
-       if (currentPath === '/register') {
-         console.log("[AuthProvider] SKIPPING auto-repair on registration page.");
+       if (currentPath === '/register' || currentPath === '/login') {
+         console.log(`[AuthProvider] Profile missing but user on auth page (${currentPath}). Allowing form interaction.`);
          setLoading(false);
          return;
        }
