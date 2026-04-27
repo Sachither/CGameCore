@@ -149,17 +149,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             };
             localStorage.setItem('cgame_profile', JSON.stringify(safeProfileCache));
             setLoading(false);
-
-            // AUTO-REDIRECT: If on login page, move to dashboard
-            const currentPath = pathnameRef.current;
-            if (currentPath === '/login' || currentPath === '/') {
-              console.log(`[AuthProvider] Session active on "${currentPath}". Redirecting to Dashboard...`);
-              router.replace('/dashboard');
-            }
           } else {
              // 🔒 [SECURITY] PHASE 7: Secure self-healing profile creation
-             const currentPath = pathnameRef.current;
-             if (currentPath === '/register' || currentPath === '/login') {
+             if (pathnameRef.current === '/register' || pathnameRef.current === '/login') {
                setLoading(false);
                return;
              }
@@ -217,6 +209,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profileUnsub) profileUnsub();
     };
   }, [router]);
+
+  // 🚦 [UNIFIED NAVIGATION BRAIN] Centralized redirect logic
+  useEffect(() => {
+    if (loading) return;
+
+    const isDashboard = pathname.startsWith('/dashboard') || pathname.startsWith('/match') || pathname.startsWith('/profile') || pathname.startsWith('/wallet');
+    const isAuthPage = pathname === '/login' || pathname === '/register' || pathname === '/';
+
+    // 1. [GUEST -> LOGIN] Kick out of protected areas if no user
+    if (!user && isDashboard) {
+      console.log("[AuthProvider] Unauthorized access. Redirecting to Login...");
+      router.replace('/login');
+      return;
+    }
+
+    // 2. [LOGGED IN -> DASHBOARD] Move to dashboard if already authed
+    if (user && isAuthPage) {
+      // EXCEPTION: Allow /register only if profile is still missing (new signup)
+      if (pathname === '/register' && !profile) return;
+      
+      console.log("[AuthProvider] Session active. Moving to Dashboard...");
+      router.replace('/dashboard');
+    }
+  }, [user, profile, loading, pathname, router]);
 
   const refreshProfile = async () => {
     if (!user) return;
