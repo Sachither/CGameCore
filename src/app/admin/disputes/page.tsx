@@ -2,8 +2,10 @@
 // [TACTICAL INTEGRITY CHECK: 1.1] Force Segment Refresh
 import React, { useEffect, useState, useCallback, Suspense } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { getDisputedMatchesAction, resolveDisputeAction, cancelStaleMatchAction, triggerAdminInterventionAction, getUserAuditHistoryAction, alertPlayersOfAdminPresence } from "@/app/actions/admin-actions";
-import { Gavel, ImageIcon, AlertTriangle, CheckCircle2, XCircle, RotateCcw, Loader2, MessageSquare, ExternalLink, ShieldAlert, History, Terminal, UserSearch, BellRing } from "lucide-react";
+import { getDisputedMatchesAction, resolveDisputeAction, cancelStaleMatchAction, triggerAdminInterventionAction, getUserAuditHistoryAction, alertPlayersOfAdminPresence, setupAdminPinAction } from "@/app/actions/admin-actions";
+import { Gavel, ImageIcon, AlertTriangle, CheckCircle2, XCircle, RotateCcw, Loader2, MessageSquare, ExternalLink, ShieldAlert, History, Terminal, UserSearch, BellRing, Lock } from "lucide-react";
+import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
+import { useToast } from "@/context/ToastContext";
 import MatchChat from "@/components/match/MatchChat";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -20,6 +22,7 @@ export default function AdminDisputesPage() {
 
 function AdminDisputesContent() {
   const { user } = useAuth();
+  const toast = useToast();
   const searchParams = useSearchParams();
   const matchId = searchParams.get('match');
   const [matches, setMatches] = useState<any[]>([]);
@@ -33,6 +36,11 @@ function AdminDisputesContent() {
   const [auditTarget, setAuditTarget] = useState<{ uid: string, username: string } | null>(null);
   const [auditData, setAuditData] = useState<any[]>([]);
   const [auditing, setAuditing] = useState(false);
+
+  // 🔒 [FORTRESS] Security PIN States
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isFirstTimePinSetup, setIsFirstTimePinSetup] = useState(false);
 
   const fetchDisputes = useCallback(async () => {
     if (!user) return;
@@ -59,19 +67,45 @@ function AdminDisputesContent() {
     setVerdictModal({ isOpen: true, winnerId, label });
   };
 
-  const executeVerdict = async () => {
+  const initiateVerdict = () => {
+    setVerdictModal(prev => prev ? { ...prev, isOpen: false } : null);
+    setIsPinModalOpen(true);
+  };
+
+  const executeVerdict = async (pin: string) => {
     if (!user || !selected || !verdictModal) return;
     
-    setResolving(true);
+    setPinError(null);
     const idToken = await user.getIdToken();
-    const result = await resolveDisputeAction(idToken, selected.id, verdictModal.winnerId);
+
+    // 🔒 [SECURITY] Handle First-Time Setup
+    if (isFirstTimePinSetup) {
+       const setupRes = await setupAdminPinAction(idToken, pin);
+       if (setupRes.success) {
+          setIsFirstTimePinSetup(false);
+          setIsPinModalOpen(false);
+          toast.success("SECURITY ACTIVATED", "Your master PIN has been established. You can now authorize the verdict.");
+       } else {
+          setPinError(setupRes.error || "Setup failed.");
+       }
+       return;
+    }
+
+    setResolving(true);
+    const result = await resolveDisputeAction(idToken, selected.id, verdictModal.winnerId, pin);
     if (result.success) {
       setFeedback("Tribunal verdict delivered. Match funds distributed and arena closed.");
+      setIsPinModalOpen(false);
       setSelected(null);
       setVerdictModal(null);
       await fetchDisputes();
     } else {
-      setFeedback(`Verdict Failed: ${result.error}`);
+      if (result.error?.includes("SECURITY_UNCONFIGURED")) {
+         setIsFirstTimePinSetup(true);
+         setPinError("INITIAL SETUP: No security PIN detected. Please enter a NEW 6-digit PIN to secure your account.");
+      } else {
+         setPinError(result.error || "Verification failed.");
+      }
     }
     setResolving(false);
   };
@@ -436,11 +470,11 @@ function AdminDisputesContent() {
 
                <div className="w-full space-y-3">
                   <button 
-                    onClick={executeVerdict}
+                    onClick={initiateVerdict}
                     disabled={resolving}
                     className="w-full bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-[0.2em] py-4 rounded-sm text-xs transition-all flex items-center justify-center gap-3 shadow-lg disabled:opacity-50"
                   >
-                    {resolving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><ShieldAlert className="w-4 h-4" /> Confirm Verdict</>}
+                    {resolving ? <Loader2 className="w-4 h-4 animate-spin" /> : <><Lock className="w-4 h-4" /> Authorize Verdict</>}
                   </button>
                   <button 
                     onClick={() => setVerdictModal(null)}
@@ -528,6 +562,19 @@ function AdminDisputesContent() {
            </div>
         </div>
       )}
+
+      {/* Security Terminal */}
+      <AdminPinTerminal
+        isOpen={isPinModalOpen}
+        onClose={() => {
+           setIsPinModalOpen(false);
+           setPinError(null);
+           setIsFirstTimePinSetup(false);
+        }}
+        onSuccess={executeVerdict}
+        title={isFirstTimePinSetup ? "Set Master Security PIN" : "Authorize Match Override"}
+        error={pinError}
+      />
     </div>
   );
 }

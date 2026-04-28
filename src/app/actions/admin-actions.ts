@@ -3,24 +3,30 @@
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { Match, Circuit } from "@/lib/match-service";
-import { purgeMatchDataInternal } from "@/lib/match-cleanup";
-import { internalFinalizeMatchClosure } from "./match-actions";
+import { purgeMatchDataInternal, purgeMatchMessagesOnly } from "@/lib/match-cleanup";
+import { internalFinalizeMatchClosure, dispatchMatchResolutionNotifications } from "./match-actions";
 import { decryptData } from "@/lib/encryption-utils";
 import { sendTacticalEmail } from "@/lib/mail";
 import { getExtractionEmailTemplate, getPartnerUpgradeEmailTemplate, getPartnerRevokedEmailTemplate } from "@/lib/mail-templates";
 
 // ─── INTERNAL HELPERS ────────────────────────────────────────────────────────
 
-import { getVerifiedAdminUid, getVerifiedSuperAdminUid } from "@/lib/server-utils";
+import { getVerifiedAdminUid, getVerifiedSuperAdminUid, getVerifiedUid } from "@/lib/server-utils";
 import { checkRateLimit } from "@/lib/rate-limiter";
 import { createNotificationInternal } from "@/lib/notifications";
 import { isCryptoWithdrawalNetwork } from "@/lib/withdrawal-fees";
+import { verifyAdminSecurityPin, setAdminSecurityPin } from "@/lib/admin-security";
 
 // 🔒 [SECURITY] M-007 FIX: Test mode watermark - fail-safe check
 // Production deployments MUST have NODE_ENV = 'production'
+// We also double-check the server-side environment for the domain.
 const MOCK_TRANSFER_WARNING = process.env.NODE_ENV !== 'production';
-if (MOCK_TRANSFER_WARNING) {
+const IS_PRODUCTION_SERVER = process.env.VERCEL_URL?.includes('cgamecore.online') || process.env.NEXT_PUBLIC_BASE_URL?.includes('cgamecore.online');
+
+if (MOCK_TRANSFER_WARNING && !IS_PRODUCTION_SERVER) {
   console.warn("⚠️ ADMIN ACTIONS: Running in TEST MODE. Mock transfers and purges are ENABLED. Financial operations may not be real.");
+} else if (MOCK_TRANSFER_WARNING && IS_PRODUCTION_SERVER) {
+  console.error("🛑 CRITICAL SECURITY ALERT: Test mode detected on PRODUCTION server. Disabling mock operations for safety.");
 }
 
 /**
@@ -50,18 +56,15 @@ function sanitizeData(data: any): any {
 export async function resolveDisputeAction(
   idToken: string,
   matchId: string,
-  winnerId: string // 'REFUND' triggers a void match
+  winnerId: string, // 'REFUND' triggers a void match
+  securityPin: string
 ) {
-  // 🔒 [SECURITY] M-007 FIX: Test mode watermark - warn if operating in non-production
-  if (MOCK_TRANSFER_WARNING) {
-    console.warn(`[TEST-MODE] Dispute resolution for match ${matchId} running in TEST MODE.`);
-  }
-  
   const adminUid = await getVerifiedAdminUid(idToken);
-
   const matchRef = adminDb.collection("matches").doc(matchId);
 
   try {
+    const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+    if (!pinVerification.success) throw new Error(pinVerification.error);
     const matchSnap = await matchRef.get();
     if (!matchSnap.exists) throw new Error("Match not found.");
     const matchData = matchSnap.data() as Match;
@@ -98,14 +101,6 @@ export async function resolveDisputeAction(
         throw new Error("SECURITY: Winner validation failed in transaction context");
       }
       
-      // Mark as RESOLVING immediately to prevent concurrent resolution attempts
-      // FIX M-005: Add resolution details instead of just changing status
-      transaction.update(matchRef, {
-        status: "RESOLVING",
-        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
-        resolvedBy: adminUid
-      });
-
       // ── STEP 1.5: Finalization & Advancement ──────────────────────────────
       if (winnerId !== "REFUND") {
         // Use the shared finalization logic to handle stats, circuit advancement, etc.
@@ -149,12 +144,18 @@ export async function resolveDisputeAction(
       }
     });
 
-    // ── STEP 2: Initiate Nuke Protocol (Purge) ──────────────────────────────
-    // Permanent deletion of arena data.
-    await purgeMatchDataInternal(matchId);
+    // ── STEP 2: Initiate Preservation Protocol (Purge Chat Only) ────────────
+    // Clean up tactical chat but preserve the match document for history and notifications.
+    await purgeMatchMessagesOnly(matchId);
+
+    // ── STEP 3: Dispatch Verdict Notifications ──────────────────────────────
+    // CRITICAL: Must run AFTER the transaction commits AND after the purge.
+    // The match document must still exist (preserved above) for this to read.
+    if (winnerId !== "REFUND") {
+      await dispatchMatchResolutionNotifications(matchId, 'CLOSED', winnerId);
+    }
 
     // Audit log
-    // FIX A-006: Enhanced audit logging with admin IP and details
     const auditRef = adminDb.collection("admin_audit_log").doc();
     await auditRef.set({
       action: "ADMIN_RESOLVE_DISPUTE",
@@ -165,7 +166,6 @@ export async function resolveDisputeAction(
       newStatus: "CLOSED",
       resolution: winnerId === "REFUND" ? "REFUND" : "ADMIN_AWARD",
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      // Note: IP would come from request context if available
       details: {
         playersAffected: players.length,
         feeAmount: fee,
@@ -245,12 +245,18 @@ export async function setBanStatusAction(
   targetUid: string,
   isBanned: boolean,
   banReason?: string,
-  durationHours?: number
+  durationHours?: number,
+  securityPin?: string // Optional for backward compatibility but checked if provided
 ) {
   // Only high-level Admins can ban
   const adminUid = await getVerifiedAdminUid(idToken, true);
 
   try {
+    // 🔒 [FORTRESS] Guard: Verify PIN for account lockdown
+    if (securityPin) {
+      const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+      if (!pinVerification.success) throw new Error(pinVerification.error);
+    }
     let suspendedUntil: any = null;
     if (isBanned && durationHours && durationHours > 0) {
        // Timed Suspension
@@ -339,7 +345,8 @@ export async function setBanStatusAction(
 export async function setUserRoleAction(
   idToken: string,
   targetUid: string,
-  role: "USER" | "MODERATOR" | "ADMIN" | "SUPER_ADMIN"
+  role: "USER" | "MODERATOR" | "ADMIN" | "SUPER_ADMIN",
+  securityPin?: string
 ) {
   // SUPER_ADMIN promotion requires SUPER_ADMIN level access
   const requireSuperAdmin = role === "SUPER_ADMIN";
@@ -348,6 +355,11 @@ export async function setUserRoleAction(
     : await getVerifiedAdminUid(idToken, true);
 
   try {
+    // 🔒 [FORTRESS] Guard: Verify PIN for clearance elevation
+    if (securityPin) {
+      const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+      if (!pinVerification.success) throw new Error(pinVerification.error);
+    }
     const customClaims = {
       role,
       isAdmin: role === "ADMIN" || role === "SUPER_ADMIN",
@@ -416,11 +428,17 @@ export async function upgradeToPartnerAction(
   idToken: string,
   targetUid: string,
   customCode?: string,
-  durationDays: number = 90
+  durationDays: number = 90,
+  securityPin?: string
 ) {
   const adminUid = await getVerifiedAdminUid(idToken, true);
 
   try {
+    // 🔒 [FORTRESS] Guard: Verify PIN for partner induction
+    if (securityPin) {
+      const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+      if (!pinVerification.success) throw new Error(pinVerification.error);
+    }
     const userRef = adminDb.collection("users").doc(targetUid);
     const userSnap = await userRef.get();
     if (!userSnap.exists) throw new Error("User not found.");
@@ -503,20 +521,16 @@ export async function adjustUserBalanceAction(
   idToken: string,
   targetUid: string,
   amount: number, // positive = add, negative = deduct
-  justification: string
+  justification: string,
+  securityPin: string
 ) {
   const adminUid = await getVerifiedAdminUid(idToken, true);
-  const superAdminUid = await getVerifiedSuperAdminUid(idToken);
-  
-  if (!justification?.trim()) throw new Error("A justification is required for balance adjustments.");
-
-  // FIX A-002: Limit single adjustment amount
-  const adjustmentLimit = 500;
-  if (Math.abs(amount) > adjustmentLimit) {
-    throw new Error(`Individual adjustment limited to ${adjustmentLimit} CR. This adjustment exceeds the limit. Request approval for larger amounts.`);
-  }
 
   try {
+    const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+    if (!pinVerification.success) throw new Error(pinVerification.error);
+    
+    const superAdminUid = await getVerifiedSuperAdminUid(idToken).catch(() => null);
     // FIX A-001: Large adjustments require 2-admin approval
     const requiresApproval = Math.abs(amount) > 1000;
     
@@ -701,8 +715,71 @@ export async function getDisputedMatchesAction(idToken: string) {
       .where("status", "==", "DISPUTED")
       .limit(50)
       .get();
-    return { success: true, matches: snap.docs.map((d) => sanitizeData({ id: d.id, ...d.data() })) };
+    
+    const matches = await Promise.all(snap.docs.map(async (doc) => {
+      const matchData = sanitizeData({ id: doc.id, ...doc.data() });
+      
+      // 1. Fetch all evidence from the dedicated subcollection (Modern Schema)
+      const evidenceSnap = await doc.ref.collection("match_evidence").get();
+      const subcollectionEvidence = evidenceSnap.docs.map(e => sanitizeData({ id: e.id, ...e.data() }));
+      
+      // 2. Scrape evidence from legacy fields (Backward Compatibility)
+      const legacyEvidence: any[] = [];
+      
+      // From players map
+      if (matchData.players) {
+        Object.entries(matchData.players).forEach(([uid, p]: [string, any]) => {
+          if (p.proofUrl) {
+            legacyEvidence.push({
+              id: `legacy_result_${uid}`,
+              url: p.proofUrl,
+              type: 'image',
+              ownerUid: uid,
+              username: p.username || "Operator",
+              isLegacy: true
+            });
+          }
+        });
+      }
+
+      // From match-level dispute fields
+      if (matchData.disputeImageProof) {
+        legacyEvidence.push({
+          id: 'legacy_dispute_img',
+          url: matchData.disputeImageProof,
+          type: 'image',
+          ownerUid: matchData.disputedBy || "unknown",
+          username: "Dispute Filer",
+          isLegacy: true
+        });
+      }
+      if (matchData.disputeVideoProof) {
+        legacyEvidence.push({
+          id: 'legacy_dispute_vid',
+          url: matchData.disputeVideoProof,
+          type: 'video',
+          ownerUid: matchData.disputedBy || "unknown",
+          username: "Dispute Filer",
+          isLegacy: true
+        });
+      }
+
+      // Merge and deduplicate by URL to prevent showing the same image twice
+      const allEvidenceMap = new Map();
+      [...legacyEvidence, ...subcollectionEvidence].forEach(ev => {
+        if (!allEvidenceMap.has(ev.url)) {
+          allEvidenceMap.set(ev.url, ev);
+        }
+      });
+
+      matchData.allEvidence = Array.from(allEvidenceMap.values());
+      
+      return matchData;
+    }));
+
+    return { success: true, matches };
   } catch (error: any) {
+    console.error("[AdminAction] getDisputedMatches error:", error);
     return { success: false, error: error.message, matches: [] };
   }
 }
@@ -924,12 +1001,16 @@ export async function getPendingWithdrawalsAction(idToken: string) {
   }
 }
 
-export async function adminApproveWithdrawalAction(idToken: string, withdrawalId: string) {
-  const adminUid = await getVerifiedAdminUid(idToken, true); // Admin only - financial operations
-  const FLUTTERWAVE_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
-  if (!FLUTTERWAVE_SECRET) throw new Error("Flutterwave secret key missing.");
+export async function adminApproveWithdrawalAction(idToken: string, withdrawalId: string, securityPin: string) {
+  const adminUid = await getVerifiedAdminUid(idToken, true);
 
   try {
+    const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+    if (!pinVerification.success) throw new Error(pinVerification.error);
+
+    const FLUTTERWAVE_SECRET = process.env.FLUTTERWAVE_SECRET_KEY;
+    if (!FLUTTERWAVE_SECRET) throw new Error("Flutterwave secret key missing.");
+
     const wRef = adminDb.collection("withdrawals").doc(withdrawalId);
     
     // FETCH DATA ONCE
@@ -1019,7 +1100,8 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
       }
 
       const withdrawalReference = transferId || `FW_WITHDRAW_${wRef.id}`;
-      const notificationMessage = `Your withdrawal of $${(fiatAmountUSD).toFixed(2)} has been initiated via Flutterwave. Reference: ${withdrawalReference}. Funds typically arrive within 24 hours.`;
+      const displayAmountUSD = (amountCoins / 100).toFixed(2);
+      const notificationMessage = `Your withdrawal of $${displayAmountUSD} has been initiated via Flutterwave. Reference: ${withdrawalReference}. Funds typically arrive within 24 hours.`;
 
       await createNotificationInternal(
         wData.uid,
@@ -1030,7 +1112,8 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
 
       // 3. Dispatch Extraction Email (Tactical Success)
       if (wData.email) {
-        const amountStr = `$${(fiatAmountUSD).toFixed(2)} (${currency})`;
+        const displayAmountUSD = (amountCoins / 100).toFixed(2);
+        const amountStr = `$${displayAmountUSD} (${currency})`;
         const emailHtml = getExtractionEmailTemplate(wData.username, amountStr, wData.bankName || "Digital Extraction");
         sendTacticalEmail(wData.email, "EXTRACTION COMPLETE: Funds Dispatched", emailHtml).catch(e => {
           console.error("Failed to send extraction email:", e);
@@ -1496,10 +1579,14 @@ export async function alertPlayersOfAdminPresence(idToken: string, matchId: stri
 /**
  * SUPER ADMIN: TOGGLE EMERGENCY SYSTEM LOCKDOWN
  */
-export async function toggleSystemLockdownAction(idToken: string, active: boolean, reason: string = "") {
+export async function toggleSystemLockdownAction(idToken: string, active: boolean, reason: string = "", pin: string) {
   const superAdminUid = await getVerifiedSuperAdminUid(idToken);
   
   try {
+    // 🔒 PIN Authorization Gate
+    const auth = await verifyAdminSecurityPin(superAdminUid, pin);
+    if (!auth.success) return auth;
+
     const configRef = adminDb.collection("system").doc("config");
     await configRef.set({
       lockdownActive: active,
@@ -1611,3 +1698,85 @@ export async function adminDeleteLeagueByIdAction(idToken: string, leagueId: str
   }
 }
 
+/**
+ * ADMIN: SETUP INITIAL SECURITY PIN
+ * Can only be used if no PIN exists.
+ */
+export async function setupAdminPinAction(idToken: string, pin: string) {
+  const adminUid = await getVerifiedAdminUid(idToken);
+  
+  // Check if PIN already exists
+  const existing = await adminDb.collection("admin_secrets").doc(adminUid).get();
+  if (existing.exists) {
+    throw new Error("PIN_EXISTS: A security PIN is already established. Use the change PIN protocol.");
+  }
+
+  const result = await setAdminSecurityPin(adminUid, pin);
+  
+  if (result.success) {
+    // Audit log
+    const auditRef = adminDb.collection("admin_audit_log").doc();
+    await auditRef.set({
+      action: "SETUP_ADMIN_PIN",
+      adminUid,
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+  }
+
+  return result;
+}
+
+
+/**
+ * [FORTRESS] SUPER_ADMIN: Reset an Admin's Security PIN
+ * Purges the PIN hash for a target admin, forcing them into the "Initial Setup" flow on their next action.
+ */
+export async function resetAdminSecurityPinAction(idToken: string, targetUid: string, pin: string) {
+  // 🔒 STRICT: Only Super Admins can purge security profiles
+  const superAdminUid = await getVerifiedSuperAdminUid(idToken);
+
+  try {
+    // 🔒 PIN Authorization Gate
+    const auth = await verifyAdminSecurityPin(superAdminUid, pin);
+    if (!auth.success) return auth;
+
+    const pinRef = adminDb.collection("admin_secrets").doc(targetUid);
+    
+    // Unconditionally delete - if it doesn't exist, that's fine, we want it gone.
+    await pinRef.delete();
+
+    // Log the security purge
+    console.warn(`[SECURITY_PURGE] Super Admin wiped PIN for ${targetUid}`);
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[AdminAction] resetAdminSecurityPin error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * [FORTRESS] SUPER_ADMIN: Get all Staff members
+ * Retrieves a list of all MODERATOR, ADMIN, and SUPER_ADMIN users for security oversight.
+ */
+export async function getStaffListAction(idToken: string) {
+  await getVerifiedSuperAdminUid(idToken);
+
+  try {
+    const staffSnap = await adminDb.collection("users")
+      .where("role", "in", ["MODERATOR", "ADMIN", "SUPER_ADMIN"])
+      .get();
+
+    const staff = staffSnap.docs.map(doc => ({
+      uid: doc.id,
+      username: doc.data().username || "Unknown",
+      role: doc.data().role,
+      email: doc.data().email || "Hidden",
+    }));
+
+    return { success: true, staff };
+  } catch (error: any) {
+    console.error("[AdminAction] getStaffList error:", error);
+    return { success: false, error: error.message };
+  }
+}

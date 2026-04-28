@@ -232,6 +232,107 @@ export async function cleanupDeletedUserAccountAction(idToken: string) {
 }
 
 /**
+ * SERVER ACTION: Register New Operative (Aegis Protocol)
+ * Atomic, transactional profile creation with identity reservation.
+ */
+export async function registerUserAction(
+  idToken: string,
+  formData: {
+    username: string;
+    email: string;
+    phone: string;
+    referralCode?: string;
+  }
+) {
+  const uid = await getVerifiedUid(idToken);
+  
+  // 1. Sanitization & Basic Validation
+  const username = formData.username.trim();
+  const lowerUsername = username.toLowerCase();
+  const phone = formData.phone.replace(/[^0-9]/g, "");
+  
+  if (username.length < 3 || username.length > 20) throw new Error("Invalid handle length (3-20 chars).");
+  if (phone.length < 10 || phone.length > 11) throw new Error("Invalid phone line.");
+
+  try {
+    // 2. [SECURITY] Rate Limit Check (IP-based or UID-based)
+    // For now, we use a simple UID guard to prevent multiple profiles for one auth user
+    const existingProfile = await adminDb.collection("users").doc(uid).get();
+    if (existingProfile.exists) return { success: true, alreadyRegistered: true };
+
+    // 3. TRANSACTIONAL IDENTITY RESERVATION
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const usernameRef = adminDb.collection("usernames").doc(lowerUsername);
+      const phoneRef = adminDb.collection("phones").doc(phone);
+      
+      const [uSnap, pSnap] = await Promise.all([
+        transaction.get(usernameRef),
+        transaction.get(phoneRef)
+      ]);
+
+      if (uSnap.exists) throw new Error("IDENTITY_TAKEN: This handle is already assigned to another operative.");
+      if (pSnap.exists) throw new Error("PHONE_TAKEN: This communication line is already linked to an account.");
+
+      // Verify Referral Code if provided
+      let referrerUid = null;
+      if (formData.referralCode) {
+        const referralSnap = await adminDb.collection("users")
+          .where("myReferralCode", "==", formData.referralCode.trim().toUpperCase())
+          .limit(1)
+          .get();
+        
+        if (!referralSnap.empty) {
+          referrerUid = referralSnap.docs[0].id;
+        }
+      }
+
+      // Generate New Referral Code
+      const myReferralCode = username.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase() + 
+                           Math.random().toString(36).substring(2, 6).toUpperCase();
+
+      // EXECUTE ATOMIC WRITES
+      const userRef = adminDb.collection("users").doc(uid);
+      
+      transaction.set(userRef, {
+        uid,
+        username,
+        usernameLower: lowerUsername,
+        email: formData.email,
+        phone,
+        avatarId: Math.floor(Math.random() * 20),
+        balanceCoins: 0,
+        totalWins: 0,
+        totalMatches: 0,
+        lifetimeDeposits: 0,
+        lifetimeWagered: 0,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: "ACTIVE",
+        referredBy: referrerUid || null,
+        myReferralCode,
+        role: 'USER',
+        isBanned: false
+      });
+
+      transaction.set(usernameRef, { uid });
+      transaction.set(phoneRef, { uid });
+
+      return { myReferralCode };
+    });
+
+    // 4. Dispatch Welcome Sequence
+    await sendWelcomeEmailAction(formData.email, username, result.myReferralCode).catch(e => {
+       console.error("[Aegis] Welcome email failed (non-critical):", e);
+    });
+
+    console.log(`🛡️ [AEGIS] New Operative Enlisted: ${username} (${uid})`);
+    return { success: true };
+  } catch (error: any) {
+    console.error("[UserAction] registerUser error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * SERVER ACTION: Get Partner/Referral Stats
  */
 export async function getPartnerStatsAction(idToken: string) {

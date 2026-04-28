@@ -31,10 +31,11 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const [timerSeconds, setTimerSeconds] = useState<number | null>(null);
 
   const hasGhostOpponent = match?.players ? Object.values(match.players).some(p => p.username === 'GHOST' && p.uid !== currentUserUid) : false;
+  const isDisputed = match?.status === 'DISPUTED';
 
   React.useEffect(() => {
     const hasResolutionTimer = (match?.status === 'RESOLVING' || match?.status === 'WAITING_FOR_OPPONENT') && match?.resolutionEndTime;
-    const hasExtractionTimer = !hasResolutionTimer && match?.expiresAt && !['CLOSED', 'COMPLETED'].includes(match.status);
+    const hasExtractionTimer = !hasResolutionTimer && !isDisputed && match?.expiresAt && !['CLOSED', 'COMPLETED'].includes(match.status);
 
     if (!hasResolutionTimer && !hasExtractionTimer) {
       setTimerSeconds(null);
@@ -531,9 +532,11 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
             
             <h4 className={`text-[10px] ${ (match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-500' : 'text-accent'} font-black uppercase tracking-[0.3em] mb-4 flex items-center gap-2 z-10`}>
               <Flame className={`w-4 h-4 ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-500' : 'text-accent'} animate-pulse`} /> 
-              {isResolutionTimer 
-                ? (match.status === 'WAITING_FOR_OPPONENT' ? 'Strict Forfeit Timer' : 'Final Validation Countdown')
-                : (hasGhostOpponent ? 'AUTO-VICTORY COUNTDOWN' : 'Tactical Extraction Deadline')}
+              {isDisputed 
+                ? 'EXTRACTION HALTED'
+                : isResolutionTimer 
+                  ? (match.status === 'WAITING_FOR_OPPONENT' ? 'Strict Forfeit Timer' : 'Final Validation Countdown')
+                  : (hasGhostOpponent ? 'AUTO-VICTORY COUNTDOWN' : 'Tactical Extraction Deadline')}
             </h4>
 
             <div className={`text-6xl font-black ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-400 drop-shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-white drop-shadow-[0_0_10px_rgba(0,255,102,0.4)]'} italic tracking-tighter tabular-nums z-10`}>

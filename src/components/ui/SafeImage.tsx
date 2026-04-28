@@ -27,7 +27,7 @@ export default function SafeImage({
   alt,
   className = "",
   timeout = 10000, // 10 second timeout
-  fallbackText = "Image failed to load"
+  fallbackText = "No Image Available"
 }: SafeImageProps) {
   const [imageState, setImageState] = useState<'loading' | 'loaded' | 'error' | 'timeout'>('loading');
   const [imageUrl, setImageUrl] = useState<string | null>(null);

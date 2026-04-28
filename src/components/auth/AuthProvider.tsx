@@ -215,6 +215,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.replace('/dashboard');
       return;
     }
+
+    // SCENARIO C: ORPHAN ACCOUNT (Auth but no Profile)
+    // If authed but profile missing on a protected route for too long, redirect to register
+    if (user && !profile && isDashboard && !currentPath.includes('/register')) {
+       console.warn("[AuthProvider] ORPHAN DETECTED. No profile for authed user. Redirecting to recovery...");
+       redirectCooldown.current = now;
+       router.replace('/register');
+       return;
+    }
+
+    // SCENARIO D: BANNED OPERATIVE
+    if (profile?.isBanned && isDashboard && currentPath !== '/banned') {
+       console.error("[AuthProvider] BANNED OPERATIVE DETECTED. Restricting access.");
+       redirectCooldown.current = now;
+       router.replace('/banned');
+       return;
+    }
   }, [user, profile, loading, isInitialized, pathname, router]);
 
   const refreshProfile = async () => {

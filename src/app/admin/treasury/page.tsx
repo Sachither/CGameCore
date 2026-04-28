@@ -2,8 +2,9 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useToast } from "@/context/ToastContext";
-import { getPendingWithdrawalsAction, adminApproveWithdrawalAction, adminRejectWithdrawalAction, getUserAuditHistoryAction, getPlatformTransactionsAction } from "@/app/actions/admin-actions";
-import { Landmark, Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, User, Search, Target, ShieldAlert, ExternalLink, Trophy, Skull, Calendar, ArrowUpRight, ArrowDownLeft, Wallet, History, ReceiptText, Download, Files } from "lucide-react";
+import { getPendingWithdrawalsAction, adminApproveWithdrawalAction, adminRejectWithdrawalAction, getUserAuditHistoryAction, getPlatformTransactionsAction, setupAdminPinAction } from "@/app/actions/admin-actions";
+import { Landmark, Loader2, CheckCircle2, XCircle, Clock, AlertTriangle, User, Search, Target, ShieldAlert, ExternalLink, Trophy, Skull, Calendar, ArrowUpRight, ArrowDownLeft, Wallet, History, ReceiptText, Download, Files, ShieldCheck } from "lucide-react";
+import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
 
 export default function AdminTreasuryPage() {
   const { user } = useAuth();
@@ -24,6 +25,11 @@ export default function AdminTreasuryPage() {
   const [ticketToApprove, setTicketToApprove] = useState<any>(null);
   const [ticketToReject, setTicketToReject] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState("");
+
+  // 🔒 [FORTRESS] Security PIN States
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isFirstTimePinSetup, setIsFirstTimePinSetup] = useState(false);
 
   const CRYPTO_NETWORKS: Record<string, string> = {
     'USDT_TRC20': 'usdttrc20',
@@ -151,18 +157,46 @@ export default function AdminTreasuryPage() {
 
   const confirmApprove = async () => {
     if (!user || !ticketToApprove) return;
-    setProcessingId(ticketToApprove.id);
     setFeedback("");
+    setIsPinModalOpen(true);
+  };
+
+  const handlePinSuccess = async (pin: string) => {
+    if (!user || !ticketToApprove) return;
+    
+    setPinError(null);
     const idToken = await user.getIdToken();
-    const result = await adminApproveWithdrawalAction(idToken, ticketToApprove.id);
+
+    // 🔒 [SECURITY] Handle First-Time Setup
+    if (isFirstTimePinSetup) {
+       const setupRes = await setupAdminPinAction(idToken, pin);
+       if (setupRes.success) {
+          setIsFirstTimePinSetup(false);
+          setIsPinModalOpen(false);
+          toast.success("SECURITY ACTIVATED", "Your master PIN has been established. You can now authorize the payout.");
+       } else {
+          setPinError(setupRes.error || "Setup failed.");
+       }
+       return;
+    }
+
+    setProcessingId(ticketToApprove.id);
+    const result = await adminApproveWithdrawalAction(idToken, ticketToApprove.id, pin);
+    
     if (result.success) {
       setFeedback("✓ Automatic payout initiated. Ticket Approved & Closed.");
+      setIsPinModalOpen(false);
       await fetchData();
+      setTicketToApprove(null);
     } else {
-      setFeedback(`✗ Error: ${result.error}`);
+      if (result.error?.includes("SECURITY_UNCONFIGURED")) {
+         setIsFirstTimePinSetup(true);
+         setPinError("INITIAL SETUP: No security PIN detected. Please enter a NEW 6-digit PIN to secure your account.");
+      } else {
+         setPinError(result.error || "Verification failed.");
+      }
     }
     setProcessingId(null);
-    setTicketToApprove(null);
   };
 
   const confirmReject = async () => {
@@ -721,6 +755,19 @@ export default function AdminTreasuryPage() {
           </div>
         </div>
       )}
+
+      {/* Security Terminal */}
+      <AdminPinTerminal
+        isOpen={isPinModalOpen}
+        onClose={() => {
+           setIsPinModalOpen(false);
+           setPinError(null);
+           setIsFirstTimePinSetup(false);
+        }}
+        onSuccess={handlePinSuccess}
+        title={isFirstTimePinSetup ? "Set Master Security PIN" : "Authorize Treasury Release"}
+        error={pinError}
+      />
     </div>
   );
 }

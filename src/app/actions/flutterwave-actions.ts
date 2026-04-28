@@ -82,7 +82,7 @@ export async function verifyFlutterwavePaymentAction(
     let uid: string;
     
     // 🛡️ SECURITY: Handle Administrative/System Bypass for background monitors
-    if (idToken === "SYSTEM_AUTOPILOT_TOKEN") {
+    if (idToken === process.env.SYSTEM_AUTOPILOT_TOKEN && process.env.SYSTEM_AUTOPILOT_TOKEN) {
        // This is called from payment-monitor.ts or recovery heartbeat
        // We must fetch the UID from the transaction record itself
        const previewSnap = await adminDb.collection("transactions").doc(txRef).get();

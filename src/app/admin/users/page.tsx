@@ -9,9 +9,12 @@ import {
 } from "@/app/actions/admin-actions";
 import {
   Search, Users, ShieldCheck, ShieldOff, Ban, Coins,
-  Loader2, CheckCircle2, AlertTriangle, Shield, X, UserCog, UserCheck, Calendar, Clock
+  Loader2, CheckCircle2, AlertTriangle, Shield, X, UserCog, UserCheck, Calendar, Clock, Lock, RotateCcw
 } from "lucide-react";
-import { setUserRoleAction } from "@/app/actions/admin-actions";
+import { setUserRoleAction, setupAdminPinAction, resetAdminSecurityPinAction } from "@/app/actions/admin-actions";
+import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
+import { useToast } from "@/context/ToastContext";
+import AdminConfirmModal from "@/components/admin/AdminConfirmModal";
 
 interface UserDoc {
   id: string;
@@ -156,18 +159,116 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
   const [showConfirm, setShowConfirm] = useState<{ open: boolean, type: 'ROLE' | 'BAN' | 'PARTNER', payload?: any }>({ open: false, type: 'ROLE' });
   const [customPartnerCode, setCustomPartnerCode] = useState("");
   const [partnerDuration, setPartnerDuration] = useState(2160); // Default 90 days (2160 hours)
+  const toast = useToast();
 
-  const act = async (fn: () => Promise<{ success: boolean; error?: string }>, label: string) => {
+  // 🔒 [FORTRESS] Security PIN States
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isFirstTimePinSetup, setIsFirstTimePinSetup] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ type: 'BALANCE' | 'BAN' | 'ROLE' | 'PARTNER' | 'PURGE', payload?: any } | null>(null);
+
+  // 🛡️ [SOVEREIGN] Confirmation Modal States
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant: 'danger' | 'warning' | 'info';
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    variant: 'danger'
+  });
+
+  const handlePinSuccess = async (pin: string) => {
+    if (!adminUser || !pendingAction) return;
+    const idToken = await adminUser.getIdToken();
+
     setLoading(true);
-    setFeedback("");
-    const result = await fn();
+    setPinError(null);
+
+    try {
+      if (isFirstTimePinSetup) {
+         const setupRes = await setupAdminPinAction(idToken, pin);
+         if (setupRes.success) {
+            setIsFirstTimePinSetup(false);
+            toast.success("SECURITY ACTIVATED", "Your master PIN has been established.");
+            await executePendingAction(idToken, pin);
+         } else {
+            setPinError(setupRes.error || "Setup failed.");
+            setLoading(false);
+         }
+         return;
+      }
+
+      await executePendingAction(idToken, pin);
+    } catch (err: any) {
+      console.error("[AdminUsers] handlePinSuccess error:", err);
+      setPinError(err.message || "Operation failed.");
+      setLoading(false);
+    }
+  };
+
+  const executePendingAction = async (idToken: string, pin: string) => {
+    if (!pendingAction) return;
+    
+    let result: { success: boolean; error?: string };
+
+    switch (pendingAction.type) {
+      case 'BALANCE':
+        const { amount, note } = pendingAction.payload;
+        result = await adjustUserBalanceAction(idToken, u.uid, amount, note, pin);
+        break;
+      case 'BAN':
+        const { isActuallyBanning, reason, duration } = pendingAction.payload;
+        result = await setBanStatusAction(idToken, u.uid, isActuallyBanning, reason, duration, pin);
+        break;
+      case 'ROLE':
+        result = await setUserRoleAction(idToken, u.uid, pendingAction.payload, pin);
+        break;
+      case 'PARTNER':
+        const { code, days } = pendingAction.payload;
+        result = await upgradeToPartnerAction(idToken, u.uid, code, days, pin);
+        break;
+      case 'PURGE':
+        result = await resetAdminSecurityPinAction(idToken, u.uid, pin);
+        break;
+      default:
+        result = { success: false, error: "UNKNOWN_ACTION" };
+    }
+
     if (result.success) {
-      setFeedback(`✓ ${label} successful.`);
+      setFeedback(`✓ ${pendingAction.type} updated.`);
+      setIsPinModalOpen(false);
       onRefresh();
+      setPendingAction(null);
+      if (pendingAction.type === 'PURGE') toast.success("SECURITY PURGED", "Admin security profile has been wiped.");
     } else {
-      setFeedback(`✗ Error: ${result.error}`);
+      if (result.error?.includes("SECURITY_UNCONFIGURED")) {
+         setIsFirstTimePinSetup(true);
+      } else {
+         setPinError(result.error || "Verification failed.");
+      }
     }
     setLoading(false);
+  };
+
+  const handlePurgePin = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "PURGE SECURITY PIN",
+      message: "CAUTION: This will physically wipe this admin's security PIN. They will be forced to set a NEW master key on their next action. Proceed?",
+      variant: 'danger',
+      confirmText: "Authorize Wipe",
+      onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setPendingAction({ type: 'PURGE' });
+        setIsPinModalOpen(true);
+      }
+    });
   };
 
   const handleBanCommit = async () => {
@@ -176,34 +277,24 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
     const reason = isActuallyBanning ? (banJustification || "Breach of Tactical Protocol.") : "";
     const duration = isActuallyBanning ? banDuration : 0;
     
-    const idToken = await adminUser.getIdToken();
-    await act(
-       () => setBanStatusAction(idToken, u.uid, isActuallyBanning, reason, duration), 
-       isActuallyBanning ? (duration > 0 ? `Suspension (${duration}h)` : "Permanent Ban") : "Unban"
-    );
+    setPendingAction({ type: 'BAN', payload: { isActuallyBanning, reason, duration } });
     setShowConfirm({ open: false, type: 'BAN' });
-    setBanJustification("");
+    setIsPinModalOpen(true);
   };
 
   const handleRoleCommit = async () => {
     if (!adminUser || !showConfirm.payload) return;
-    const newRole = showConfirm.payload;
-    const idToken = await adminUser.getIdToken();
-    await act(() => setUserRoleAction(idToken, u.uid, newRole), `Clearance set to ${newRole}`);
+    setPendingAction({ type: 'ROLE', payload: showConfirm.payload });
     setShowConfirm({ open: false, type: 'ROLE' });
+    setIsPinModalOpen(true);
   };
 
   const handlePartnerCommit = async () => {
     if (!adminUser) return;
-    const idToken = await adminUser.getIdToken();
     const durationDays = partnerDuration / 24;
-    await act(
-      () => upgradeToPartnerAction(idToken, u.uid, customPartnerCode, durationDays), 
-      `Upgraded to Partner (${durationDays} Days)`
-    );
+    setPendingAction({ type: 'PARTNER', payload: { code: customPartnerCode, days: durationDays } });
     setShowConfirm({ open: false, type: 'PARTNER' });
-    setCustomPartnerCode("");
-    setPartnerDuration(2160);
+    setIsPinModalOpen(true);
   };
 
   const handleBalanceAdjust = async () => {
@@ -212,32 +303,23 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
       setFeedback("✗ Please enter a positive adjustment amount.");
       return;
     }
-    
-    // Add Coins: Max 1000 limit
     if (adjustMode === 'ADD' && rawAmount > 1000) {
       setFeedback("✗ Maximum addition is 1000 coins.");
       return;
     }
-    
-    // Deduct Coins: Cannot exceed user's current balance
     if (adjustMode === 'DEDUCT' && rawAmount > (u.balanceCoins || 0)) {
       setFeedback(`✗ Cannot deduct more than user's balance (${u.balanceCoins || 0} coins).`);
       return;
     }
-    
     if (!balanceNote.trim()) {
       setFeedback("✗ Justification is required.");
       return;
     }
     const amount = adjustMode === 'ADD' ? rawAmount : -rawAmount;
     if (!adminUser) return;
-    const idToken = await adminUser.getIdToken();
-    await act(
-      () => adjustUserBalanceAction(idToken, u.uid, amount, balanceNote),
-      `Balance adjusted by ${amount > 0 ? "+" : ""}${amount}`
-    );
-    setBalanceAmount("");
-    setBalanceNote("");
+    
+    setPendingAction({ type: 'BALANCE', payload: { amount, note: balanceNote } });
+    setIsPinModalOpen(true);
   };
 
   const isPermanentlyBanned = u.isBanned && !u.suspendedUntil;
@@ -299,62 +381,41 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
               <div className="flex gap-1 p-1 bg-black border border-white/5 rounded-sm">
                  <button 
                    onClick={() => setAdjustMode('ADD')}
-                   className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all ${adjustMode === 'ADD' ? 'bg-green-500 text-black shadow-[0_0_15px_rgba(34,197,94,0.3)]' : 'text-gray-500 hover:text-white'}`}
+                   className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all ${adjustMode === 'ADD' ? 'bg-green-500 text-black' : 'text-gray-500 hover:text-white'}`}
                  >
                     Add Coins
                  </button>
                  <button 
                    onClick={() => setAdjustMode('DEDUCT')}
-                   className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all ${adjustMode === 'DEDUCT' ? 'bg-red-500 text-black shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'text-gray-500 hover:text-white'}`}
+                   className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all ${adjustMode === 'DEDUCT' ? 'bg-red-500 text-black' : 'text-gray-500 hover:text-white'}`}
                  >
                     Deduct Coins
                  </button>
               </div>
               <input 
                 type="number" 
-                min="1"
-                max={adjustMode === 'ADD' ? "1000" : String(u.balanceCoins || 0)}
                 value={balanceAmount} 
-                onChange={(e) => {
-                  const val = e.target.value;
-                  const numVal = parseInt(val) || 0;
-                  
-                  // For ADD mode: enforce 1-1000 limit
-                  if (adjustMode === 'ADD') {
-                    if (numVal > 1000) {
-                      setBalanceAmount('1000');
-                    } else {
-                      setBalanceAmount(val);
-                    }
-                  }
-                  // For DEDUCT mode: enforce balance limit
-                  else {
-                    if (numVal > (u.balanceCoins || 0)) {
-                      setBalanceAmount(String(u.balanceCoins || 0));
-                    } else {
-                      setBalanceAmount(val);
-                    }
-                  }
-                }}
-                onBlur={(e) => {
-                  // Additional validation on blur to catch paste operations
-                  const numVal = parseInt(e.target.value) || 0;
-                  if (adjustMode === 'ADD' && numVal > 1000) {
-                    setBalanceAmount('1000');
-                  } else if (adjustMode === 'DEDUCT' && numVal > (u.balanceCoins || 0)) {
-                    setBalanceAmount(String(u.balanceCoins || 0));
-                  }
-                }}
-                placeholder={adjustMode === 'ADD' ? "Coins Amount (Max 1000)" : `Amount to Deduct (Max ${u.balanceCoins || 0})`}
+                onChange={(e) => setBalanceAmount(e.target.value)}
+                placeholder={adjustMode === 'ADD' ? "Coins Amount (Max 1000)" : `Amount to Deduct`}
                 className="w-full bg-black border border-white/10 focus:border-accent text-white px-4 py-2.5 text-sm font-bold rounded-sm outline-none transition-all placeholder-gray-700" 
               />
-              <input type="text" value={balanceNote} onChange={(e) => setBalanceNote(e.target.value)} placeholder="Reason for change (User will see this)" className="w-full bg-black border border-white/10 focus:border-accent text-white px-4 py-2.5 text-sm font-bold rounded-sm outline-none transition-all placeholder-gray-700" />
+              <input type="text" value={balanceNote} onChange={(e) => setBalanceNote(e.target.value)} placeholder="Reason for change" className="w-full bg-black border border-white/10 focus:border-accent text-white px-4 py-2.5 text-sm font-bold rounded-sm outline-none transition-all placeholder-gray-700" />
               <button onClick={handleBalanceAdjust} disabled={loading} className="w-full py-2.5 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/20 text-yellow-400 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2">{loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Coins className="w-3 h-3" />} Apply Adjustment</button>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <button onClick={() => setShowConfirm({ open: true, type: 'BAN' })} disabled={loading} className={`py-3 border text-[9px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2 ${u.isBanned ? "bg-green-500/10 hover:bg-green-500/20 border-green-500/20 text-green-400" : "bg-red-500/10 hover:bg-red-500/20 border-red-500/20 text-red-400"}`}>{u.isBanned ? <><CheckCircle2 className="w-3 h-3" /> Unban Player</> : <><Ban className="w-3 h-3" /> Ban Player</>}</button>
+            
+            {u.isAdmin && (adminProfile?.role === 'SUPER_ADMIN' || adminProfile?.isSuperAdmin) && (
+              <button 
+                onClick={handlePurgePin}
+                disabled={loading}
+                className="col-span-2 py-3 bg-red-500/5 hover:bg-red-500/10 border border-red-500/20 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2"
+              >
+                <Lock className="w-3 h-3" /> Purge Admin Security PIN
+              </button>
+            )}
             <div className="relative group/role">
                <button disabled={loading} className="w-full py-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2"><UserCog className="w-3 h-3" /> Manage Role</button>
                <div className="absolute bottom-full left-0 w-full mb-2 bg-[#111] border border-white/10 rounded-sm shadow-2xl opacity-0 group-hover/role:opacity-100 pointer-events-none group-hover/role:pointer-events-auto transition-all p-1.5 z-20">
@@ -398,6 +459,31 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
            onDurationChange={showConfirm.type === 'PARTNER' ? setPartnerDuration : setBanDuration}
            type={showConfirm.type}
         />
+
+        {/* 🛡️ Sovereign Confirmation Terminal */}
+        <AdminConfirmModal
+          isOpen={confirmModal.isOpen}
+          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+          onConfirm={confirmModal.onConfirm}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          variant={confirmModal.variant}
+          confirmText={confirmModal.confirmText}
+        />
+
+        {/* Security Terminal */}
+        <AdminPinTerminal
+          isOpen={isPinModalOpen}
+          onClose={() => {
+             setIsPinModalOpen(false);
+             setPinError(null);
+             setIsFirstTimePinSetup(false);
+             setPendingAction(null);
+          }}
+          onSuccess={handlePinSuccess}
+          title={isFirstTimePinSetup ? "Set Master Security PIN" : "Authorize Administrative Change"}
+          error={pinError}
+        />
       </div>
     </div>
   );
@@ -419,7 +505,7 @@ export default function AdminUsersPage() {
         setResults([]);
         setError("");
       }
-    }, 400); // 400ms debounce for tactical scanning
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [query]);

@@ -8,7 +8,8 @@ import { auth, db } from '@/lib/firebase';
 import { validate, sanitize } from '@/lib/validation-utils';
 import { useToast } from "@/context/ToastContext";
 import GoogleLoginButton from "./GoogleLoginButton";
-import { sendWelcomeEmailAction } from '@/app/actions/user-actions';
+import { sendWelcomeEmailAction, registerUserAction } from '@/app/actions/user-actions';
+import { useAuth } from './AuthProvider';
 
 export default function RegisterForm() {
   const router = useRouter();
@@ -116,94 +117,32 @@ export default function RegisterForm() {
       );
       const user = userCredential.user;
 
-      // 2. Set Display Name in Auth
-      setError("FINALIZING IDENTITY...");
-      await updateProfile(user, {
-        displayName: formData.username
+      // 2. [AEGIS] Finalize Identity & Create Profile on Server
+      setError("ESTABLISHING SECURE PROFILE...");
+      const idToken = await user.getIdToken();
+      
+      const registerRes = await registerUserAction(idToken, {
+        username: formData.username,
+        email: formData.email,
+        phone: formData.phone,
+        referralCode: formData.referralCode
       });
 
-      // 3. Reserve Name & Phone
-      setError("CLAIMING GAMERTAG...");
-      const normalizedPhone = formData.phone.replace(/[^0-9]/g, "");
+      if (!registerRes.success) {
+        // If profile creation fails, we should ideally delete the Auth user
+        // but for now we just show the error. The AuthProvider will catch
+        // the missing profile and handle the redirect.
+        throw new Error(registerRes.error || "Profile initialization failed.");
+      }
+
+      setError("SUCCESS! SYNCING SECURE SESSION...");
       
-      try {
-        await Promise.all([
-          setDoc(doc(db, "usernames", lowerUsername), {
-            uid: user.uid
-          }),
-          setDoc(doc(db, "phones", normalizedPhone), {
-            uid: user.uid
-          })
-        ]);
-        console.log("[RegisterForm] Identity reservation successful.");
-      } catch (err) {
-        console.error("[RegisterForm] Identity reservation FAILED:", err);
-        throw err;
-      }
-
-      // 3.5 Check Referral Code (Optional)
-      let referrerUid = null;
-      if (formData.referralCode) {
-        setError("VERIFYING REFERRAL CODE...");
-        console.log(`[RegisterForm] Verifying referral code: ${formData.referralCode}`);
-        const referralRes = await fetch(
-          `/api/identity-check?field=referralCode&value=${encodeURIComponent(formData.referralCode)}`
-        );
-        const referralData = await referralRes.json();
-        console.log("[RegisterForm] Referral API Response:", referralData);
-        
-        if (referralData.success && referralData.exists) {
-          referrerUid = referralData.uid;
-          console.log(`[RegisterForm] RECRUITMENT LINK ESTABLISHED: ${referrerUid}`);
-        } else {
-          console.warn("[RegisterForm] No recruitment link found for this code.");
-        }
-      }
-
-      // 4. Create User Profile
-      setError("PREPARING YOUR VAULT...");
-      
-      // Generate a code for the new user
-      const myReferralCode = formData.username.replace(/[^a-zA-Z0-9]/g, "").slice(0, 4).toUpperCase() + 
-                           Math.random().toString(36).substring(2, 6).toUpperCase();
-
-      console.log(`[RegisterForm] Creating profile for UID: ${user.uid} with referredBy: ${referrerUid}`);
-      try {
-        await setDoc(doc(db, "users", user.uid), {
-          uid: user.uid,
-          username: formData.username,
-          usernameLower: formData.username.toLowerCase(),
-          email: formData.email,
-          phone: formData.phone,
-          avatarId: Math.floor(Math.random() * 20),
-          balanceCoins: 0,
-          totalWins: 0,
-          totalMatches: 0,
-          lifetimeDeposits: 0,
-          lifetimeWagered: 0,
-          createdAt: new Date().toISOString(),
-          status: "ACTIVE",
-          referredBy: referrerUid,
-          myReferralCode: myReferralCode
-        });
-        console.log("[RegisterForm] Profile successfully written to Firestore.");
-      } catch (err) {
-        console.error("[RegisterForm] Profile creation FAILED:", err);
-        throw err;
-      }
-
-      // 5. Send Welcome Email (Fire and forget, don't block registration)
-      sendWelcomeEmailAction(formData.email, formData.username, myReferralCode).catch(e => {
-        console.error("Failed to send welcome email:", e);
-      });
-
-      // 6. Cleanup Recruitment Data
+      // Cleanup Recruitment Data
       if (typeof window !== 'undefined') {
         localStorage.removeItem('pending_referral_code');
         localStorage.removeItem('pending_referral_uid');
       }
 
-      setError("SUCCESS! SYNCING SECURE SESSION...");
       // Explicit redirect to ensure immediate transition
       router.push('/dashboard');
     } catch (err: any) {

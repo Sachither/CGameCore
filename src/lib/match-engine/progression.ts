@@ -358,6 +358,7 @@ export async function distributeCircuitPrizes(
       description: `1ST PLACE: ${circuitData.title}`,
       amount: winnerShare,
       status: "COMPLETED",
+      circuitId: circuitRef.id,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
    });
 
@@ -399,6 +400,7 @@ export async function distributeCircuitPrizes(
          description: `2ND PLACE: ${circuitData.title}`,
          amount: runnerUpShare,
          status: "COMPLETED",
+         circuitId: circuitRef.id,
          createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
    }
@@ -410,10 +412,8 @@ export async function distributeCircuitPrizes(
 
    if (isPartnerTournament && creatorId) {
       const partnerRef = adminDb.collection("users").doc(creatorId);
-      // Use pre-fetched snap if available, otherwise we risk a read-after-write error
-      const pSnap = partnerSnap || await transaction.get(partnerRef);
-      
-      if (pSnap.exists) {
+      const pSnap = partnerSnap;
+      if (pSnap && pSnap.exists) {
          const partnerData = pSnap.data()!;
          const expiryDate = partnerData.partnerExpiresAt?.seconds ? new Date(partnerData.partnerExpiresAt.seconds * 1000) : null;
          

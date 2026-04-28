@@ -49,7 +49,7 @@ import {
  * SHARED HELPER: Dispatch In-App Notifications for Match Resolution
  * Ensures consistent messaging across all resolution paths (Admin, Consensus, Auto-Nuke)
  */
-async function dispatchMatchResolutionNotifications(matchId: string, status: string, championUid?: string | null) {
+export async function dispatchMatchResolutionNotifications(matchId: string, status: string, championUid?: string | null) {
   try {
      const closedSnap = await adminDb.collection("matches").doc(matchId).get();
      if (!closedSnap.exists) return;
@@ -79,14 +79,14 @@ async function dispatchMatchResolutionNotifications(matchId: string, status: str
               await createNotificationInternal(
                  pid,
                  "🏆 Victory Confirmed",
-                 `You won the ${gameLabel} match! ${reward > 0 ? `${reward} CR credited.` : 'Points updated.'}`,
+                 `HQ Verified: You won the ${gameLabel} match! ${reward > 0 ? `${reward} CR credited.` : 'Tournament advancement confirmed.'}`,
                  "MATCH"
               );
            } else {
               await createNotificationInternal(
                  pid,
                  "Combat Result: Defeat",
-                 `Your ${gameLabel} match resolved. Opponent victory verified.`,
+                 `HQ Verified: ${gameLabel} match resolved. Opponent victory verified by Command.`,
                  "MATCH"
               );
            }
@@ -250,9 +250,15 @@ export async function internalFinalizeMatchClosure(
   if (!matchData.circuitId && victoryReward > 0) {
     transaction.update(adminDb.collection("users").doc(championUid), { balanceCoins: admin.firestore.FieldValue.increment(victoryReward) });
     transaction.set(adminDb.collection("transactions").doc(), {
-      uid: championUid, type: "CREDIT", category: "MATCH_PRIZE",
-      description: `1ST PLACE WINNER: ${matchData.game} ${matchData.format}`,
-      amount: victoryReward, status: "COMPLETED", createdAt: admin.firestore.FieldValue.serverTimestamp()
+      uid: championUid, 
+      type: "CREDIT", 
+      category: "MATCH_PRIZE",
+      description: `1ST PLACE: ${matchData.game} ${matchData.format}`,
+      amount: victoryReward, 
+      status: "COMPLETED",
+      matchId: matchRef.id,
+      resolvedBy: operatorUid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     transaction.set(adminDb.collection("stats").doc("platform_finances"), {
@@ -749,6 +755,19 @@ export async function submitMatchResultAction(
         ...(kills !== undefined && { [`players.${uid}.kills`]: kills }),
         ...(requiresAdminReview && { [`players.${uid}.requiresAdminReview`]: true })
       };
+
+      // 🛡️ TRIBUNAL VISIBILITY: Record evidence in the dedicated subcollection for Moderator Hub gallery
+      if (proofUrl) {
+         const evidenceRef = matchRef.collection("match_evidence").doc(`result_${uid}`);
+         transaction.set(evidenceRef, {
+            id: `result_${uid}`,
+            url: proofUrl,
+            type: 'image',
+            ownerUid: uid,
+            username: matchData.players[uid]?.username || "Operator",
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+         }, { merge: true });
+      }
 
       const updatedPlayers = { ...matchData.players, [uid]: { ...matchData.players[uid], claim } };
       const playerList = Object.entries(updatedPlayers).map(([pid, p]) => ({ ...(p as any), uid: pid }));

@@ -237,6 +237,28 @@ export async function disputeMatchWithDiscordAction(formData: FormData) {
        disputedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
+    // 🛡️ TRIBUNAL VISIBILITY: Record dispute evidence in the dedicated subcollection
+    if (proofImageUrl) {
+       await matchRef.collection("match_evidence").doc(`dispute_${uid}_img`).set({
+          id: `dispute_${uid}_img`,
+          url: proofImageUrl,
+          type: 'image',
+          ownerUid: uid,
+          username: username,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+       });
+    }
+    if (proofVideoUrl) {
+       await matchRef.collection("match_evidence").doc(`dispute_${uid}_vid`).set({
+          id: `dispute_${uid}_vid`,
+          url: proofVideoUrl,
+          type: 'video',
+          ownerUid: uid,
+          username: username,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+       });
+    }
+
     // Notify Players
     for (const pId of matchData?.playerIds || []) {
        await createNotificationInternal(

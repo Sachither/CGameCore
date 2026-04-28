@@ -99,6 +99,18 @@ export async function requestWithdrawalAction(
          throw new Error("SECURITY: Your vault is locked during investigation.");
       }
 
+      // 🛡️ [FORTRESS] Guard 1: One pending withdrawal at a time
+      const pendingWithdrawals = await transaction.get(
+        adminDb.collection("withdrawals")
+          .where("uid", "==", uid)
+          .where("status", "==", "PENDING")
+          .limit(1)
+      );
+
+      if (!pendingWithdrawals.empty) {
+        throw new Error("PND-001: You already have a pending withdrawal request. Please wait for it to be processed before submitting another.");
+      }
+
       // --- TIERED AML GATE ---
       // FIX F-001: Use >= for boundary checks instead of >
       // Tier 1: Small Balance (<= 500 CR)
@@ -217,8 +229,8 @@ export async function getWalletTransactionsAction(idToken: string) {
      ]);
 
      // Game-internal categories to exclude from the wallet ledger (Only filter out standard match spam)
-     const GAME_CATEGORIES = new Set([
-       'MATCH_PRIZE', 'PROMO_TECHNICAL_WIN', 'FORFEIT_LOSS', 'MATCH_ENTRY', 'MATCH_REFUND',
+     const GAME_CATEGORIES_EXCLUDE = new Set([
+       'PROMO_TECHNICAL_WIN', 'FORFEIT_LOSS', 'MATCH_ENTRY', 'MATCH_REFUND',
      ]);
 
      const transactions: any[] = [];
@@ -226,16 +238,21 @@ export async function getWalletTransactionsAction(idToken: string) {
      // Process Deposits and Admin Adjustments (exclude game-internal categories)
      genericTransactionsSnap.forEach(doc => {
         const t = doc.data();
-        if (GAME_CATEGORIES.has(t.category)) return; // skip game records
+        if (GAME_CATEGORIES_EXCLUDE.has(t.category)) return; // skip game records
 
         const displayId = doc.id.startsWith('CGC-') ? doc.id.replace('CGC-DEP-', 'DEP-') : doc.id.substring(0, 8).toUpperCase();
 
         let displayType = "Wallet Adj";
         if (t.type === 'DEPOSIT' || t.category === 'DEPOSIT') displayType = "Deposit";
         else if (t.category === 'IDENTITY_FINE') displayType = "Identity Fine";
+        else if (t.category === 'MATCH_PRIZE') displayType = "Match Victory";
+        else if (t.category === 'TOURNAMENT_PRIZE' || t.category === 'PROMO_PRIZE') displayType = "Circuit Prize";
 
         let operationLabel = "System Audit";
         if (t.gateway === 'PAYSTACK' || t.gateway === 'FLUTTERWAVE') operationLabel = "Flutterwave";
+        else if (t.matchId) operationLabel = `Match #${t.matchId.substring(0, 8)}`;
+        else if (t.circuitId) operationLabel = `Circuit #${t.circuitId.substring(0, 8)}`;
+        else if (t.description) operationLabel = t.description;
         else if (t.gateway === 'NOWPAYMENTS' || t.gateway === 'CRYPTO') operationLabel = "Crypto Gateway";
         else if (t.description) operationLabel = String(t.description).substring(0, 30);
 

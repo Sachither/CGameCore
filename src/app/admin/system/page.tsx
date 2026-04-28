@@ -2,12 +2,15 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
-import { getAuditLogsAction, toggleSystemLockdownAction } from "@/app/actions/admin-actions";
+import { getAuditLogsAction, toggleSystemLockdownAction, resetAdminSecurityPinAction, getStaffListAction, setupAdminPinAction } from "@/app/actions/admin-actions";
 import { syncPlatformRatesAction } from "@/app/actions/rate-actions";
-import { ShieldAlert, History, Lock, Unlock, Loader2, AlertTriangle, TrendingUp, RefreshCcw, Landmark, Trash2, Database, Eraser } from "lucide-react";
+import { ShieldAlert, History, Lock, Unlock, Loader2, AlertTriangle, TrendingUp, RefreshCcw, Landmark, Trash2, Database, Eraser, ShieldCheck, Users, RotateCcw } from "lucide-react";
+import { useToast } from "@/context/ToastContext";
 import { resetPlatformFinancesAction, purgeFinancialLogsAction } from "@/app/actions/admin-financial-actions";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import AdminConfirmModal from "@/components/admin/AdminConfirmModal";
+import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
 
 export default function SuperAdminSystemPage() {
   const { user, profile, loading } = useAuth();
@@ -20,6 +23,37 @@ export default function SuperAdminSystemPage() {
   const [rates, setRates] = useState<any>(null);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [financeLoading, setFinanceLoading] = useState(false);
+  const [staffList, setStaffList] = useState<any[]>([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const toast = useToast();
+
+  // 🛡️ Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant: 'danger' | 'warning' | 'info';
+    confirmText?: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    variant: 'danger'
+  });
+
+  // 🔒 Security PIN States
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isFirstTimePinSetup, setIsFirstTimePinSetup] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+
+  type PendingAction = 
+    | { type: 'LOCKDOWN', active: boolean }
+    | { type: 'RESET_FINANCE' }
+    | { type: 'PURGE_LOGS' }
+    | { type: 'PURGE_PIN', targetUid: string };
   
   // Strict Super Admin Check (Supports modern role and legacy boolean)
   const isSuperAdmin = profile?.role === 'SUPER_ADMIN' || profile?.isSuperAdmin === true;
@@ -39,28 +73,139 @@ export default function SuperAdminSystemPage() {
           setRates(data?.rates || null);
         }
       });
+      loadStaff();
     }
   }, [isSuperAdmin]);
 
-  const handleToggleLockdown = async () => {
-    if (!user) return;
-    const confirm = window.confirm(
-      lockdownActive 
-        ? "Lift emergency lockdown? Matchmaking will resume." 
-        : "INITIALIZE EMERGENCY LOCKDOWN? All matchmaking and financial operations will be suspended!"
-    );
-    if (!confirm) return;
+  const loadStaff = async () => {
+    const idToken = await user?.getIdToken();
+    if (!idToken) return;
+    setStaffLoading(true);
+    try {
+      const res = await getStaffListAction(idToken);
+      if (res.success) setStaffList(res.staff || []);
+    } catch (e) {
+      console.error("Staff load failed", e);
+    }
+    setStaffLoading(false);
+  };
 
-    setLockdownLoading(true);
+  const handleToggleLockdown = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: lockdownActive ? "LIFT LOCKDOWN" : "AUTHORIZE LOCKDOWN",
+      message: lockdownActive 
+        ? "Lift emergency lockdown? Platform matchmaking and financial operations will resume immediately." 
+        : "INITIALIZE EMERGENCY LOCKDOWN? All matchmaking and financial operations platform-wide will be suspended!",
+      variant: lockdownActive ? 'info' : 'danger',
+      confirmText: lockdownActive ? "Resume Operations" : "Execute Lockdown",
+      onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setPendingAction({ type: 'LOCKDOWN', active: !lockdownActive });
+        setIsPinModalOpen(true);
+      }
+    });
+  };
+
+  const handleResetFinances = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "NUKE: FINANCIAL STATS",
+      message: "CRITICAL PROTOCOL: This will reset all aggregate profit, deposit, and payout stats to ZERO. This action is IRREVERSIBLE. Confirm treasury reset?",
+      variant: 'danger',
+      confirmText: "Wipe Stats",
+      onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setPendingAction({ type: 'RESET_FINANCE' });
+        setIsPinModalOpen(true);
+      }
+    });
+  };
+
+  const handlePurgeLogs = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "NUKE: TRANSACTION LEDGER",
+      message: "NUKE PROTOCOL: This will PERMANENTLY DELETE current transaction ledger entries. This makes past matches un-auditable. Proceed?",
+      variant: 'danger',
+      confirmText: "Purge Ledger",
+      onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setPendingAction({ type: 'PURGE_LOGS' });
+        setIsPinModalOpen(true);
+      }
+    });
+  };
+
+  const handlePurgePin = (targetUid: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "PURGE SECURITY PIN",
+      message: "CAUTION: This will physically wipe this admin's security PIN. They will be forced to set a NEW master key on their next action. Proceed?",
+      variant: 'warning',
+      confirmText: "Authorize Wipe",
+      onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setPendingAction({ type: 'PURGE_PIN', targetUid });
+        setIsPinModalOpen(true);
+      }
+    });
+  };
+
+  const handlePinSuccess = async (pin: string) => {
+    if (!user || !pendingAction) return;
+
     try {
       const idToken = await user.getIdToken();
-      const res = await toggleSystemLockdownAction(idToken, !lockdownActive, "Super Admin Override");
-      if (res.success) setLockdownActive(!lockdownActive);
-      else alert("Failed to toggle lockdown: " + res.error);
-    } catch (e) {
-      console.error("Lockdown toggle failed", e);
+      
+      // Handle PIN Setup if required
+      if (isFirstTimePinSetup) {
+        const setupResult = await setupAdminPinAction(idToken, pin);
+        if (!setupResult.success) {
+          setPinError(setupResult.error || "Setup failed");
+          return;
+        }
+      }
+
+      // Execute the pending action
+      let actionResult;
+      if (pendingAction.type === 'LOCKDOWN') {
+        setLockdownLoading(true);
+        actionResult = await toggleSystemLockdownAction(idToken, pendingAction.active, "Super Admin Override", pin);
+      } else if (pendingAction.type === 'RESET_FINANCE') {
+        setFinanceLoading(true);
+        actionResult = await resetPlatformFinancesAction(idToken, pin);
+      } else if (pendingAction.type === 'PURGE_LOGS') {
+        setFinanceLoading(true);
+        actionResult = await purgeFinancialLogsAction(idToken, pin);
+      } else if (pendingAction.type === 'PURGE_PIN') {
+        setStaffLoading(true);
+        actionResult = await resetAdminSecurityPinAction(idToken, pendingAction.targetUid, pin);
+      }
+
+      if (actionResult?.success) {
+        toast.success("ACTION AUTHORIZED", "The command has been executed successfully.");
+        setIsPinModalOpen(false);
+        setPendingAction(null);
+        
+        // Refresh UI
+        if (pendingAction.type === 'LOCKDOWN') setLockdownActive(pendingAction.active);
+        if (pendingAction.type === 'PURGE_PIN') loadStaff();
+      } else {
+        if (actionResult?.error?.includes("SECURITY_UNCONFIGURED")) {
+          setIsFirstTimePinSetup(true);
+        } else {
+          setPinError(actionResult?.error || "Invalid Security PIN");
+        }
+      }
+    } catch (error) {
+      console.error("Action execution failed:", error);
+      setPinError("System communication failure");
+    } finally {
+       setLockdownLoading(false);
+       setFinanceLoading(false);
+       setStaffLoading(false);
     }
-    setLockdownLoading(false);
   };
 
   const handleLoadGlobalAudit = async () => {
@@ -70,7 +215,7 @@ export default function SuperAdminSystemPage() {
     const idToken = await user.getIdToken();
     const res = await getAuditLogsAction(idToken, 200);
     if (res.success) setGlobalAuditData(res.logs || []);
-    else alert("Failed to fetch logs: " + res.error);
+    else toast.error("LOG DECRYPTION FAILED", res.error);
   };
 
   const handleSyncRates = async () => {
@@ -81,9 +226,9 @@ export default function SuperAdminSystemPage() {
       const res = await syncPlatformRatesAction(idToken);
       if (res.success) {
         setRates(res.rates);
-        alert("Rates synchronized successfully via external API.");
+        toast.success("RATES SYNCHRONIZED", "Exchange rates updated via external API.");
       } else {
-        alert("Sync failed: " + res.error);
+        toast.error("SYNC FAILED", res.error);
       }
     } catch (e) {
       console.error("Rate sync failed", e);
@@ -91,44 +236,12 @@ export default function SuperAdminSystemPage() {
     setRatesLoading(false);
   };
 
-  const handleResetFinances = async () => {
-    if (!user) return;
-    if (!window.confirm("CRITICAL PROTOCOL: This will reset all aggregate profit/deposit stats to ZERO. This action is IRREVERSIBLE. Proceed?")) return;
-    
-    setFinanceLoading(true);
-    try {
-      const idToken = await user.getIdToken();
-      const res = await resetPlatformFinancesAction(idToken);
-      if (res.success) alert("TREASURY RESET SUCCESSFUL. Aggregate stats are now zero.");
-      else alert("Reset failed: " + res.error);
-    } catch (e) {
-      console.error(e);
-    }
-    setFinanceLoading(false);
-  };
-
-  const handlePurgeLogs = async () => {
-    if (!user) return;
-    if (!window.confirm("NUKE PROTOCOL: This will PERMANENTLY DELETE current transaction ledger entries (up to 500 records). Proceed?")) return;
-    
-    setFinanceLoading(true);
-    try {
-      const idToken = await user.getIdToken();
-      const res = await purgeFinancialLogsAction(idToken);
-      if (res.success) alert(`PURGE SUCCESSFUL. ${res.count} records removed from ledger.`);
-      else alert("Purge failed: " + res.error);
-    } catch (e) {
-      console.error(e);
-    }
-    setFinanceLoading(false);
-  };
-
   if (loading || (!isSuperAdmin)) return (
     <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-red-500 animate-spin" /></div>
   );
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto pb-20">
       <div className="mb-8">
         <p className="text-[10px] text-red-500 font-black uppercase tracking-[0.3em] mb-1">Super Admin Exclusive</p>
         <h1 className="text-4xl font-black text-white italic uppercase tracking-tighter">
@@ -137,6 +250,29 @@ export default function SuperAdminSystemPage() {
       </div>
 
       <div className="space-y-6">
+        {/* PERSONAL SECURITY OVERRIDE */}
+        <div className="p-8 bg-blue-500/[0.02] border border-blue-500/10 rounded-sm">
+           <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-sm bg-blue-500/10 text-blue-500">
+                 <Lock className="w-6 h-6" />
+              </div>
+              <div>
+                 <h2 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">Personal Security Override</h2>
+                 <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Self-Service Credential Recovery</p>
+              </div>
+           </div>
+           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6 leading-relaxed max-w-2xl">
+              As the Master operative, you can purge your own security hash. You will be prompted to set a NEW 6-digit master key on your next authorized action.
+           </p>
+           <button 
+             onClick={() => handlePurgePin(user?.uid || '')}
+             disabled={staffLoading}
+             className="px-6 py-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2"
+           >
+             {staffLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><RotateCcw className="w-4 h-4" /> Reset My Master PIN</>}
+           </button>
+        </div>
+
         {/* LOCKDOWN TOGGLE */}
         <div className={`p-8 border rounded-sm transition-colors ${lockdownActive ? 'bg-red-500/10 border-red-500 shadow-[0_0_50px_rgba(239,68,68,0.15)] text-red-500' : 'bg-[#0a0a0a] border-white/5 text-gray-400'}`}>
           <div className="flex items-center gap-4 mb-4">
@@ -164,6 +300,58 @@ export default function SuperAdminSystemPage() {
           >
             {lockdownLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : lockdownActive ? "LIFT LOCKDOWN" : "AUTHORIZE LOCKDOWN"}
           </button>
+        </div>
+
+        {/* STAFF SECURITY MANAGEMENT */}
+        <div className="p-8 bg-[#0a0a0a] border border-red-500/20 rounded-sm">
+           <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 rounded-sm bg-red-500/10 text-red-500">
+                 <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                 <h2 className="text-xl font-black text-white italic uppercase tracking-tighter leading-none mb-1">Staff Security & Recovery</h2>
+                 <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Emergency PIN Overrides & Oversight</p>
+              </div>
+           </div>
+
+           {staffLoading && staffList.length === 0 ? (
+              <div className="py-12 text-center border border-dashed border-white/5 rounded-sm">
+                 <Loader2 className="w-5 h-5 text-gray-800 animate-spin mx-auto" />
+              </div>
+           ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                 {staffList.map((staff) => (
+                    <div key={staff.uid} className="p-4 bg-black border border-white/5 rounded-sm hover:border-red-500/20 transition-all group">
+                       <div className="flex items-start justify-between mb-3">
+                          <div>
+                             <p className="text-white font-black text-xs uppercase italic">{staff.username}</p>
+                             <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest">{staff.email}</p>
+                          </div>
+                          <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-sm border ${staff.role === 'SUPER_ADMIN' ? 'bg-red-500/10 text-red-400 border-red-500/20' : 'bg-blue-500/10 text-blue-400 border-blue-500/20'}`}>
+                             {staff.role}
+                          </span>
+                       </div>
+                       
+                       <button 
+                         onClick={() => handlePurgePin(staff.uid)}
+                         disabled={staffLoading}
+                         className="w-full py-2 bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 text-red-500 text-[8px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2"
+                       >
+                         {staffLoading && staffList.find(s => s.uid === staff.uid) ? <Loader2 className="w-3 h-3 animate-spin" /> : <><Lock className="w-3 h-3" /> Purge Security PIN</>}
+                       </button>
+                    </div>
+                 ))}
+              </div>
+           )}
+
+            <div className="flex justify-end mt-4">
+               <button 
+                 onClick={loadStaff}
+                 className="text-[8px] font-black uppercase tracking-widest text-gray-600 hover:text-white flex items-center gap-2 transition-all"
+               >
+                 <RefreshCcw className="w-2.5 h-2.5" /> Force Staff Synchronization
+               </button>
+            </div>
         </div>
 
         {/* CURRENCY MANAGEMENT */}
@@ -281,7 +469,6 @@ export default function SuperAdminSystemPage() {
               className="px-6 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-sm hover:bg-blue-500/20 transition-all font-black text-[9px] uppercase tracking-widest flex items-center gap-2"
             >
                {globalAuditView ? "Secure Archive" : "Decrypt Logs"}
-               {lockdownLoading && <Loader2 className="w-3 h-3 animate-spin" />}
             </button>
           </div>
           
@@ -324,6 +511,31 @@ export default function SuperAdminSystemPage() {
           )}
         </div>
       </div>
+
+      {/* 🛡️ Sovereign Confirmation Terminal */}
+      <AdminConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        variant={confirmModal.variant}
+        confirmText={confirmModal.confirmText}
+      />
+
+      {/* 🔒 Security Terminal */}
+      <AdminPinTerminal
+        isOpen={isPinModalOpen}
+        onClose={() => {
+           setIsPinModalOpen(false);
+           setPinError(null);
+           setIsFirstTimePinSetup(false);
+           setPendingAction(null);
+        }}
+        onSuccess={handlePinSuccess}
+        title={isFirstTimePinSetup ? "Set Master Security PIN" : "Authorize Strategic Command"}
+        error={pinError}
+      />
     </div>
   );
 }
