@@ -138,10 +138,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsInitialized(true);
           } else {
             console.warn("[AuthProvider] No Firestore profile found for authed user.");
-            // Don't set loading false yet - allow registration or auto-repair to happen
-            // But if on dashboard, we might need a fallback
-            if (pathnameRef.current.startsWith('/dashboard')) {
-               // Initializing for a new user who just signed up
+            
+            // 🛡️ TACTICAL INITIALIZATION: For new users, allow the UI to render on protected routes
+            // so they don't get stuck on a loading screen while the profile is being created.
+            const p = pathnameRef.current;
+            const isProtectedRoute = p.startsWith('/dashboard') || p.startsWith('/match') || 
+                                    p.startsWith('/profile') || p.startsWith('/wallet') || 
+                                    p.startsWith('/admin');
+
+            if (isProtectedRoute) {
                setIsInitialized(true); 
                setLoading(false);
             }
@@ -219,6 +224,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // SCENARIO C: ORPHAN ACCOUNT (Auth but no Profile)
     // If authed but profile missing on a protected route for too long, redirect to register
     if (user && !profile && isDashboard && !currentPath.includes('/register')) {
+       // 🛡️ GRACE PERIOD: Allow 5 seconds for Firestore profile propagation after account creation
+       const creationTime = new Date(user.metadata.creationTime || 0).getTime();
+       const secondsSinceCreation = (Date.now() - creationTime) / 1000;
+       
+       if (secondsSinceCreation < 5) {
+          console.log("[AuthProvider] Auth detected but profile pending. Holding for propagation...");
+          return;
+       }
+
        console.warn("[AuthProvider] ORPHAN DETECTED. No profile for authed user. Redirecting to recovery...");
        redirectCooldown.current = now;
        router.replace('/register');
