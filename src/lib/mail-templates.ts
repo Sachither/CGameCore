@@ -19,13 +19,16 @@ export function getWelcomeEmailTemplate(username: string) {
         You have been successfully enlisted into CGameCore. Your neural link is active, and your wallet is primed for deployment. Complete your profile and enter the matchmaking zone to start your career.
       </p>
 
-      <a href="https://cgamecore.com/dashboard" style="display: block; background-color: #ff4d4d; color: #000; text-decoration: none; padding: 15px; text-align: center; font-weight: 900; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
+      <a href="https://cgamecore.online/dashboard" style="display: block; background-color: #ff4d4d; color: #000; text-decoration: none; padding: 15px; text-align: center; font-weight: 900; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
         Enter The Lobby
       </a>
 
-      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px;">
-        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; text-align: center;">
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
           This is an automated transmission from Command Center. Do not reply.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          No longer want tactical updates? <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">Unsubscribe</a>
         </p>
       </div>
     </div>
@@ -53,13 +56,18 @@ export function getSummonEmailTemplate(username: string, matchId: string) {
         A dispute has been triggered in a lobby you deployed (Match #${matchId.slice(-6)}). Your presence is mandatory for the resolution protocol.
       </p>
 
-      <a href="https://cgamecore.com/match/${matchId}" style="display: block; background-color: #ff4d4d; color: #000; text-decoration: none; padding: 15px; text-align: center; font-weight: 900; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
+      <a href="https://cgamecore.online/match/${matchId}" style="display: block; background-color: #ff4d4d; color: #000; text-decoration: none; padding: 15px; text-align: center; font-weight: 900; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
         Join Judgement Room
       </a>
 
-      <p style="font-size: 10px; color: #ff4d4d; margin-top: 20px; text-transform: uppercase; font-weight: 800; text-align: center; opacity: 0.7;">
-        Failure to respond may result in temporary partner suspension.
-      </p>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          This is an automated transmission from Command Center. Do not reply.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Manage notifications <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">here</a>
+        </p>
+      </div>
     </div>
   `;
 }
@@ -79,7 +87,14 @@ export function getExtractionEmailTemplate(username: string, amount: string, met
         <p style="margin: 15px 0 5px 0; font-size: 12px; color: #666;">Method:</p>
         <p style="margin: 0; font-size: 14px; font-weight: 900; color: #aaa;">${method}</p>
       </div>
-      <p style="font-size: 12px; color: #444; text-align: center;">Funds should arrive in your local account within the tactical window (1-24 hours).</p>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          Tactical Extraction Successful.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Manage your account notifications <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">here</a>
+        </p>
+      </div>
     </div>
   `;
 }
@@ -96,7 +111,14 @@ export function getMatchStartEmailTemplate(username: string, matchId: string, ga
       <div style="background: #111; padding: 20px; border: 1px solid #222; margin: 20px 0; text-align: center;">
         <p style="margin: 0; font-size: 18px; font-weight: 900; letter-spacing: 2px;">MATCH #${matchId.slice(-6)}</p>
       </div>
-      <a href="https://cgamecore.com/match/${matchId}" style="display: block; background: #ff4d4d; color: #000; text-align: center; padding: 15px; font-weight: 900; text-decoration: none; text-transform: uppercase;">ENTER THE ZONE</a>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          Combat Deployment Sequence Engaged.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Too many alerts? <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">Adjust settings</a>
+        </p>
+      </div>
     </div>
   `;
 }
@@ -114,7 +136,14 @@ export function getSecurityAlertEmailTemplate(username: string, ip: string, devi
         <p style="margin: 5px 0; font-size: 11px; color: #666;">IP Address: <span style="color: #fff;">${ip}</span></p>
         <p style="margin: 5px 0; font-size: 11px; color: #666;">Device: <span style="color: #fff;">${device}</span></p>
       </div>
-      <p style="font-size: 11px; color: #f59e0b; font-weight: 900;">If this wasn't you, initiate account lockdown immediately in settings.</p>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          Secure Access Monitoring Active.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Safety first. Manage alerts <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">here</a>
+        </p>
+      </div>
     </div>
   `;
 }
@@ -132,7 +161,15 @@ export function getRetentionEmailTemplate(username: string) {
         <p style="color: #fff; font-size: 16px; font-weight: 900;">RETENTION BONUS: 50 COINS</p>
         <p style="font-size: 10px; color: #444;">Login today to claim your gear maintenance credits.</p>
       </div>
-      <a href="https://cgamecore.com/dashboard" style="display: block; background: #3b82f6; color: #fff; text-align: center; padding: 15px; font-weight: 900; text-decoration: none; text-transform: uppercase;">RE-ENLIST NOW</a>
+      <a href="https://cgamecore.online/dashboard" style="display: block; background: #3b82f6; color: #fff; text-align: center; padding: 15px; font-weight: 900; text-decoration: none; text-transform: uppercase;">RE-ENLIST NOW</a>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          Tactical Reactivation Bonus expires in 24h.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Don't want these? <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">Unsubscribe</a>
+        </p>
+      </div>
     </div>
   `;
 }
@@ -152,6 +189,14 @@ export function getPartnerUpgradeEmailTemplate(username: string, duration: strin
         <p style="font-size: 10px; color: #444; margin-top: 10px;">Use this to earn 50% commission on your squad's matches.</p>
       </div>
       <a href="https://cgamecore.com/dashboard/partner" style="display: block; background: #3b82f6; color: #fff; text-align: center; padding: 15px; font-weight: 900; text-decoration: none; text-transform: uppercase;">ACCESS PARTNER PORTAL</a>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          Welcome to the Inner Circle, Partner.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Partner communications management <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">here</a>
+        </p>
+      </div>
     </div>
   `;
 }
@@ -169,6 +214,14 @@ export function getPartnerRevokedEmailTemplate(username: string) {
         <p style="font-size: 12px; color: #aaa;">Your clearance level has been downgraded to standard user. Access to the Partner Portal is restricted, and revenue share commissions have been halted.</p>
       </div>
       <p style="font-size: 11px; color: #ef4444; font-weight: 900;">If you believe this is an error, please contact Support.</p>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          Contract Conclusion Finalized.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Unsubscribe from all future intel <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">here</a>
+        </p>
+      </div>
     </div>
   `;
 }
