@@ -35,8 +35,13 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
     const { data, error } = await resend.emails.send({
       from: 'CGame Intelligence <command@mail.cgamecore.online>',
       to: [to],
+      replyTo: 'support@cgamecore.online',
       subject: subject,
       html: html,
+      headers: {
+        'List-Unsubscribe': '<https://cgamecore.online/unsubscribe>',
+        'X-Entity-Ref-ID': Math.random().toString(36).substring(2, 12)
+      },
       tags: [
         { name: 'category', value: 'tactical_onboarding' },
         { name: 'environment', value: process.env.NODE_ENV || 'development' }
