@@ -109,25 +109,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const authUnsub = onAuthStateChanged(auth, async (firebaseUser) => {
       console.log("[AuthProvider] Auth State Changed:", firebaseUser?.email || "GUEST");
-      
+
       if (firebaseUser) {
         setUser(firebaseUser);
         setProfile(null); // 🛡️ Clear old profile immediately to prevent stale redirects
         // Reset session start time when a new user is detected
         sessionStartRef.current = Date.now();
-        
+
         const token = await firebaseUser.getIdToken();
         setIdToken(token);
 
         // Subscribe to Firestore Profile
         const docRef = doc(db, "users", firebaseUser.uid);
         if (profileUnsub) profileUnsub();
-        
+
         profileUnsub = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data() as UserProfile;
             setProfile(data);
-            
+
             // Sync cache
             const safeCache = {
               uid: data.uid,
@@ -141,7 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               currency: data.currency
             };
             localStorage.setItem('cgame_profile', JSON.stringify(safeCache));
-            
+
             setLoading(false);
             setIsInitialized(true);
           } else {
@@ -177,77 +177,85 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 3. [NAVIGATION BRAIN] The only place redirects are allowed
-    // 🧠 TACTICAL NAVIGATION BRAIN
-    useEffect(() => {
-      // Guard: Wait for system readiness
-      if (!isInitialized || loading) return;
+  // 🧠 TACTICAL NAVIGATION BRAIN
+  useEffect(() => {
+    // Guard: Wait for system readiness
+    if (!isInitialized || loading) return;
 
-      // Guard: Anti-loop cooldown
-      const now = Date.now();
-      if (now - redirectCooldown.current < 3000) return;
+    // Guard: Anti-loop cooldown
+    const now = Date.now();
+    if (now - redirectCooldown.current < 3000) return;
 
-      const currentPath = pathname || "/";
-      const isAuthPage = currentPath === '/' || currentPath.startsWith('/login') || currentPath.startsWith('/register');
-      const isDashboard = currentPath.startsWith('/dashboard') || currentPath.startsWith('/match') || 
-                          currentPath.startsWith('/profile') || currentPath.startsWith('/admin');
+    const currentPath = pathname || "/";
+    const isAuthPage = currentPath === '/' || currentPath.startsWith('/login') || currentPath.startsWith('/register');
+    const isDashboard = currentPath.startsWith('/dashboard') || currentPath.startsWith('/match') ||
+      currentPath.startsWith('/profile') || currentPath.startsWith('/admin');
 
-      // LOGIC 1: Guest Access Control
-      if (!user) {
-        if (isDashboard) {
-          console.warn("[Auth] Guest detected on protected route. Redirecting to login.");
+    // LOGIC 1: Guest Access Control (with persistence grace)
+    if (!user) {
+      if (isDashboard) {
+        // 🛡️ Persistence Grace: Allow 3 seconds for Firebase to recover from cache
+        // This prevents "flicker" kicks on mobile reloads
+        const sessionTime = (Date.now() - sessionStartRef.current) / 1000;
+        if (sessionTime < 5) {
+          console.log("[Auth] User null but session fresh. Holding for cache recovery...");
+          return;
+        }
+
+        console.warn("[Auth] Guest detected on protected route. Redirecting to login.");
+        redirectCooldown.current = now;
+        router.replace('/login');
+      }
+      return;
+    }
+
+    // LOGIC 2: Authenticated User (Orphan vs Operative)
+    if (user) {
+      const sessionTime = (Date.now() - sessionStartRef.current) / 1000;
+
+      // A: User lacks a Firestore profile
+      if (!profile) {
+        const gracePeriod = isDashboard ? 8 : 3;
+
+        if (sessionTime < gracePeriod) {
+          if (!isSyncing) setIsSyncing(true);
+          return;
+        }
+
+        // Grace period expired - Definitely an orphan
+        if (isSyncing) setIsSyncing(false);
+        if (!currentPath.startsWith('/register')) {
+          console.warn("[Auth] Orphan account detected after grace period. Forcing enlistment.");
           redirectCooldown.current = now;
-          router.replace('/login');
+          router.replace('/register');
         }
         return;
       }
 
-      // LOGIC 2: Authenticated User (Orphan vs Operative)
-      if (user) {
-        const sessionTime = (Date.now() - sessionStartRef.current) / 1000;
-        
-        // A: User lacks a Firestore profile
-        if (!profile) {
-          const gracePeriod = isDashboard ? 8 : 3;
-          
-          if (sessionTime < gracePeriod) {
-            if (!isSyncing) setIsSyncing(true);
-            return;
-          }
+      // B: User has a profile (Operative)
+      if (isSyncing) setIsSyncing(false);
 
-          // Grace period expired - Definitely an orphan
-          if (isSyncing) setIsSyncing(false);
-          if (!currentPath.startsWith('/register')) {
-            console.warn("[Auth] Orphan account detected after grace period. Forcing enlistment.");
-            redirectCooldown.current = now;
-            router.replace('/register');
-          }
-          return;
-        }
-
-        // B: User has a profile (Operative)
-        if (isSyncing) setIsSyncing(false);
-        
-        // If they are on any auth/landing page (including register), they should be in the dashboard
-        if (isAuthPage) {
-          console.log("[Auth] Operative detected on auth page. Redirecting to Basecamp.");
-          redirectCooldown.current = now;
-          router.replace('/dashboard');
-          return;
-        }
-        
-        // C: Banned check
-        if (profile?.isBanned && currentPath !== '/banned' && isDashboard) {
-           redirectCooldown.current = now;
-           router.replace('/banned');
-        }
+      // If they are on any auth/landing page (including register), they should be in the dashboard
+      if (isAuthPage) {
+        console.log("[Auth] Operative detected on auth page. Redirecting to Basecamp.");
+        redirectCooldown.current = now;
+        router.replace('/dashboard');
+        return;
       }
-    }, [user, profile?.uid, loading, isInitialized, pathname, router]);
+
+      // C: Banned check
+      if (profile?.isBanned && currentPath !== '/banned' && isDashboard) {
+        redirectCooldown.current = now;
+        router.replace('/banned');
+      }
+    }
+  }, [user, profile?.uid, loading, isInitialized, pathname, router]);
 
   const refreshProfile = async () => {
     if (!user) return;
     console.log("[AuthProvider] Manual profile refresh triggered. Resetting grace period...");
     sessionStartRef.current = Date.now(); // 🛡️ Grant fresh grace period for propagation
-    
+
     try {
       const docRef = doc(db, "users", user.uid);
       const snap = await getDoc(docRef);
