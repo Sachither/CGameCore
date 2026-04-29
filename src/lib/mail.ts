@@ -10,8 +10,10 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  */
 export async function sendTacticalEmail(to: string, subject: string, html: string) {
   try {
-    if (!process.env.RESEND_API_KEY || process.env.RESEND_API_KEY === 're_123') {
-      console.warn("⚠️ MAIL SYSTEM: Skipping email send. RESEND_API_KEY not configured.");
+    if (!process.env.RESEND_API_KEY || 
+        process.env.RESEND_API_KEY === 're_123' || 
+        process.env.RESEND_API_KEY === 're_your_actual_key_here') {
+      console.warn("⚠️ MAIL SYSTEM: Skipping email send. RESEND_API_KEY is still a placeholder.");
       return { success: false, error: "API Key Missing" };
     }
 
@@ -27,6 +29,8 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
       return { success: false, error: "Daily limit exceeded" };
     }
 
+    console.log(`[MailSystem] Attempting to send tactical email to ${to}...`);
+
     // 2. Dispatch Email
     const { data, error } = await resend.emails.send({
       from: 'CGame Intelligence <command@mail.cgamecore.online>',
@@ -36,6 +40,7 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
     });
 
     if (error) {
+      console.error("🛑 MAIL SYSTEM: Resend API Error:", error);
       // Gracefully handle Resend's own rate limit error
       if (error.name === 'rate_limit_exceeded') {
         console.error("🛑 MAIL SYSTEM: Resend reported rate limit exceeded.");
