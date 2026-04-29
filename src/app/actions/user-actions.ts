@@ -320,7 +320,7 @@ export async function registerUserAction(
     });
 
     // 4. Dispatch Welcome Sequence
-    await sendWelcomeEmailAction(formData.email, username, result.myReferralCode).catch(e => {
+    await sendWelcomeEmailAction(formData.email, username).catch(e => {
        console.error("[Aegis] Welcome email failed (non-critical):", e);
     });
 
@@ -506,9 +506,9 @@ export async function createPartnerTournamentAction(
  * SERVER ACTION: Send Welcome Email
  * Dispatches the tactical onboarding sequence to a new operative.
  */
-export async function sendWelcomeEmailAction(email: string, username: string, referralCode: string) {
+export async function sendWelcomeEmailAction(email: string, username: string) {
   try {
-    const html = getWelcomeEmailTemplate(username, referralCode);
+    const html = getWelcomeEmailTemplate(username);
     const res = await sendTacticalEmail(email, "OPERATIVE ENLISTED: Welcome to the Arena", html);
     return res;
   } catch (error: any) {

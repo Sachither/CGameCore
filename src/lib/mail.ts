@@ -33,8 +33,7 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
 
     // 2. Dispatch Email
     const { data, error } = await resend.emails.send({
-      // 🛡️ TACTICAL BYPASS: Use Resend's default sender until DNS records for @mail.cgamecore.online are verified
-      from: 'CGame Intelligence <onboarding@resend.dev>',
+      from: 'CGame Intelligence <command@mail.cgamecore.online>',
       to: [to],
       subject: subject,
       html: html,

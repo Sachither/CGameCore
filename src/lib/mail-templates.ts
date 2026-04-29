@@ -2,7 +2,7 @@
  * TEMPLATE: Welcome Operative
  * High-impact HTML template for new recruits.
  */
-export function getWelcomeEmailTemplate(username: string, referralCode: string) {
+export function getWelcomeEmailTemplate(username: string) {
   return `
     <div style="background-color: #000; color: #fff; font-family: 'Inter', sans-serif; padding: 40px; border: 1px solid #333; max-width: 600px; margin: auto;">
       <div style="border-bottom: 2px solid #ff4d4d; padding-bottom: 20px; margin-bottom: 30px;">
@@ -16,14 +16,8 @@ export function getWelcomeEmailTemplate(username: string, referralCode: string) 
       <h2 style="font-size: 24px; font-weight: 900; text-transform: uppercase; margin-bottom: 20px;">Welcome to the Arena, Operative ${username}.</h2>
       
       <p style="color: #aaa; font-size: 14px; line-height: 1.6; margin-bottom: 30px;">
-        You have been successfully enlisted into CGameCore. Your neural link is active, and your wallet is primed for deployment.
+        You have been successfully enlisted into CGameCore. Your neural link is active, and your wallet is primed for deployment. Complete your profile and enter the matchmaking zone to start your career.
       </p>
-
-      <div style="background-color: #111; border: 1px solid #222; padding: 20px; text-align: center; margin-bottom: 30px;">
-        <p style="text-transform: uppercase; font-weight: 900; font-size: 10px; color: #ff4d4d; letter-spacing: 2px; margin-bottom: 10px;">Your Recruitment Code</p>
-        <p style="font-family: monospace; font-size: 32px; font-weight: 900; letter-spacing: 4px; margin: 0;">${referralCode}</p>
-        <p style="font-size: 10px; color: #555; margin-top: 10px; text-transform: uppercase; font-weight: 800;">Use this to build your own squad and earn commissions.</p>
-      </div>
 
       <a href="https://cgamecore.com/dashboard" style="display: block; background-color: #ff4d4d; color: #000; text-decoration: none; padding: 15px; text-align: center; font-weight: 900; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">
         Enter The Lobby
