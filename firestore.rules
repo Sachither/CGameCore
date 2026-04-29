@@ -13,8 +13,7 @@ service cloud.firestore {
     }
 
     function getUserData() {
-      // Use exists() check as a safe guard. get().data is only called if it exists.
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) 
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data 
         : {};
     }
@@ -24,10 +23,8 @@ service cloud.firestore {
     }
 
     function isSuspended() {
-      let userData = getUserData();
       return isSignedIn() && 
-             userData.get('suspendedUntil', null) != null && 
-             userData.suspendedUntil.toMillis() > request.time.toMillis();
+             getUserData().get('suspendedUntil', request.time).toMillis() > request.time.toMillis();
     }
 
     function isSuperAdmin() {
@@ -58,11 +55,10 @@ service cloud.firestore {
 
     // Rate limiting helper
     function getRateLimitCount(key, intervalSeconds) {
-      let limitId = request.auth.uid + "_" + key;
-      let limitExists = exists(/databases/$(database)/documents/rate_limits/$(limitId));
-      let data = limitExists ? get(/databases/$(database)/documents/rate_limits/$(limitId)).data : null;
-      let now = request.time.toMillis();
-      return (data == null || data.get('resetAt', 0) < now) ? 0 : data.get('count', 0);
+      return (
+        !exists(/databases/$(database)/documents/rate_limits/$(request.auth.uid + "_" + key)) ||
+        get(/databases/$(database)/documents/rate_limits/$(request.auth.uid + "_" + key)).data.get('resetAt', 0) < request.time.toMillis()
+      ) ? 0 : get(/databases/$(database)/documents/rate_limits/$(request.auth.uid + "_" + key)).data.get('count', 0);
     }
 
     // --- IDENTITY RESERVATION ---
@@ -114,18 +110,13 @@ service cloud.firestore {
 
     // --- MATCHES (LOBBY & PRIVATE) ---
     match /matches/{matchId} {
-      // FIX F-004: Add expiry check - deny access to expired matches
-      function isExpired() {
-        return resource.data.get('expiresAt', null) != null && 
-               resource.data.expiresAt.toMillis() <= request.time.toMillis();
-      }
       
-      allow read: if isSignedIn() && !isBanned() && !isSuspended() && !isExpired() && (
-        resource.data.get('status', 'WAITING') in ['WAITING', 'READY', 'WAITING_FOR_OPPONENT'] || 
+      allow read: if isSignedIn() && (
+        resource.data.get('status', 'WAITING') in ['WAITING', 'READY', 'WAITING_FOR_OPPONENT', 'IN_PROGRESS', 'RESOLVING', 'DISPUTED', 'COMPLETED', 'CANCELLED'] || 
         resource.data.get('circuitId', null) != null || 
         resource.data.get('leagueId', null) != null ||
-        request.auth.uid in resource.data.playerIds ||
-        resource.data.creatorId == request.auth.uid ||
+        request.auth.uid in resource.data.get('playerIds', []) ||
+        resource.data.get('creatorId', '') == request.auth.uid ||
         isStaff() 
       );
       
@@ -135,13 +126,10 @@ service cloud.firestore {
     // --- MESSAGES (MATCH CHAT) ---
     match /matches/{matchId}/messages/{messageId} {
       function canAccessChat() {
-        let matchDoc = get(/databases/$(database)/documents/matches/$(matchId)).data;
-        let pIds = matchDoc.get('playerIds', []);
-        let pMap = matchDoc.get('players', {});
         return isSignedIn() && (
-          (request.auth.uid in pIds || 
-           request.auth.uid in pMap || 
-           matchDoc.get('creatorId', '') == request.auth.uid) 
+          (request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.get('playerIds', []) || 
+           request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.get('players', {}) || 
+           get(/databases/$(database)/documents/matches/$(matchId)).data.get('creatorId', '') == request.auth.uid) 
              && !isBanned() && !isSuspended()
           || isStaff()
         );

@@ -9,6 +9,7 @@ import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import CreateChallengeModal from '@/components/dashboard/CreateChallengeModal';
 import { Loader2, Trophy, Users, Flame, AlertCircle, ChevronRight } from 'lucide-react';
+import { getSystemConfigClient, SystemConfig, DEFAULT_CONFIG } from '@/lib/system-config';
 
 interface Tournament {
   id: string;
@@ -45,6 +46,12 @@ export default function CreateMatchPage() {
   const [joiningTournament, setJoiningTournament] = useState<Tournament | null>(null);
   const [joinInGameName, setJoinInGameName] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
+  const [config, setConfig] = useState<SystemConfig>(DEFAULT_CONFIG);
+
+  // Fetch system config
+  useEffect(() => {
+    getSystemConfigClient().then(setConfig);
+  }, []);
 
   // Sync game username from profile
   useEffect(() => {
@@ -87,7 +94,7 @@ export default function CreateMatchPage() {
             playerCount: pCount,
             quota: data.maxPlayers || 16,
             status: data.status,
-            totalPool: (data.challengeFee || 0) * (data.maxPlayers || 16) * 0.8,
+            totalPool: (data.challengeFee || 0) * (data.maxPlayers || 16) * (1 - config.matchFeePercentage),
             createdAt: data.createdAt
           } as Tournament;
         })

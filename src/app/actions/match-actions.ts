@@ -24,6 +24,7 @@ import {
    validateAbsoluteVictory,
    resolveDoubleNoShow
 } from "@/lib/match-engine/validation";
+import { getSystemConfig } from "@/lib/system-config-server";
 import { EngineMatch, EngineCircuit, EnginePlayer } from "@/lib/match-engine/types";
 import { purgeMatchDataInternal, purgeMatchMessagesOnly } from "@/lib/match-cleanup";
 import { cleanupTournamentData } from "@/lib/cleanup-utils";
@@ -112,9 +113,10 @@ export async function internalFinalizeMatchClosure(
   overridePlayers?: Record<string, any> // fresh submission data to avoid stale doc reads
 ): Promise<{ needsTournamentCleanup: boolean; circuitId?: string }> {
   // 1.0 FINANCIAL CALCULATIONS (DYNAMIC SCALING)
+  const config = await getSystemConfig();
   const actualPlayers = matchData.playerIds?.length || 2;
   const totalStake = matchData.challengeFee * actualPlayers;
-  const platformRake = Math.floor(totalStake * 0.20);
+  const platformRake = Math.floor(totalStake * config.matchFeePercentage);
   let victoryReward = matchData.circuitId ? 0 : (totalStake - platformRake);
 
   if (matchData.isPromo && !matchData.circuitId && !victoryReward) {
@@ -206,7 +208,7 @@ export async function internalFinalizeMatchClosure(
       const expiryDate = creatorData.partnerExpiresAt?.seconds ? new Date(creatorData.partnerExpiresAt.seconds * 1000) : null;
       
       if (creatorData.role === 'PARTNER' && expiryDate && expiryDate > new Date()) {
-        partnerCommissionPaid = Math.floor(platformRake * 0.50);
+        partnerCommissionPaid = Math.floor(platformRake * config.partnerCommissionShare);
         if (partnerCommissionPaid > 0) {
           transaction.update(creatorRef, { balanceCoins: admin.firestore.FieldValue.increment(partnerCommissionPaid) });
           transaction.set(adminDb.collection("transactions").doc(), {
@@ -228,7 +230,7 @@ export async function internalFinalizeMatchClosure(
           const isEligible = (Date.now() - new Date(profile.createdAt).getTime()) < (90 * 24 * 3600 * 1000);
 
           if (referrerData.role === 'PARTNER' && expiryDate && expiryDate > new Date() && isEligible) {
-            const commission = Math.floor((matchData.challengeFee * 0.20) * 0.50); 
+            const commission = Math.floor((matchData.challengeFee * config.matchFeePercentage) * config.referralCommissionShare); 
             if (commission > 0) {
               partnerCommissionPaid += commission;
               transaction.update(adminDb.collection("users").doc(referrerUid), { balanceCoins: admin.firestore.FieldValue.increment(commission) });

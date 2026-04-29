@@ -275,7 +275,7 @@ export default function AdminOverviewPage() {
                    $ {(stats.financeRevenue / 100).toFixed(2)} USD
                 </div>
                 <p className="text-[10px] text-green-900 font-black leading-relaxed uppercase tracking-widest">
-                   Secured 20% commission on resolved matches.
+                   Secured 10% commission on resolved matches.
                 </p>
              </div>
           </div>

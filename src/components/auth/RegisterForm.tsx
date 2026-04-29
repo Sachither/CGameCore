@@ -13,17 +13,31 @@ import { useAuth } from './AuthProvider';
 
 export default function RegisterForm() {
   const router = useRouter();
+  const { user, profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const isGoogleOnboarding = user && !profile;
+
   const [formData, setFormData] = useState({
     username: "",
-    email: "",
+    email: user?.email || "",
     phone: "",
-    password: "",
-    confirmPassword: "",
+    password: "GOOGLE_AUTH_PLACEHOLDER", // Not used for Google users
+    confirmPassword: "GOOGLE_AUTH_PLACEHOLDER",
     referralCode: (typeof window !== 'undefined' ? localStorage.getItem('pending_referral_code') : "") || ""
   });
+
+  // Sync email and username if Google onboarding starts
+  React.useEffect(() => {
+    if (isGoogleOnboarding) {
+      setFormData(prev => ({ 
+        ...prev, 
+        email: prev.email || user?.email || "",
+        username: prev.username || user?.displayName?.split(' ')[0].replace(/[^a-zA-Z0-9]/g, '') || ""
+      }));
+    }
+  }, [isGoogleOnboarding, user?.email, user?.displayName]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -49,20 +63,26 @@ export default function RegisterForm() {
     err = validate("USERNAME", formData.username);
     if (err) { setError(err); return false; }
     
-    err = validate("EMAIL", formData.email);
-    if (err) { setError(err); return false; }
-    
-    err = validate("PHONE", formData.phone);
-    if (err) { setError(err); return false; }
-    
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return false;
-    }
-    
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match.");
-      return false;
+    if (!isGoogleOnboarding) {
+       err = validate("EMAIL", formData.email);
+       if (err) { setError(err); return false; }
+       
+       err = validate("PHONE", formData.phone);
+       if (err) { setError(err); return false; }
+       
+       if (formData.password.length < 8) {
+         setError("Password must be at least 8 characters.");
+         return false;
+       }
+       
+       if (formData.password !== formData.confirmPassword) {
+         setError("Passwords do not match.");
+         return false;
+       }
+    } else {
+       // For Google users, only username and phone are required
+       err = validate("PHONE", formData.phone);
+       if (err) { setError(err); return false; }
     }
 
     return true;
@@ -78,10 +98,17 @@ export default function RegisterForm() {
     try {
       const lowerUsername = formData.username.toLowerCase();
       const availabilityRes = await fetch(
-        `/api/identity-check?field=username&value=${encodeURIComponent(lowerUsername)}`
+        `/api/id-verify?field=username&value=${encodeURIComponent(lowerUsername)}`
       );
-      const availabilityData = await availabilityRes.json();
 
+      if (!availabilityRes.ok) {
+        const errorText = await availabilityRes.text();
+        console.error("[IdentityCheck] API Failure:", availabilityRes.status, errorText);
+        throw new Error(`Identity check failed (Status ${availabilityRes.status}). Please try again.`);
+      }
+
+      const availabilityData = await availabilityRes.json();
+      
       if (!availabilityData.success) {
         throw new Error(availabilityData.error || "Unable to verify username availability.");
       }
@@ -94,8 +121,15 @@ export default function RegisterForm() {
 
       // 0.5 Check Phone Availability
       const phoneAvailabilityRes = await fetch(
-        `/api/identity-check?field=phone&value=${encodeURIComponent(formData.phone)}`
+        `/api/id-verify?field=phone&value=${encodeURIComponent(formData.phone)}`
       );
+
+      if (!phoneAvailabilityRes.ok) {
+        const errorText = await phoneAvailabilityRes.text();
+        console.error("[PhoneCheck] API Failure:", phoneAvailabilityRes.status, errorText);
+        throw new Error(`Phone verification failed (Status ${phoneAvailabilityRes.status}).`);
+      }
+
       const phoneData = await phoneAvailabilityRes.json();
 
       if (!phoneData.success) {
@@ -108,30 +142,33 @@ export default function RegisterForm() {
         return;
       }
 
-      // 1. Create Auth User
-      setError("COMMUNICATING WITH FIREBASE...");
-      const userCredential = await createUserWithEmailAndPassword(
-        auth, 
-        formData.email, 
-        formData.password
-      );
-      const user = userCredential.user;
+      let activeUser = user;
+
+      if (!isGoogleOnboarding) {
+         // 1. Create Auth User (Email/Password flow)
+         setError("COMMUNICATING WITH FIREBASE...");
+         const userCredential = await createUserWithEmailAndPassword(
+           auth, 
+           formData.email, 
+           formData.password
+         );
+         activeUser = userCredential.user;
+      }
+
+      if (!activeUser) throw new Error("Authentication link severed. Please restart onboarding.");
 
       // 2. [AEGIS] Finalize Identity & Create Profile on Server
       setError("ESTABLISHING SECURE PROFILE...");
-      const idToken = await user.getIdToken();
+      const idToken = await activeUser.getIdToken();
       
       const registerRes = await registerUserAction(idToken, {
         username: formData.username,
-        email: formData.email,
+        email: activeUser.email || formData.email,
         phone: formData.phone,
         referralCode: formData.referralCode
       });
 
       if (!registerRes.success) {
-        // If profile creation fails, we should ideally delete the Auth user
-        // but for now we just show the error. The AuthProvider will catch
-        // the missing profile and handle the redirect.
         throw new Error(registerRes.error || "Profile initialization failed.");
       }
 
@@ -166,9 +203,12 @@ export default function RegisterForm() {
 
       <div className="text-center mb-8 relative z-10">
         <h1 className="text-3xl font-black italic uppercase tracking-tighter text-main">
-          Join <span className="text-accent">The Ladder</span>
+          {isGoogleOnboarding ? "Finalize " : "Join "} 
+          <span className="text-accent">{isGoogleOnboarding ? "Identity" : "The Ladder"}</span>
         </h1>
-        <p className="text-sub mt-2 text-sm font-bold tracking-tight">Register to start backing your skills.</p>
+        <p className="text-sub mt-2 text-sm font-bold tracking-tight">
+          {isGoogleOnboarding ? "Complete your operative profile to enter." : "Register to start backing your skills."}
+        </p>
       </div>
 
       {error && (
@@ -217,25 +257,73 @@ export default function RegisterForm() {
           </div>
         </div>
 
-        <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Email Address</label>
-          <input 
-            type="email" 
-            name="email"
-            required 
-            value={formData.email}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            autoComplete="email"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck="false"
-            data-form-type="other"
-            className="w-full bg-surface-hover border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none transition-all placeholder-gray-600 font-bold font-mono text-xs"
-            placeholder="player@example.com"
-            suppressHydrationWarning
-          />
-        </div>
+        {!isGoogleOnboarding && (
+          <>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Email Address</label>
+              <input 
+                type="email" 
+                name="email"
+                required 
+                value={formData.email}
+                onChange={handleChange}
+                onKeyDown={handleKeyDown}
+                autoComplete="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck="false"
+                data-form-type="other"
+                className="w-full bg-surface-hover border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none transition-all placeholder-gray-600 font-bold font-mono text-xs"
+                placeholder="player@example.com"
+                suppressHydrationWarning
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Password</label>
+                <div className="relative">
+                  <input 
+                    type="password"
+                    name="password"
+                    required 
+                    value={formData.password}
+                    onChange={handleChange}
+                    onKeyDown={handleKeyDown}
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck="false"
+                    data-form-type="other"
+                    className="w-full bg-surface-hover border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none transition-all placeholder-gray-600 font-bold text-xs"
+                    placeholder="••••••••"
+                    suppressHydrationWarning
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Confirm</label>
+                <div className="relative">
+                  <input 
+                    type="password"
+                    name="confirmPassword"
+                    required 
+                    value={formData.confirmPassword}
+                    onChange={handleChange}
+                    onKeyDown={handleKeyDown}
+                    autoComplete="new-password"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    className="w-full bg-surface-hover border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none transition-all placeholder-gray-600 font-bold font-mono text-xs"
+                    placeholder="••••••••"
+                    suppressHydrationWarning
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
 
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Referral Code (Optional)</label>
@@ -254,76 +342,51 @@ export default function RegisterForm() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Password</label>
-            <div className="relative">
-              <input 
-                type="password"
-                name="password"
-                required 
-                value={formData.password}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                autoComplete="new-password"
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck="false"
-                data-form-type="other"
-                className="w-full bg-surface-hover border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none transition-all placeholder-gray-600 font-bold text-xs"
-                placeholder="••••••••"
-                suppressHydrationWarning
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-sub mb-2 ml-1">Confirm</label>
-            <div className="relative">
-              <input 
-                type="password"
-                name="confirmPassword"
-                required 
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                onKeyDown={handleKeyDown}
-                autoComplete="new-password"
-                autoCorrect="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                className="w-full bg-surface-hover border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none transition-all placeholder-gray-600 font-bold font-mono text-xs"
-                placeholder="••••••••"
-                suppressHydrationWarning
-              />
-            </div>
-          </div>
-        </div>
-
         <button 
           type="submit" 
-          disabled={loading || !formData.username || !formData.email || !formData.phone || !formData.password || !formData.confirmPassword}
+          disabled={loading || !formData.username || !formData.phone || (!isGoogleOnboarding && (!formData.email || !formData.password || !formData.confirmPassword))}
           className="w-full bg-accent hover:bg-accent-hover text-black font-black uppercase tracking-wider py-4 rounded-sm transition-all shadow-[0_0_15px_rgba(0,255,102,0.2)] hover:shadow-[0_0_25px_rgba(0,255,102,0.5)] mt-4 border-2 border-transparent disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed flex justify-center items-center italic"
         >
           {loading ? (
             <span className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></span>
           ) : (
-             "Enter The Lobby"
+             isGoogleOnboarding ? "Finalize Identity" : "Enter The Lobby"
           )}
         </button>
-        <div className="flex items-center gap-4 my-6">
-          <div className="h-px bg-surface-border flex-1"></div>
-          <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">OR</span>
-          <div className="h-px bg-surface-border flex-1"></div>
-        </div>
 
-        <GoogleLoginButton text="Onboard with Google" />
+        {!isGoogleOnboarding && (
+          <>
+            <div className="flex items-center gap-4 my-6">
+              <div className="h-px bg-surface-border flex-1"></div>
+              <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">OR</span>
+              <div className="h-px bg-surface-border flex-1"></div>
+            </div>
+
+            <GoogleLoginButton text="Onboard with Google" />
+          </>
+        )}
 
       </form>
 
       <div className="mt-8 text-center text-sm text-sub relative z-10 font-bold uppercase tracking-widest text-[9px]">
-        Already playing?{' '}
-        <Link href="/login" className="text-accent hover:text-accent-hover transition-all underline">
-          SignIn
-        </Link>
+        {isGoogleOnboarding ? (
+          <button 
+            onClick={async () => {
+              await auth.signOut();
+              window.location.href = "/";
+            }}
+            className="text-red-500 hover:text-red-400 transition-all underline"
+          >
+            Cancel & Sign Out
+          </button>
+        ) : (
+          <>
+            Already playing?{' '}
+            <Link href="/login" className="text-accent hover:text-accent-hover transition-all underline">
+              SignIn
+            </Link>
+          </>
+        )}
       </div>
     </div>
   );

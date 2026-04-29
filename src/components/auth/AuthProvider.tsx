@@ -52,6 +52,7 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   loading: boolean;
+  isSyncing: boolean;
   idToken: string | null;
   sessionId: string | null;
   refreshProfile: () => Promise<void>;
@@ -61,6 +62,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   profile: null,
   loading: true,
+  isSyncing: false,
   idToken: null,
   sessionId: null,
   refreshProfile: async () => { },
@@ -78,7 +80,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const redirectCooldown = useRef<number>(0);
+  const sessionStartRef = useRef(Date.now()); // 🛡️ Session Grace Period Tracker
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -108,6 +112,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (firebaseUser) {
         setUser(firebaseUser);
+        setProfile(null); // 🛡️ Clear old profile immediately to prevent stale redirects
+        // Reset session start time when a new user is detected
+        sessionStartRef.current = Date.now();
+        
         const token = await firebaseUser.getIdToken();
         setIdToken(token);
 
@@ -138,18 +146,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setIsInitialized(true);
           } else {
             console.warn("[AuthProvider] No Firestore profile found for authed user.");
-            
-            // 🛡️ TACTICAL INITIALIZATION: For new users, allow the UI to render on protected routes
-            // so they don't get stuck on a loading screen while the profile is being created.
-            const p = pathnameRef.current;
-            const isProtectedRoute = p.startsWith('/dashboard') || p.startsWith('/match') || 
-                                    p.startsWith('/profile') || p.startsWith('/wallet') || 
-                                    p.startsWith('/admin');
-
-            if (isProtectedRoute) {
-               setIsInitialized(true); 
-               setLoading(false);
-            }
+            // Always initialize so the UI can render (e.g. Navbar showing 'Finish Enlistment')
+            setIsInitialized(true);
+            setLoading(false);
           }
         }, (err) => {
           console.error("[AuthProvider] Profile Sync Error:", err);
@@ -158,10 +157,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       } else {
         // GUEST STATE
+        if (profileUnsub) {
+          profileUnsub();
+          profileUnsub = null;
+        }
         setUser(null);
         setProfile(null);
         setIdToken(null);
         setLoading(false);
+        setIsSyncing(false); // 🛡️ Ensure syncing stops on logout
         setIsInitialized(true);
       }
     });
@@ -173,93 +177,94 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // 3. [NAVIGATION BRAIN] The only place redirects are allowed
-  useEffect(() => {
-    // 🛡️ Guard 1: Wait for full initialization
-    if (!isInitialized || loading) return;
+    // 🧠 TACTICAL NAVIGATION BRAIN
+    useEffect(() => {
+      // Guard: Wait for system readiness
+      if (!isInitialized || loading) return;
 
-    // 🛡️ Guard 2: Redirect Cooldown (Prevent loops)
-    const now = Date.now();
-    if (now - redirectCooldown.current < 1500) {
-      console.log("[AuthProvider] Navigation logic debounced to prevent loop.");
-      return;
-    }
+      // Guard: Anti-loop cooldown
+      const now = Date.now();
+      if (now - redirectCooldown.current < 3000) return;
 
-    const currentPath = pathname;
-    const isDashboard = currentPath.startsWith('/dashboard') || 
-                        currentPath.startsWith('/match') || 
-                        currentPath.startsWith('/profile') || 
-                        currentPath.startsWith('/wallet') ||
-                        currentPath.startsWith('/admin');
-                        
-    const isAuthPage = currentPath === '/login' || 
-                       currentPath === '/register' || 
-                       currentPath === '/';
+      const currentPath = pathname || "/";
+      const isAuthPage = currentPath === '/' || currentPath.startsWith('/login') || currentPath.startsWith('/register');
+      const isDashboard = currentPath.startsWith('/dashboard') || currentPath.startsWith('/match') || 
+                          currentPath.startsWith('/profile') || currentPath.startsWith('/admin');
 
-    // SCENARIO A: GUEST on Protected Route
-    if (!user && isDashboard) {
-      // 🕵️ Persistence Check: If we have a cache, give Firebase 2 more seconds to find the user
-      const hasCache = localStorage.getItem('cgame_profile');
-      if (hasCache) {
-         console.warn("[AuthProvider] User null but cache exists. Holding for re-auth...");
-         return;
+      // LOGIC 1: Guest Access Control
+      if (!user) {
+        if (isDashboard) {
+          console.warn("[Auth] Guest detected on protected route. Redirecting to login.");
+          redirectCooldown.current = now;
+          router.replace('/login');
+        }
+        return;
       }
 
-      console.warn("[AuthProvider] Redirecting GUEST to Login from:", currentPath);
-      redirectCooldown.current = now;
-      router.replace('/login');
-      return;
-    }
+      // LOGIC 2: Authenticated User (Orphan vs Operative)
+      if (user) {
+        const sessionTime = (Date.now() - sessionStartRef.current) / 1000;
+        
+        // A: User lacks a Firestore profile
+        if (!profile) {
+          const gracePeriod = isDashboard ? 8 : 3;
+          
+          if (sessionTime < gracePeriod) {
+            if (!isSyncing) setIsSyncing(true);
+            return;
+          }
 
-    // SCENARIO B: LOGGED IN on Auth Page
-    if (user && isAuthPage) {
-      // Exception: Allow /register for profile creation phase
-      if (currentPath === '/register' && !profile) return;
-
-      console.log("[AuthProvider] Redirecting AUTHED to Dashboard from:", currentPath);
-      redirectCooldown.current = now;
-      router.replace('/dashboard');
-      return;
-    }
-
-    // SCENARIO C: ORPHAN ACCOUNT (Auth but no Profile)
-    // If authed but profile missing on a protected route for too long, redirect to register
-    if (user && !profile && isDashboard && !currentPath.includes('/register')) {
-       // 🛡️ GRACE PERIOD: Allow 5 seconds for Firestore profile propagation after account creation
-       const creationTime = new Date(user.metadata.creationTime || 0).getTime();
-       const secondsSinceCreation = (Date.now() - creationTime) / 1000;
-       
-       if (secondsSinceCreation < 5) {
-          console.log("[AuthProvider] Auth detected but profile pending. Holding for propagation...");
+          // Grace period expired - Definitely an orphan
+          if (isSyncing) setIsSyncing(false);
+          if (!currentPath.startsWith('/register')) {
+            console.warn("[Auth] Orphan account detected after grace period. Forcing enlistment.");
+            redirectCooldown.current = now;
+            router.replace('/register');
+          }
           return;
-       }
+        }
 
-       console.warn("[AuthProvider] ORPHAN DETECTED. No profile for authed user. Redirecting to recovery...");
-       redirectCooldown.current = now;
-       router.replace('/register');
-       return;
-    }
-
-    // SCENARIO D: BANNED OPERATIVE
-    if (profile?.isBanned && isDashboard && currentPath !== '/banned') {
-       console.error("[AuthProvider] BANNED OPERATIVE DETECTED. Restricting access.");
-       redirectCooldown.current = now;
-       router.replace('/banned');
-       return;
-    }
-  }, [user, profile, loading, isInitialized, pathname, router]);
+        // B: User has a profile (Operative)
+        if (isSyncing) setIsSyncing(false);
+        
+        // If they are on any auth/landing page (including register), they should be in the dashboard
+        if (isAuthPage) {
+          console.log("[Auth] Operative detected on auth page. Redirecting to Basecamp.");
+          redirectCooldown.current = now;
+          router.replace('/dashboard');
+          return;
+        }
+        
+        // C: Banned check
+        if (profile?.isBanned && currentPath !== '/banned' && isDashboard) {
+           redirectCooldown.current = now;
+           router.replace('/banned');
+        }
+      }
+    }, [user, profile?.uid, loading, isInitialized, pathname, router]);
 
   const refreshProfile = async () => {
     if (!user) return;
-    const docRef = doc(db, "users", user.uid);
-    const snap = await getDoc(docRef);
-    if (snap.exists()) {
-      setProfile(snap.data() as UserProfile);
+    console.log("[AuthProvider] Manual profile refresh triggered. Resetting grace period...");
+    sessionStartRef.current = Date.now(); // 🛡️ Grant fresh grace period for propagation
+    
+    try {
+      const docRef = doc(db, "users", user.uid);
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        setProfile(snap.data() as UserProfile);
+        console.log("[AuthProvider] Profile synchronized successfully.");
+      } else {
+        console.warn("[AuthProvider] Profile document missing during refresh.");
+      }
+    } catch (err) {
+      console.error("[AuthProvider] Manual refresh failed:", err);
     }
   };
 
   const contextValue = useMemo(() => ({
-    user, profile, loading, idToken, sessionId, refreshProfile
-  }), [user, profile, loading, idToken, sessionId]);
+    user, profile, loading, isSyncing, idToken, sessionId, refreshProfile
+  }), [user, profile, loading, isSyncing, idToken, sessionId]);
 
   return (
     <AuthContext.Provider value={contextValue}>

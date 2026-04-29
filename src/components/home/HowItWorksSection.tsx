@@ -13,7 +13,7 @@ export default function HowItWorksSection() {
     {
       num: "03",
       title: "Report & Earn",
-      desc: "Upload the end-game screenshot to claim your win. If both players agree, Escrow directly releases the prize pool to the winner's wallet minus a 20% platform rake."
+      desc: "Upload the end-game screenshot to claim your win. If both players agree, Escrow directly releases the prize pool to the winner's wallet minus a 10% platform rake."
     },
     {
       num: "04",
@@ -65,8 +65,8 @@ export default function HowItWorksSection() {
             <div className="text-accent font-black text-2xl">=</div>
             <div className="bg-accent/10 p-4 border border-accent/30 rounded-sm">
               <div className="text-accent text-sm font-bold uppercase">Winner Takes</div>
-              <div className="text-3xl font-black text-white">160 Coins</div>
-              <div className="text-xs text-gray-500 mt-1">(40 Coin Platform Fee)</div>
+              <div className="text-3xl font-black text-white">180 Coins</div>
+              <div className="text-xs text-gray-500 mt-1">(20 Coin Platform Fee)</div>
             </div>
           </div>
         </div>

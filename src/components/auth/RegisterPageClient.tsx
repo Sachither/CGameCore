@@ -7,7 +7,7 @@ import { useAuth } from "./AuthProvider";
 export default function RegisterPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading } = useAuth();
+  const { user, profile, loading } = useAuth();
 
   useEffect(() => {
     const code = searchParams.get('code');
@@ -26,9 +26,13 @@ export default function RegisterPageClient() {
     }
   }, [searchParams]);
 
-  // 🛡️ Flicker Suppression: Hide the form the moment authentication is detected.
-  // This prevents the form from being visible during the 3-5s profile creation window.
-  if (user || loading) {
+  // 🛡️ Smart Flicker Suppression
+  // Show loader ONLY if:
+  // 1. System is still initializing (loading)
+  // 2. User is already fully enlisted (user AND profile) -> They will be redirected to Dashboard
+  const shouldShowLoader = loading || (user && profile);
+
+  if (shouldShowLoader) {
      return (
        <div className="min-h-[calc(100vh-80px)] pt-10 pb-20 flex items-center justify-center px-4">
          <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>

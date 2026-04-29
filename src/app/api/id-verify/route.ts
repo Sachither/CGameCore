@@ -6,7 +6,7 @@ export async function GET(req: Request) {
   const field = url.searchParams.get("field");
   const value = url.searchParams.get("value");
 
-  console.log(`[IdentityCheck API] Received request for ${field}: "${value}"`);
+  console.log(`[IDVerify API] Received request for ${field}: "${value}"`);
 
   if (!field || !value) {
     console.log(`[IdentityCheck] Missing field or value`);

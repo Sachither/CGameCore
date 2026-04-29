@@ -2,6 +2,7 @@ import admin from "firebase-admin";
 import { adminDb } from "@/lib/firebase-admin";
 import { EngineCircuit, EngineMatch, EnginePlayer } from "./types";
 import { pushMatchNotification, pushGlobalCommand } from "./progression";
+import { getSystemConfig } from "@/lib/system-config-server";
 
 /**
  * INITIALIZATION: Create a new Circuit (Master or Elite) from a lobby
@@ -13,6 +14,7 @@ export async function initializeCircuit(
    playersList: EnginePlayer[],
    uid: string
 ) {
+   const config = await getSystemConfig();
    const circuitRef = adminDb.collection("circuits").doc();
    const circuitId = circuitRef.id;
    
@@ -41,7 +43,7 @@ export async function initializeCircuit(
    }
 
    const format = `${pCount}_TOURNAMENT`;
-   const totalPool = Math.floor(fee * pCount * 0.8);
+   const totalPool = Math.floor(fee * pCount * (1 - config.matchFeePercentage));
 
    // HQ BROADCAST: Tournament Start
    pushGlobalCommand(transaction, circuitId, `INITIALIZING SECTOR OPS: ${format.toUpperCase()} DEPLOYMENT CONFIRMED. Prize pool locked: ${totalPool} CR.`);
