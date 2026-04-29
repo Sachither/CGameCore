@@ -37,13 +37,23 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
       to: [to],
       subject: subject,
       html: html,
+      tags: [
+        { name: 'category', value: 'tactical_onboarding' },
+        { name: 'environment', value: process.env.NODE_ENV || 'development' }
+      ]
     });
 
     if (error) {
-      console.error("🛑 MAIL SYSTEM: Resend API Error:", error);
+      const errorMsg = error.message || 'Unknown Resend Error';
+      console.error(`🛑 MAIL SYSTEM: Delivery Failed. Reason: ${errorMsg}`);
+      
+      if (errorMsg.includes('verify a domain')) {
+        console.error("💡 TACTICAL INTEL: Your domain 'mail.cgamecore.online' is not fully verified in Resend. Check DNS records.");
+      }
+
       // Gracefully handle Resend's own rate limit error
       if (error.name === 'rate_limit_exceeded') {
-        console.error("🛑 MAIL SYSTEM: Resend reported rate limit exceeded.");
+        console.error("🛑 MAIL SYSTEM: Daily quota exceeded on Resend side.");
         await statsRef.set({ [today]: 100 }, { merge: true });
       }
       return { success: false, error };
@@ -54,6 +64,8 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
       [today]: admin.firestore.FieldValue.increment(1),
       totalSent: admin.firestore.FieldValue.increment(1)
     }, { merge: true });
+
+    console.log(`[MailSystem] SUCCESS: Email dispatched to ${to}. ID: ${data?.id}`);
 
     return { success: true, data };
   } catch (err: any) {
