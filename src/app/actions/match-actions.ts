@@ -181,22 +181,27 @@ export async function internalFinalizeMatchClosure(
     const isWinner = pid === championUid;
     const playerMatchData = (overridePlayers?.[pid] || matchData.players[pid] || {}) as any;
 
-    const statsUpdate: any = {
-      totalMatches: admin.firestore.FieldValue.increment(1),
-      ...(isWinner && { totalWins: admin.firestore.FieldValue.increment(1) })
-    };
+    const statsUpdate: any = {};
 
-    if (gameKey === 'EFOOTBALL') {
-      statsUpdate[`stats.EFOOTBALL.matches`] = admin.firestore.FieldValue.increment(1);
-      statsUpdate[`stats.EFOOTBALL.goalsFor`] = admin.firestore.FieldValue.increment(playerMatchData.scoreFor || 0);
-      statsUpdate[`stats.EFOOTBALL.goalsAgainst`] = admin.firestore.FieldValue.increment(playerMatchData.scoreAgainst || 0);
-      if (isWinner) statsUpdate[`stats.EFOOTBALL.wins`] = admin.firestore.FieldValue.increment(1);
-    } else if (gameKey === 'CODM') {
-      statsUpdate[`stats.CODM.matches`] = admin.firestore.FieldValue.increment(1);
-      statsUpdate[`stats.CODM.kills`] = admin.firestore.FieldValue.increment(playerMatchData.kills || 0);
-      if (isWinner) statsUpdate[`stats.CODM.wins`] = admin.firestore.FieldValue.increment(1);
+    if (matchData.isRanked !== false) {
+      statsUpdate.totalMatches = admin.firestore.FieldValue.increment(1);
+      if (isWinner) statsUpdate.totalWins = admin.firestore.FieldValue.increment(1);
+
+      if (gameKey === 'EFOOTBALL') {
+        statsUpdate[`stats.EFOOTBALL.matches`] = admin.firestore.FieldValue.increment(1);
+        statsUpdate[`stats.EFOOTBALL.goalsFor`] = admin.firestore.FieldValue.increment(playerMatchData.scoreFor || 0);
+        statsUpdate[`stats.EFOOTBALL.goalsAgainst`] = admin.firestore.FieldValue.increment(playerMatchData.scoreAgainst || 0);
+        if (isWinner) statsUpdate[`stats.EFOOTBALL.wins`] = admin.firestore.FieldValue.increment(1);
+      } else if (gameKey === 'CODM') {
+        statsUpdate[`stats.CODM.matches`] = admin.firestore.FieldValue.increment(1);
+        statsUpdate[`stats.CODM.kills`] = admin.firestore.FieldValue.increment(playerMatchData.kills || 0);
+        if (isWinner) statsUpdate[`stats.CODM.wins`] = admin.firestore.FieldValue.increment(1);
+      }
     }
-    transaction.update(userRef, statsUpdate);
+    
+    if (Object.keys(statsUpdate).length > 0) {
+      transaction.update(userRef, statsUpdate);
+    }
   }
 
   // 1.8 PARTNER COMMISSION ENGINE
@@ -337,13 +342,15 @@ export async function createMatchAction(
   circuitId?: string,
   round?: 'QR1' | 'QR2' | 'QF' | 'SF' | 'FINAL' | 'NONE',
   group?: 'A' | 'B' | 'C' | 'D' | 'NONE',
-  leg?: 1 | 2 | 3 | 'NONE'
+  leg?: 1 | 2 | 3 | 'NONE',
+  roomName?: string,
+  roomPassword?: string
 ) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
   const username = profile.username || "Unknown";
   const avatarId = profile.avatarId || 1;
 
-  if (challengeFee <= 0) throw new Error("Invalid challenge fee configuration.");
+  if (challengeFee < 0) throw new Error("Invalid challenge fee configuration.");
 
   // [PROT-TOUR-02] 🔒 Entry Fee Duplication Prevention
   // Only enforce for tournament format matches (gathering, not sub-matches)
@@ -426,12 +433,26 @@ export async function createMatchAction(
       transaction.update(userRef, userUpdates);
 
       const matchData: any = {
-        game, format, challengeFee, status: 'WAITING',
+        game,
+        format,
+        challengeFee,
+        status: 'WAITING',
         playerIds: [uid],
         players: { [uid]: { uid, username, avatarId, ready: false, team: 'alpha', inGameName: inGameName || "Unknown" } },
-        championUid: null, creatorId: uid, createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        weaponClass: game === 'CODM' ? weaponClass : 'NONE', duration, maxPlayers,
-        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 3 * 3600 * 1000)), // 3 hours for regular matches
+        championUid: null,
+        creatorId: uid,
+        creatorReferralCode: userData.myReferralCode || null,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        weaponClass: weaponClass || 'ALL GUNS',
+        maxPlayers: maxPlayers || 2,
+        duration: duration || 'NONE',
+        roomName: roomName || null,
+        roomPassword: roomPassword || null,
+        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 3 * 3600 * 1000)),
+        isRanked: challengeFee > 0,
+        isProtected: !!roomPassword,
+        isPartnerTournament: userData.role === 'PARTNER',
+        partnerName: userData.role === 'PARTNER' ? userData.username : null,
       };
 
       if (roomCode) matchData.roomCode = roomCode;
@@ -470,7 +491,8 @@ export async function joinMatchAction(
   _ignoredAvatarId: number,
   matchId: string,
   inGameName: string,
-  referralCode?: string
+  referralCode?: string,
+  roomPassword?: string
 ) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
   const username = profile.username || "Unknown";
@@ -489,6 +511,10 @@ export async function joinMatchAction(
 
       if (matchData.status !== 'WAITING') throw new Error("Arena is no longer accepting players.");
       
+      if (matchData.isProtected && matchData.roomPassword && matchData.roomPassword !== roomPassword) {
+        throw new Error("Invalid room password.");
+      }
+
       // [PARTNER-OVERSEER] Allow creator to join as an observer without paying
       const isPartnerOverseer = matchData.isPartnerTournament && matchData.creatorId === uid;
 

@@ -13,7 +13,7 @@ export default function HowItWorksSection() {
     {
       num: "03",
       title: "Report & Earn",
-      desc: "Upload the end-game screenshot to claim your win. If both players agree, Escrow directly releases the prize pool to the winner's wallet minus a 10% platform rake."
+      desc: "Upload the end-game screenshot to claim your win. If both players agree, Escrow directly releases the prize pool to the winner's wallet minus a 20% platform rake."
     },
     {
       num: "04",

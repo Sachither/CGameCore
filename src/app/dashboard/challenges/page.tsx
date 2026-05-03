@@ -18,6 +18,8 @@ export default function ChallengesExplorerPage() {
   const [selectedGame, setSelectedGame] = useState<'ALL' | 'CODM' | 'EFOOTBALL'>('ALL');
   const [joiningMatch, setJoiningMatch] = useState<Match | null>(null);
   const [inGameName, setInGameName] = useState("");
+  const [joinReferralCode, setJoinReferralCode] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
 
   useEffect(() => {
@@ -45,6 +47,8 @@ export default function ChallengesExplorerPage() {
     if (profile && joiningMatch) {
       const tag = joiningMatch.game === 'CODM' ? profile.codTag : profile.efootballTag;
       setInGameName(tag || "");
+      setJoinReferralCode("");
+      setJoinPassword("");
     }
   }, [profile, joiningMatch]);
 
@@ -57,7 +61,15 @@ export default function ChallengesExplorerPage() {
     setJoinLoading(true);
     try {
       const idToken = await user.getIdToken();
-      await joinMatch(idToken, profile.username, profile.avatarId, joiningMatch.id!, inGameName.trim());
+      await joinMatch(
+        idToken, 
+        profile.username, 
+        profile.avatarId, 
+        joiningMatch.id!, 
+        inGameName.trim(), 
+        joinReferralCode.trim() || undefined, 
+        joiningMatch.isProtected ? joinPassword : undefined
+      );
       router.push(`/match/${joiningMatch.id}`);
     } catch (err: any) {
       toast.error("Tactical Error", err.message || "Failed to join duel.");
@@ -168,11 +180,12 @@ export default function ChallengesExplorerPage() {
                           />
                        </div>
                        <div>
-                          <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1">{c.format} Duel</p>
-                          <h3 className="text-xl font-black text-white italic uppercase tracking-tighter group-hover:text-accent transition-colors leading-none">
-                             {creator?.username || "Operator"}
-                          </h3>
-                       </div>
+                           <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.2em] mb-1">{c.format} Duel</p>
+                           <h3 className="text-xl font-black text-white italic uppercase tracking-tighter group-hover:text-accent transition-colors leading-none flex items-center gap-2">
+                              {c.isProtected && <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>}
+                              {c.roomName || creator?.username || "Operator"}
+                           </h3>
+                        </div>
                     </div>
 
                     <div className="space-y-4 mb-8">
@@ -229,12 +242,39 @@ export default function ChallengesExplorerPage() {
                   value={inGameName}
                   onChange={e => setInGameName(e.target.value)}
                   placeholder="e.g. xX_Sniper_Xx"
-                  className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm transition-colors"
+                  className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm transition-colors mb-4"
                 />
-                <p className="text-[9px] text-gray-500 font-bold mt-1 uppercase tracking-widest">
-                  {inGameName ? 'Auto-filled from your profile. Edit if needed.' : 'Required for opponents to add you in-game.'}
-                </p>
               </div>
+
+              {joiningMatch.isProtected && !joiningMatch.isPartnerTournament && (
+                <div className="space-y-2 mb-4">
+                   <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em]">Room Password</label>
+                   <input
+                     type="password"
+                     value={joinPassword}
+                     onChange={e => setJoinPassword(e.target.value)}
+                     placeholder="Enter Room Password"
+                     className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm transition-colors"
+                   />
+                </div>
+              )}
+
+              {joiningMatch.isPartnerTournament && profile?.referredBy !== joiningMatch.creatorId && (
+                <div className="space-y-3 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-sm mb-4">
+                  <div className="flex items-center gap-2 mb-1">
+                     <svg className="w-3 h-3 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                     <label className="text-[9px] text-yellow-500 font-black uppercase tracking-[0.2em]">Neural Clearance Required</label>
+                  </div>
+                  <input
+                    type="text"
+                    value={joinReferralCode}
+                    onChange={e => setJoinReferralCode(e.target.value.toUpperCase())}
+                    placeholder="ENTER PARTNER CODE"
+                    className="w-full bg-black border border-yellow-500/30 focus:border-yellow-500 text-yellow-500 py-3 px-4 rounded-sm outline-none font-black text-sm tracking-widest transition-all text-center"
+                  />
+                  <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest text-center">Required for non-recruits to join this Creator Cup.</p>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-3">

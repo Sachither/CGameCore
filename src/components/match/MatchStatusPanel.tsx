@@ -396,7 +396,19 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
       )}
 
       <div className="bg-surface border border-surface-border rounded-sm p-5 shadow-xl">
-        <h4 className="text-xs font-black uppercase tracking-widest text-gray-300 border-b border-surface-border pb-3 mb-5">Live Match Tracker</h4>
+        <div className="flex items-center justify-between border-b border-surface-border pb-3 mb-5">
+           <h4 className="text-xs font-black uppercase tracking-widest text-gray-300">Live Match Tracker</h4>
+           <button
+              onClick={() => {
+                const url = window.location.origin + `/dashboard?join=${match.id}`;
+                navigator.clipboard.writeText(url);
+                toast.success("INVITE LINK COPIED", "Share this URL with squad members to invite them to this mission.");
+              }}
+              className="text-[10px] font-black uppercase tracking-widest text-accent hover:text-white flex items-center gap-1 transition-colors"
+           >
+              <Copy className="w-3 h-3" /> Share Mission
+           </button>
+        </div>
         <div className="space-y-5">
           {trackerSteps.map((step) => (
             <div key={step.id} className={`flex items-start gap-3 transition-all duration-300 ${step.done || step.active ? 'opacity-100' : 'opacity-25'}`}>

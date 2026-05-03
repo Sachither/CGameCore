@@ -9,7 +9,7 @@ export interface SystemConfig {
 }
 
 export const DEFAULT_CONFIG: SystemConfig = {
-  matchFeePercentage: 0.10,
+  matchFeePercentage: 0.20,
   partnerCommissionShare: 0.50,
   withdrawalFiatFee: 10,
   referralCommissionShare: 0.50

@@ -12,7 +12,7 @@ import MatchChat from "@/components/match/MatchChat";
 import MatchStatusPanel from "@/components/match/MatchStatusPanel";
 import LeaveMatchModal from "../../../components/match/LeaveMatchModal";
 import MatchRules from "@/components/match/MatchRules";
-import { Loader2, ShieldCheck, Swords, ShieldAlert } from "lucide-react";
+import { Loader2, ShieldCheck, Swords, ShieldAlert, Share2 } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 
 export default function ActiveMatchPage({ params }: { params: Promise<{ id: string }> }) {

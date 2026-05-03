@@ -432,9 +432,9 @@ export async function createPartnerTournamentAction(
   const uid = await getVerifiedUid(idToken);
   
   // 🛡️ VALIDATION: Only allow specific strategic entry tiers
-  const allowedFees = [100, 200, 500, 1000]; // $1, $2, $5, $10
+  const allowedFees = [0, 100, 200, 500, 1000]; // $0, $1, $2, $5, $10
   if (!allowedFees.includes(entryFee)) {
-    throw new Error("UNAUTHORIZED_FEE: Please select a tactical entry tier ($1, $2, $5, or $10).");
+    throw new Error("UNAUTHORIZED_FEE: Please select a tactical entry tier ($0, $1, $2, $5, or $10).");
   }
 
   // 🛡️ VALIDATION: Player count logic
@@ -477,7 +477,7 @@ export async function createPartnerTournamentAction(
 
     // Create the Match document (Gathering format)
     const matchRef = adminDb.collection("matches").doc();
-    const matchData = {
+    const matchData: any = {
       game,
       format: game === 'CODM' ? format : 'tournament', // eFootball always uses tournament (knockout)
       challengeFee: entryFee,
@@ -485,12 +485,15 @@ export async function createPartnerTournamentAction(
       playerIds: [],
       players: {},
       creatorId: uid,
+      creatorReferralCode: profile.myReferralCode || null,
       isPartnerTournament: true,
       partnerName: profile.username,
       maxPlayers: maxPlayers,
       weaponClass: game === 'CODM' && format === 'FFA' ? weaponClass : 'ALL GUNS',
+      isRanked: entryFee > 0,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 6 * 3600 * 1000)), // 6 hour window
+      roomName: entryFee === 0 ? `${profile.username.toUpperCase()} PRACTICE` : null,
     };
 
     await matchRef.set(matchData);

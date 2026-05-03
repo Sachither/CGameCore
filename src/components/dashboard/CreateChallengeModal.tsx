@@ -24,6 +24,8 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   const [duration, setDuration] = useState<'12m' | '15m'>('15m');
   const [maxPlayers, setMaxPlayers] = useState<number>(2);
   const [inGameName, setInGameName] = useState<string>('');
+  const [roomName, setRoomName] = useState("");
+  const [roomPassword, setRoomPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [existingMatchId, setExistingMatchId] = useState<string | null>(null);
   const [checkingExisting, setCheckingExisting] = useState(false);
@@ -35,8 +37,12 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
     const checkExisting = async () => {
       setCheckingExisting(true);
       try {
-        const existing = await findActiveMatchByType(game, format, fee);
-        setExistingMatchId(existing?.id || null);
+        if (fee > 0) {
+          const existing = await findActiveMatchByType(game, format, fee);
+          setExistingMatchId(existing?.id || null);
+        } else {
+          setExistingMatchId(null);
+        }
       } catch (e) {
         console.error("Singleton check failure:", e);
       }
@@ -52,8 +58,18 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
      if (profile && isOpen) {
         const tag = game === 'CODM' ? profile.codTag : profile.efootballTag;
         setInGameName(tag || "");
+
+        // PARTNER SYNC: For free matches, default password to their promo/referral code
+        if (profile.role === 'PARTNER' && fee === 0) {
+           if (!roomPassword && profile.myReferralCode) {
+              setRoomPassword(profile.myReferralCode.toUpperCase());
+           }
+           if (!roomName) {
+              setRoomName(`${profile.username.toUpperCase()} PRACTICE`);
+           }
+        }
      }
-  }, [game, profile, isOpen]);
+  }, [game, profile, isOpen, fee]);
 
   if (!isOpen) return null;
 
@@ -88,7 +104,9 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
         sanitizedIGN,
         weaponClass, 
         game === 'EFOOTBALL' ? duration : 'NONE',
-        maxPlayers
+        maxPlayers,
+        fee === 0 ? roomName.trim() || undefined : undefined,
+        fee === 0 ? roomPassword.trim() || undefined : undefined
       );
       router.push(`/match/${matchId}`);
       onClose();
@@ -103,7 +121,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
     return ['1v1', 'tournament'] as const;
   };
 
-  const fees = [50, 100];
+  const fees = [0, 50, 100];
   const weaponClasses = ['ALL GUNS', 'SHOTGUN', 'SNIPER'] as const;
 
   return (
@@ -240,27 +258,73 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
             {/* Fee Selection */}
             <div className="space-y-4">
                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Challenge Stake (Credits)</label>
-               <div className="grid grid-cols-2 gap-3">
+               <div className="grid grid-cols-3 gap-3">
                   {fees.map(f => (
                     <button 
                       key={f}
                       onClick={() => setFee(f)}
                       className={`py-5 rounded-sm text-base font-black transition-all border ${fee === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600'}`}
                     >
-                      {f} <span className="text-[10px] ml-1 opacity-60">CR</span>
+                      {f === 0 ? "FREE" : f} {f !== 0 && <span className="text-[10px] ml-1 opacity-60">CR</span>}
                     </button>
                   ))}
                </div>
             </div>
 
+            {fee === 0 && (
+              <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                <div className="space-y-2">
+                  <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Room Name</label>
+                  <input 
+                    type="text" 
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                    placeholder="e.g. Scrims #1"
+                    className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-xs transition-colors"
+                  />
+                </div>
+                {profile?.role !== 'PARTNER' && (
+                  <div className="space-y-2">
+                    <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Password (Opt)</label>
+                    <input 
+                      type="text" 
+                      value={roomPassword}
+                      onChange={(e) => setRoomPassword(e.target.value)}
+                      placeholder="Leave blank for public"
+                      className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-xs transition-colors"
+                    />
+                  </div>
+                )}
+                {profile?.role === 'PARTNER' && (
+                  <div className="space-y-2 flex flex-col justify-center">
+                    <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em] block mb-1">Partner Gating Active</label>
+                    <div className="bg-accent/10 border border-accent/20 p-2 rounded-sm">
+                       <p className="text-[8px] text-accent font-bold uppercase tracking-widest">Only your Recruits or people using code <span className="underline">{profile.myReferralCode}</span> can join.</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Security Warning */}
             <div className="bg-accent/5 border border-accent/20 p-5 rounded-sm flex gap-4">
                <ShieldCheck className="w-5 h-5 text-accent shrink-0" />
                <div className="space-y-1">
-                  <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wide leading-relaxed">
-                    Operative <span className="text-white italic">{profile?.username}</span>: Your {fee} CR entry fee will be vaulted immediately.
-                  </p>
-                  <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest">Singleton Protocol Active • No Zombie Lobbies Allowed</p>
+                  {fee === 0 ? (
+                    <>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wide leading-relaxed">
+                        Operative <span className="text-white italic">{profile?.username}</span>: This is a free practice lobby. No credits will be deducted.
+                      </p>
+                      <p className="text-[8px] text-accent font-bold uppercase tracking-widest">Unranked Match • Stats Are Not Affected</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wide leading-relaxed">
+                        Operative <span className="text-white italic">{profile?.username}</span>: Your {fee} CR entry fee will be vaulted immediately.
+                      </p>
+                      <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest">Singleton Protocol Active • No Zombie Lobbies Allowed</p>
+                    </>
+                  )}
                </div>
             </div>
 

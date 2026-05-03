@@ -42,6 +42,10 @@ export interface Match {
   rewardAmount?: number; 
   resolvedAt?: any;     
   roomCode?: string;    
+  roomName?: string;
+  roomPassword?: string;
+  isProtected?: boolean;
+  isRanked?: boolean;
   circuitId?: string;   
   leagueId?: string;    
   round?: 'QR1' | 'QR2' | 'QF' | 'SF' | 'FINAL' | 'NONE' | 'QF TIE-BREAKER' | 'SF TIE-BREAKER'; 

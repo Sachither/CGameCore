@@ -204,7 +204,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         console.warn("[Auth] Guest detected on protected route. Redirecting to login.");
         redirectCooldown.current = now;
-        router.replace('/login');
+        const fullPath = currentPath + (window.location.search || "");
+        router.replace(`/login?callback=${encodeURIComponent(fullPath)}`);
       }
       return;
     }

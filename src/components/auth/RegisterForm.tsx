@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -13,6 +13,7 @@ import { useAuth } from './AuthProvider';
 
 export default function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -181,7 +182,8 @@ export default function RegisterForm() {
       }
 
       // Explicit redirect to ensure immediate transition
-      router.push('/dashboard');
+      const callback = searchParams.get('callback');
+      router.push(callback ? decodeURIComponent(callback) : '/dashboard');
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/configuration-not-found') {

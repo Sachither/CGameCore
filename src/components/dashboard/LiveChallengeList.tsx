@@ -6,7 +6,7 @@ import { db } from "@/lib/firebase";
 import { Match, joinMatch } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
-import { Loader2, Swords, User, ChevronRight, Plus, Search, ShieldCheck } from "lucide-react";
+import { Loader2, Swords, User, ChevronRight, Plus, Search, ShieldCheck, Share2 } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import CreateChallengeModal from "./CreateChallengeModal";
 
@@ -21,6 +21,7 @@ export default function LiveChallengeList() {
   const [joiningMatch, setJoiningMatch] = useState<Match | null>(null);
   const [inGameName, setInGameName] = useState("");
   const [joinReferralCode, setJoinReferralCode] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
   const router = useRouter();
 
@@ -44,13 +45,25 @@ export default function LiveChallengeList() {
       
       setChallenges(sorted);
       setLoading(false);
+
+      // [DEEP-LINK] Check for join parameter in URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const joinId = urlParams.get("join");
+      if (joinId && !joiningMatch) {
+         const matchToJoin = sorted.find(m => m.id === joinId);
+         if (matchToJoin) {
+            setJoiningMatch(matchToJoin);
+            // Clear param to avoid re-opening on refresh
+            window.history.replaceState({}, '', window.location.pathname);
+         }
+      }
     }, (err) => {
       console.error("[LiveChallengeList] Sync Error:", err);
       setLoading(false);
     });
 
     return () => unsub();
-  }, [user]);
+  }, [user, joiningMatch]);
 
   // Sync game username from profile when joining
   useEffect(() => {
@@ -58,6 +71,10 @@ export default function LiveChallengeList() {
       const tag = joiningMatch.game === 'CODM' ? profile.codTag : profile.efootballTag;
       setInGameName(tag || "");
       setJoinReferralCode("");
+
+      // RECRUIT AUTO-FILL: If joining your partner's room, we don't need a password anymore
+      // We rely on isPartnerTournament gating in the UI
+      setJoinPassword("");
     }
   }, [profile, joiningMatch]);
 
@@ -74,7 +91,7 @@ export default function LiveChallengeList() {
     setJoinLoading(true);
     try {
       const idToken = await user.getIdToken();
-      await joinMatch(idToken, profile.username, profile.avatarId, joiningMatch.id!, inGameName.trim(), joinReferralCode.trim());
+      await joinMatch(idToken, profile.username, profile.avatarId, joiningMatch.id!, inGameName.trim(), joinReferralCode.trim() || undefined, joiningMatch.isProtected ? joinPassword : undefined);
       setJoiningMatch(null); // Close modal immediately
       
       if (isPartnerOverseer) {
@@ -173,8 +190,9 @@ export default function LiveChallengeList() {
                     />
                   </div>
                    <div>
-                    <div className={`text-white font-black italic uppercase tracking-tighter text-base group-hover:text-accent transition-colors ${isPartnerMatch ? 'text-yellow-500' : ''}`}>
-                      {creator?.username || "Operator"}
+                    <div className={`text-white font-black italic uppercase tracking-tighter text-base group-hover:text-accent transition-colors flex items-center gap-2 ${isPartnerMatch ? 'text-yellow-500' : ''}`}>
+                      {c.isProtected && <ShieldCheck className="w-4 h-4 text-gray-500" />}
+                      {c.roomName || creator?.username || "Operator"}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                       <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-[2px] ${c.game === 'CODM' ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'}`}>
@@ -203,14 +221,28 @@ export default function LiveChallengeList() {
                    </div>
                 </div>
 
-                <button 
-                  onClick={() => !isFull && setJoiningMatch(c)}
-                  disabled={isFull && c.creatorId !== user?.uid}
-                  className={`w-full py-3 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isFull ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (isPartnerMatch ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-main hover:bg-main-hover text-accent shadow-[0_0_15px_rgba(0,255,102,0.1)]')}`}
-                >
-                  {isFull ? (c.creatorId === user?.uid ? "Enter War Room" : "Arena Locked") : (c.creatorId === user?.uid ? "Enter War Room" : (isPartnerMatch ? "Enlist in Creator Cup" : "Join Combat Duel"))}
-                  {(!isFull || c.creatorId === user?.uid) && <ChevronRight className="w-3 h-3" />}
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => !isFull && setJoiningMatch(c)}
+                    disabled={isFull && c.creatorId !== user?.uid}
+                    className={`flex-1 py-3 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isFull ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (isPartnerMatch ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-main hover:bg-main-hover text-accent shadow-[0_0_15px_rgba(0,255,102,0.1)]')}`}
+                  >
+                    {isFull ? (c.creatorId === user?.uid ? "Enter War Room" : "Arena Locked") : (c.creatorId === user?.uid ? "Enter War Room" : (isPartnerMatch ? "Enlist in Creator Cup" : "Join Combat Duel"))}
+                    {(!isFull || c.creatorId === user?.uid) && <ChevronRight className="w-3 h-3" />}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const url = window.location.origin + "/dashboard?join=" + c.id;
+                      navigator.clipboard.writeText(url);
+                      toast.success("INVITE LINK COPIED", "Share this URL with squad members to invite them to this mission.");
+                    }}
+                    className="bg-surface-hover border border-surface-border hover:border-accent/40 text-gray-500 hover:text-accent px-3 py-3 rounded-sm transition-all"
+                    title="Share Mission"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -258,9 +290,22 @@ export default function LiveChallengeList() {
                          value={inGameName}
                          onChange={e => setInGameName(e.target.value)}
                          placeholder="e.g. xX_Sniper_Xx"
-                         className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm"
+                         className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm mb-4"
                        />
                     </div>
+
+                    {joiningMatch.isProtected && !joiningMatch.isPartnerTournament && (
+                      <div className="space-y-2 mb-4">
+                         <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em]">Room Password</label>
+                         <input
+                           type="password"
+                           value={joinPassword}
+                           onChange={e => setJoinPassword(e.target.value)}
+                           placeholder="Enter Room Password"
+                           className="w-full bg-black border border-surface-border focus:border-accent text-white py-3 px-4 rounded-sm outline-none font-bold text-sm"
+                         />
+                      </div>
+                    )}
 
                     {joiningMatch.isPartnerTournament && profile?.referredBy !== joiningMatch.creatorId && (
                       <div className="space-y-3 p-4 bg-yellow-500/5 border border-yellow-500/20 rounded-sm mb-4">

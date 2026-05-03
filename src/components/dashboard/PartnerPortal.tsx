@@ -240,16 +240,17 @@ export default function PartnerPortal() {
           </div>
           <div className="flex items-center gap-3">
              <span className="text-[9px] text-gray-500 font-bold uppercase">Entry Tier:</span>
-             <select 
-               value={selectedFee}
-               onChange={(e) => setSelectedFee(Number(e.target.value))}
-               className="bg-black border border-surface-border text-accent text-[10px] font-black px-2 py-1 outline-none"
-             >
-                <option value={100}>$1.00 (100 Coins)</option>
-                <option value={200}>$2.00 (200 Coins)</option>
-                <option value={500}>$5.00 (500 Coins)</option>
-                <option value={1000}>$10.00 (1000 Coins)</option>
-             </select>
+              <select 
+                value={selectedFee}
+                onChange={(e) => setSelectedFee(Number(e.target.value))}
+                className="bg-black border border-surface-border text-accent text-[10px] font-black px-2 py-1 outline-none cursor-pointer hover:border-accent/50 transition-colors"
+              >
+                 <option value={0}>Free Practice (0 Coins)</option>
+                 <option value={100}>$1.00 (100 Coins)</option>
+                 <option value={200}>$2.00 (200 Coins)</option>
+                 <option value={500}>$5.00 (500 Coins)</option>
+                 <option value={1000}>$10.00 (1000 Coins)</option>
+              </select>
           </div>
         </div>
         
@@ -302,7 +303,9 @@ export default function PartnerPortal() {
                )}
 
                <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs font-black text-accent">${(selectedFee / 100).toFixed(2)} Entry</div>
+                  <div className="text-xs font-black text-accent">
+                     {selectedFee === 0 ? 'FREE PRACTICE' : `$${(selectedFee / 100).toFixed(2)} Entry`}
+                   </div>
                   <button 
                     disabled={creating}
                     onClick={() => handleCreateTournament('CODM')}
@@ -330,7 +333,9 @@ export default function PartnerPortal() {
                  </select>
                </div>
                <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs font-black text-accent">${(selectedFee / 100).toFixed(2)} Entry</div>
+                  <div className="text-xs font-black text-accent">
+                     {selectedFee === 0 ? 'FREE PRACTICE' : `$${(selectedFee / 100).toFixed(2)} Entry`}
+                   </div>
                   <button 
                     disabled={creating}
                     onClick={() => handleCreateTournament('EFOOTBALL')}

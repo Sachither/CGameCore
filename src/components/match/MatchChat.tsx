@@ -28,6 +28,8 @@ export default function MatchChat({ match }: { match: Match }) {
   const matchId = match?.id;
 
   const [chatError, setChatError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMod = profile?.role === 'MODERATOR' || profile?.role === 'ADMIN' || !!profile?.isAdmin;
 
   const q = useMemo(() => {
@@ -36,7 +38,28 @@ export default function MatchChat({ match }: { match: Match }) {
   }, [matchId]);
 
   useEffect(() => {
-    if (!q || !user) return;
+    if (!q || !user || !match) return;
+
+    // GUARD: Only attempt to subscribe if the user is authorized to see this chat
+    // This avoids the 'Permission Denied' loop while Firestore propagates the join write
+    const isPlayer = match.playerIds?.includes(user.uid) || !!match.players?.[user.uid];
+    const isCreator = match.creatorId === user.uid;
+    const isStaff = profile?.role === 'MODERATOR' || profile?.role === 'ADMIN' || !!profile?.isAdmin;
+
+    // For PROTECTED rooms, we MUST wait until we are in the playerIds array to avoid Permission Denied
+    if (match.isProtected && !isPlayer && !isCreator && !isStaff) {
+      console.log("[MatchChat] User not in protected roster yet, deferring chat subscription...");
+      return;
+    }
+
+    if (!isPlayer && !isCreator && !isStaff && match.status !== 'WAITING') {
+      console.log("[MatchChat] User not in roster yet and match not in WAITING, deferred subscription...");
+      return;
+    }
+
+    let retries = 0;
+    const MAX_RETRIES = 6;
+    let unsub: (() => void) | null = null;
 
     const getTime = (t: any) => {
       if (!t) return Date.now();
@@ -46,54 +69,67 @@ export default function MatchChat({ match }: { match: Match }) {
       return Date.now();
     };
 
-    const unsub = onSnapshot(q, 
-      (snap) => {
-        setChatError(null);
-        try {
-          const dbMsgs = snap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() } as Message))
-            .sort((a, b) => getTime(a.createdAt) - getTime(b.createdAt));
-          
-          // Inject System Initial Message
-          const systemInitial: Message = {
-            id: 'system-intro',
-            text: `MISSION PROTOCOL:
+    const subscribe = () => {
+      unsub = onSnapshot(q,
+        (snap) => {
+          setChatError(null);
+          retries = 0;
+          try {
+            const dbMsgs = snap.docs
+              .map(doc => ({ id: doc.id, ...doc.data() } as Message))
+              .sort((a, b) => getTime(a.createdAt) - getTime(b.createdAt));
+
+            // Inject System Initial Message
+            const systemInitial: Message = {
+              id: 'system-intro',
+              text: `MISSION PROTOCOL:
 1. HOST: Create the room & share room code/Password(if needed) here immediately.
 2. DISPUTE: You MUST record gameplay to provide evidence.
 3. NO-SHOW: Failure to join within 5 mins = Disqualification.
 4. CONDUCT: Zero tolerance for harassment or toxic behavior.
 <<<CRITICAL_RED_START>>>5. SCREENSHOT REQUIRED: You MUST have a screenshot of your victory to claim/submit your win!<<<CRITICAL_RED_END>>>
 Secure the objective.`,
-            senderUid: 'system',
-            senderName: 'COMMAND CENTER',
-            isSystem: true,
-            createdAt: { seconds: 0 }
-          };
+              senderUid: 'system',
+              senderName: 'COMMAND CENTER',
+              isSystem: true,
+              createdAt: { seconds: 0 }
+            };
 
-          setMessages([systemInitial, ...dbMsgs]);
-          // Auto scroll
-          setTimeout(() => {
-            if (scrollRef.current) {
-              scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-            }
-          }, 100);
-        } catch (e) {
-          console.error("Chat parsing error:", e);
+            setMessages([systemInitial, ...dbMsgs]);
+            setTimeout(() => {
+              if (scrollRef.current) {
+                scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+              }
+            }, 100);
+          } catch (e) {
+            console.error("Chat parsing error:", e);
+          }
+        },
+        (error) => {
+          if (error.code === 'permission-denied' && retries < MAX_RETRIES) {
+            retries++;
+            const delay = Math.min(500 * retries, 4000); // 500ms, 1s, 1.5s ... 4s max
+            console.warn(`[MatchLink] Permission denied. Retry ${retries}/${MAX_RETRIES} in ${delay}ms...`);
+            setChatError("Establishing Command Link...");
+            if (unsub) { unsub(); unsub = null; }
+            retryTimerRef.current = setTimeout(subscribe, delay);
+          } else if (error.code === 'permission-denied') {
+            console.error("[MatchLink] Max retries reached. Cannot access chat.");
+            setChatError("Access denied. You may not be authorised for this match.");
+          } else {
+            console.error("[MatchChat] Listener error:", error);
+            setChatError(error.message);
+          }
         }
-      },
-      (error) => {
-        // Permission Denied is common during the initial join-sync (millisecond lag)
-        if (error.code === 'permission-denied') {
-          console.warn("[MatchLink] Syncing tactical permissions...");
-          setChatError("Establishing Command Link...");
-        } else {
-          console.error("[MatchChat] Listener error:", error);
-          setChatError(error.message);
-        }
-      }
-    );
+      );
+    };
 
-    return () => unsub();
+    subscribe();
+
+    return () => {
+      if (unsub) unsub();
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    };
   }, [q, user]);
 
   const handleSend = async (e?: React.FormEvent) => {

@@ -19,12 +19,20 @@ service cloud.firestore {
     }
 
     function isBanned() {
-      return isSignedIn() && getUserData().get('isBanned', false) == true;
+      let data = getUserData();
+      return isSignedIn() && (
+        data.get('isBanned', false) == true || 
+        data.get('isBanned', 'false') == 'true'
+      );
     }
 
     function isSuspended() {
-      return isSignedIn() && 
-             getUserData().get('suspendedUntil', request.time).toMillis() > request.time.toMillis();
+      let data = getUserData();
+      let suspendedUntil = data.get('suspendedUntil', request.time);
+      return isSignedIn() && (
+        (suspendedUntil is timestamp && suspendedUntil.toMillis() > request.time.toMillis()) ||
+        (suspendedUntil is number && suspendedUntil > request.time.toMillis())
+      );
     }
 
     function isSuperAdmin() {
@@ -126,12 +134,20 @@ service cloud.firestore {
     // --- MESSAGES (MATCH CHAT) ---
     match /matches/{matchId}/messages/{messageId} {
       function canAccessChat() {
+        let matchDoc = get(/databases/$(database)/documents/matches/$(matchId));
+        let matchData = matchDoc.data;
+        let uid = request.auth.uid;
+        
         return isSignedIn() && (
-          (request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.get('playerIds', []) || 
-           request.auth.uid in get(/databases/$(database)/documents/matches/$(matchId)).data.get('players', {}) || 
-           get(/databases/$(database)/documents/matches/$(matchId)).data.get('creatorId', '') == request.auth.uid) 
-             && !isBanned() && !isSuspended()
-          || isStaff()
+          isStaff() ||
+          (
+            !isBanned() && !isSuspended() &&
+            (
+              uid == matchData.get('creatorId', '') ||
+              uid in matchData.get('playerIds', []) ||
+              (matchData.get('isProtected', false) == false && matchData.get('status', 'WAITING') in ['WAITING', 'READY'])
+            )
+          )
         );
       }
 
@@ -139,7 +155,7 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.senderUid == request.auth.uid
         && canAccessChat()
-        && get(/databases/$(database)/documents/matches/$(matchId)).data.status in ['WAITING', 'READY', 'IN_PROGRESS', 'RESOLVING', 'WAITING_FOR_OPPONENT', 'DISPUTED'];
+        && get(/databases/$(database)/documents/matches/$(matchId)).data.get('status', 'WAITING') in ['WAITING', 'READY', 'IN_PROGRESS', 'RESOLVING', 'WAITING_FOR_OPPONENT', 'DISPUTED'];
     }
 
     // --- COMPETITION CHATS (WAR ROOM GLOBAL) ---

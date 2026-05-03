@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '@/lib/firebase';
@@ -10,6 +10,7 @@ import GoogleLoginButton from './GoogleLoginButton';
 
 export default function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [email, setEmail] = useState("");
@@ -36,7 +37,8 @@ export default function LoginForm() {
       setError("SUCCESS! SYNCING PROFILE...");
       
       // Explicit redirect to ensure immediate transition
-      router.push('/dashboard');
+      const callback = searchParams.get('callback');
+      router.push(callback ? decodeURIComponent(callback) : '/dashboard');
       
       // FAIL-SAFE: If the redirect takes more than 10s, release the button
       setTimeout(() => {

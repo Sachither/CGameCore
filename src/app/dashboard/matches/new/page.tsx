@@ -22,6 +22,7 @@ interface Tournament {
   status: string;
   totalPool: number;
   createdAt?: any;
+  isProtected?: boolean;
 }
 
 export default function CreateMatchPage() {
@@ -36,6 +37,8 @@ export default function CreateMatchPage() {
   const [duration, setDuration] = useState<'12m' | '15m'>('15m');
   const [maxPlayers, setMaxPlayers] = useState<number>(2);
   const [stake, setStake] = useState<number>(50);
+  const [roomName, setRoomName] = useState("");
+  const [roomPassword, setRoomPassword] = useState("");
   
   // Tournament section state
   const [matchesLoading, setMatchesLoading] = useState(true);
@@ -45,6 +48,7 @@ export default function CreateMatchPage() {
   const [isCreateTournamentOpen, setIsCreateTournamentOpen] = useState(false);
   const [joiningTournament, setJoiningTournament] = useState<Tournament | null>(null);
   const [joinInGameName, setJoinInGameName] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
   const [joinLoading, setJoinLoading] = useState(false);
   const [config, setConfig] = useState<SystemConfig>(DEFAULT_CONFIG);
 
@@ -58,8 +62,18 @@ export default function CreateMatchPage() {
     if (profile) {
       const tag = game === 'CODM' ? profile.codTag : profile.efootballTag;
       setInGameName(tag || "");
+
+      // PARTNER SYNC: For free matches, default password to their promo/referral code
+      if (profile.role === 'PARTNER' && stake === 0) {
+        if (!roomPassword && profile.myReferralCode) {
+           setRoomPassword(profile.myReferralCode.toUpperCase());
+        }
+        if (!roomName) {
+           setRoomName(`${profile.username.toUpperCase()} PRACTICE`);
+        }
+      }
     }
-  }, [profile, game]);
+  }, [profile, game, stake]);
 
   // Sync join in-game name when a tournament is selected
   useEffect(() => {
@@ -88,14 +102,15 @@ export default function CreateMatchPage() {
           return {
             id: d.id,
             game: data.game,
-            title: `${data.game} Tournament`,
+            title: data.roomName || `${data.game} Tournament`,
             format: 'tournament',
             challengeFee: data.challengeFee || 0,
             playerCount: pCount,
             quota: data.maxPlayers || 16,
             status: data.status,
             totalPool: (data.challengeFee || 0) * (data.maxPlayers || 16) * (1 - config.matchFeePercentage),
-            createdAt: data.createdAt
+            createdAt: data.createdAt,
+            isProtected: data.isProtected || false
           } as Tournament;
         })
         // Sort by creation date (newest first) in JavaScript to avoid composite index
@@ -130,13 +145,14 @@ export default function CreateMatchPage() {
           return {
             id: d.id,
             game: data.game,
-            title: data.title,
+            title: data.roomName || data.title,
             format: 'tournament',
             challengeFee: data.challengeFee || 0,
             playerCount: (data.playerIds || []).length,
             quota: 16,
             status: data.status,
-            totalPool: data.totalPool || 0
+            totalPool: data.totalPool || 0,
+            isProtected: data.isProtected || false
           } as Tournament;
         });
       setTournaments(prevTournaments => {
@@ -191,7 +207,9 @@ export default function CreateMatchPage() {
         profile.username,
         profile.avatarId,
         joiningTournament.id,
-        joinInGameName.trim()
+        joinInGameName.trim(),
+        undefined,
+        joiningTournament.isProtected ? joinPassword : undefined
       );
       setJoiningTournament(null);
       router.push(`/match/${joiningTournament.id}`);
@@ -225,7 +243,9 @@ export default function CreateMatchPage() {
         inGameName,
         game === 'CODM' ? weaponClass : 'NONE',
         game === 'EFOOTBALL' ? duration : 'NONE',
-        game === 'CODM' && format === 'FFA' ? maxPlayers : 2
+        game === 'CODM' && format === 'FFA' ? maxPlayers : 2,
+        roomName.trim() || undefined,
+        roomPassword.trim() || undefined
       );
       await router.push(`/match/${matchId}`);
     } catch (err: any) {
@@ -295,6 +315,21 @@ export default function CreateMatchPage() {
                   className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-sm transition-all"
                 />
               </div>
+
+              {joiningTournament.isProtected && (
+                <div className="space-y-3">
+                  <label className="block text-xs font-black uppercase tracking-[0.2em] text-accent-aware italic">
+                    Room Password
+                  </label>
+                  <input 
+                    type="password"
+                    value={joinPassword}
+                    onChange={(e) => setJoinPassword(e.target.value)}
+                    placeholder="Enter room password..."
+                    className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-sm transition-all"
+                  />
+                </div>
+              )}
 
               {/* Balance Check */}
               <div className="bg-accent/5 border border-accent/20 p-3 rounded-sm">
@@ -475,14 +510,19 @@ export default function CreateMatchPage() {
               <div className="grid grid-cols-1 gap-8">
                 {/* Stake Input */}
                 <div>
-                  <label className="block text-xs font-black uppercase tracking-[0.2em] text-sub mb-3 ml-1 italic">Stake (Coins)</label>
+                  <div className="flex justify-between items-end mb-3">
+                    <label className="block text-xs font-black uppercase tracking-[0.2em] text-sub ml-1 italic">Stake (Coins)</label>
+                    <button type="button" onClick={() => setStake(stake === 0 ? 50 : 0)} className="text-[10px] font-bold text-accent uppercase tracking-widest bg-accent/10 px-3 py-1 rounded-sm hover:bg-accent/20 transition-colors">
+                      {stake === 0 ? 'Switch to Cash Match' : 'Play for Free ($0)'}
+                    </button>
+                  </div>
                   <div className="relative">
                     <input 
                       type="number" 
-                      min={50} 
+                      min={0} 
                       max={20000}
                       step={50}
-                      value={stake === 0 ? '' : stake}
+                      value={stake === 0 ? '0' : stake}
                       onChange={(e) => {
                         const val = parseInt(e.target.value);
                         setStake(isNaN(val) ? 0 : val);
@@ -497,7 +537,48 @@ export default function CreateMatchPage() {
                   {stake >= 50 && (
                     <p className="text-[9px] text-gray-500 mt-2 font-bold uppercase tracking-wide">≈ ${(stake / 100).toFixed(2)} USD Payout Potential</p>
                   )}
+                  {stake === 0 && (
+                    <p className="text-[9px] text-accent mt-2 font-bold uppercase tracking-wide">Free Practice Match (Unranked)</p>
+                  )}
                 </div>
+
+                {stake === 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+                    <div>
+                      <label className="block text-xs font-black uppercase tracking-[0.2em] text-sub mb-3 ml-1 italic">Room Name</label>
+                      <input 
+                        type="text" 
+                        value={roomName}
+                        onChange={(e) => setRoomName(e.target.value)}
+                        placeholder="e.g. Scrims #1"
+                        className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-sm transition-colors"
+                      />
+                    </div>
+                    {profile?.role !== 'PARTNER' && (
+                      <div>
+                        <label className="block text-xs font-black uppercase tracking-[0.2em] text-sub mb-3 ml-1 italic">Password (Optional)</label>
+                        <input 
+                          type="text" 
+                          value={roomPassword}
+                          onChange={(e) => setRoomPassword(e.target.value)}
+                          placeholder="Leave blank for public"
+                          className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-sm transition-colors"
+                        />
+                      </div>
+                    )}
+                    {profile?.role === 'PARTNER' && (
+                      <div className="flex flex-col justify-center">
+                        <label className="block text-xs font-black uppercase tracking-[0.2em] text-accent mb-3 ml-1 italic">Partner Gating Active</label>
+                        <div className="bg-accent/10 border border-accent/20 p-4 rounded-sm">
+                           <p className="text-[10px] text-accent font-bold uppercase tracking-widest leading-relaxed">
+                             Deployment is automatically secured via your recruitment network.<br/>
+                             Only your Recruits or operatives using code <span className="underline">{profile.myReferralCode}</span> can engage.
+                           </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="pt-6 border-t border-surface-border">
@@ -508,7 +589,7 @@ export default function CreateMatchPage() {
 
                 <button 
                   type="submit" 
-                  disabled={loading || stake < 50 || (profile?.balanceCoins || 0) < stake}
+                  disabled={loading || (stake > 0 && stake < 50) || (stake > 0 && (profile?.balanceCoins || 0) < stake)}
                   className="w-full bg-accent hover:bg-accent-hover text-black py-5 rounded-sm font-black uppercase tracking-[0.3em] italic shadow-[0_10px_40px_rgba(0,255,102,0.3)] transition-all hover:-translate-y-1 disabled:opacity-20 disabled:cursor-not-allowed group"
                 >
                    {loading ? (
@@ -517,7 +598,7 @@ export default function CreateMatchPage() {
                      <>Initialize <span className="group-hover:translate-x-2 transition-transform inline-block ml-2">Lobby →</span></>
                    )}
                 </button>
-                {(profile?.balanceCoins || 0) < stake && (
+                {(stake > 0 && (profile?.balanceCoins || 0) < stake) && (
                   <p className="text-center text-red-500 text-[10px] font-black uppercase tracking-widest mt-4">Insufficient Balance to Create This Match</p>
                 )}
               </div>
@@ -563,7 +644,8 @@ export default function CreateMatchPage() {
                       <span className="bg-accent/10 text-accent px-2 py-1 text-[8px] font-black uppercase rounded-sm">{tournament.format}</span>
                       <span className="text-[8px] text-gray-500 font-bold uppercase">{tournament.status}</span>
                     </div>
-                    <h4 className="font-black text-sm text-white italic uppercase tracking-tight mb-3 truncate group-hover:text-accent transition-colors">
+                    <h4 className="font-black text-sm text-white italic uppercase tracking-tight mb-3 truncate group-hover:text-accent transition-colors flex items-center gap-2">
+                      {tournament.isProtected && <svg className="w-3 h-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>}
                       {tournament.title}
                     </h4>
                     <div className="space-y-2 mb-4 text-[9px]">

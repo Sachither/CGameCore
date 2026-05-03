@@ -5,10 +5,11 @@ import { doc, getDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '@/lib/firebase';
 import { useToast } from '@/context/ToastContext';
 import { Loader2 } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function GoogleLoginButton({ text = "Continue with Google" }: { text?: string }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
   const toast = useToast();
 
@@ -27,11 +28,14 @@ export default function GoogleLoginButton({ text = "Continue with Google" }: { t
       if (docSnap.exists()) {
         console.log("[GoogleAuth] Verified operative profile found. Redirecting to Command Center.");
         toast.success("Identity Verified", "Welcome back, Operative.");
-        router.push('/dashboard');
+        const callback = searchParams.get('callback');
+        router.push(callback ? decodeURIComponent(callback) : '/dashboard');
       } else {
         console.warn("[GoogleAuth] No operative profile found. Directing to enlistment...");
         toast.info("Enlistment Required", "Complete your profile to access the arena.");
-        router.push('/register');
+        const callback = searchParams.get('callback');
+        const regUrl = callback ? `/register?callback=${encodeURIComponent(callback)}` : '/register';
+        router.push(regUrl);
       }
     } catch (error: any) {
       console.error("[GoogleAuth] Auth Relay Error:", error);

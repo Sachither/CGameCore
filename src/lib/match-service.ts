@@ -113,7 +113,9 @@ export const createMatch = async (
   inGameName: string,
   weaponClass: 'ALL GUNS' | 'SHOTGUN' | 'SNIPER' | 'NONE' = 'NONE',
   duration: '12m' | '15m' | 'NONE' = 'NONE',
-  maxPlayers: number = 2
+  maxPlayers: number = 2,
+  roomName?: string,
+  roomPassword?: string
 ) => {
   // SINGLETON CHECK for 50/100 CR (Leagues/Tournaments only)
   if ((format === 'league' || format === 'tournament') && (challengeFee === 50 || challengeFee === 100)) {
@@ -124,7 +126,8 @@ export const createMatch = async (
   }
 
   const result = await createMatchAction(
-    idToken, username, avatarId, game, format, challengeFee, inGameName, weaponClass, duration, maxPlayers
+    idToken, username, avatarId, game, format, challengeFee, inGameName, weaponClass, duration, maxPlayers,
+    undefined, undefined, undefined, undefined, undefined, roomName, roomPassword
   );
 
   if (!result.success) throw new Error(result.error);
@@ -140,9 +143,10 @@ export const joinMatch = async (
   avatarId: number, 
   matchId: string,
   inGameName: string,
-  referralCode?: string
+  referralCode?: string,
+  roomPassword?: string
 ) => {
-  const result = await joinMatchAction(idToken, username, avatarId, matchId, inGameName, referralCode);
+  const result = await joinMatchAction(idToken, username, avatarId, matchId, inGameName, referralCode, roomPassword);
   if (!result.success) throw new Error(result.error);
 };
 
