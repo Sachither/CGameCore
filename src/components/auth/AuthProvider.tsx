@@ -83,7 +83,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const redirectCooldown = useRef<number>(0);
   const sessionStartRef = useRef(Date.now()); 
-  const lastSeenUserRef = useRef(Date.now());
+  const lastSeenUserRef = useRef<number>(0);
+
+  // Initialize lastSeenUserRef from sessionStorage if available
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('cgame_auth_last_seen');
+      if (stored) lastSeenUserRef.current = parseInt(stored);
+      else lastSeenUserRef.current = Date.now();
+    }
+  }, []);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -114,6 +123,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         setUser(firebaseUser);
         lastSeenUserRef.current = Date.now();
+        if (typeof window !== 'undefined') {
+          sessionStorage.setItem('cgame_auth_last_seen', Date.now().toString());
+        }
         setProfile(null); // 🛡️ Clear old profile immediately to prevent stale redirects
         // Reset session start time when a new user is detected
         sessionStartRef.current = Date.now();
@@ -160,8 +172,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         // GUEST STATE - Wait for potential recovery if we just saw a user
         const timeSinceSeen = (Date.now() - lastSeenUserRef.current) / 1000;
-        if (timeSinceSeen < 1) {
+        if (timeSinceSeen < 8) { // 🛡️ Increased to 8s for mobile stability
            console.log("[AuthProvider] User vanished. Waiting for recovery...");
+           setTimeout(() => {
+             // Force a re-check if still loading after delay
+             if (loading) setLoading(false);
+           }, 8000);
            return;
         }
 
@@ -207,7 +223,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const sessionTime = (Date.now() - sessionStartRef.current) / 1000;
         const timeSinceSeen = (Date.now() - lastSeenUserRef.current) / 1000;
         
-        if (sessionTime < 5 || timeSinceSeen < 5) {
+        // 🛡️ Persistence Grace: Give mobile 8s to recover auth before redirecting
+        if (sessionTime < 8 || timeSinceSeen < 8) {
           console.log("[Auth] User null but state is fresh/recovering. Holding...");
           return;
         }
