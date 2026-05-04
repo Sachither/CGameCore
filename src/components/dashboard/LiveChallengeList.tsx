@@ -39,7 +39,8 @@ export default function LiveChallengeList() {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Match));
       // Client-side filtering and sorting
       const sorted = docs
-        .filter(d => d.format !== 'league' && d.format !== 'tournament')
+        .filter(d => d.format !== 'tournament' && !d.circuitId) 
+
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
         .slice(0, 20); // Show more challenges
       

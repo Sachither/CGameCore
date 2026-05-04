@@ -7,7 +7,7 @@ import {
   UserCheck, UserX, Copy, Loader2, CheckCircle2, 
   Clock, Flame, ShieldAlert, Server, Shield,
   Gavel, Trophy,
-  Zap,
+  Zap, Lock, Activity, Crown,
 } from "lucide-react";
 
 import { useToast } from "@/context/ToastContext";
@@ -34,10 +34,11 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const isDisputed = match?.status === 'DISPUTED';
 
   React.useEffect(() => {
-    const hasResolutionTimer = (match?.status === 'RESOLVING' || match?.status === 'WAITING_FOR_OPPONENT') && match?.resolutionEndTime;
-    const hasExtractionTimer = !hasResolutionTimer && !isDisputed && match?.expiresAt && !['CLOSED', 'COMPLETED'].includes(match.status);
+    const hasReadyTimer = (match as any)?.readyDeadline && !['CLOSED', 'COMPLETED', 'IN_PROGRESS'].includes(match.status);
+    const hasResolutionTimer = !hasReadyTimer && (match?.status === 'RESOLVING' || match?.status === 'WAITING_FOR_OPPONENT') && match?.resolutionEndTime;
+    const hasExtractionTimer = !hasReadyTimer && !hasResolutionTimer && !isDisputed && match?.expiresAt && !['CLOSED', 'COMPLETED', 'SCHEDULED'].includes(match.status);
 
-    if (!hasResolutionTimer && !hasExtractionTimer) {
+    if (!hasReadyTimer && !hasResolutionTimer && !hasExtractionTimer) {
       setTimerSeconds(null);
       return;
     }
@@ -49,7 +50,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
       return new Date(val);
     };
 
-    const targetTimeSrc = hasResolutionTimer ? match.resolutionEndTime : match.expiresAt;
+    const targetTimeSrc = hasReadyTimer ? (match as any).readyDeadline : (hasResolutionTimer ? match.resolutionEndTime : match.expiresAt);
     const dateObj = extractDate(targetTimeSrc);
     if (!dateObj) {
       setTimerSeconds(null);
@@ -79,7 +80,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
     updateTimer();
     const intv = setInterval(updateTimer, 1000);
     return () => clearInterval(intv);
-  }, [match?.status, match?.resolutionEndTime, match?.expiresAt, currentUserUid, user]);
+  }, [match?.status, match?.resolutionEndTime, match?.expiresAt, (match as any)?.readyDeadline, currentUserUid, user]);
   React.useEffect(() => {
     if (timerSeconds !== 0 || match?.status === 'CLOSED' || match?.status === 'COMPLETED') return;
 
@@ -143,15 +144,22 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   }, [timerSeconds, match?.status, match?.id, user, currentUserUid, loading, hasGhostOpponent]);
 
 
-  // Auto-redirect ALL users when match closes (prevents clock skew issue where only 1 user exits)
+  // Auto-redirect ALL users when match closes
   React.useEffect(() => {
     if ((match?.status === 'CLOSED' || match?.status === 'COMPLETED') && currentUserUid && match.players[currentUserUid]) {
+      const isGathering = (match.format === 'tournament' || match.format === 'league') && (match.maxPlayers || 2) > 2;
+      
       const timer = setTimeout(() => {
-        window.location.href = "/dashboard";
+        if (match.status === 'COMPLETED' && isGathering) {
+           const targetId = match.circuitId || match.id;
+           window.location.href = `/dashboard/tournaments/view/${targetId}`;
+        } else {
+           window.location.href = "/dashboard";
+        }
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [match?.status, currentUserUid, match.players]);
+  }, [match?.status, currentUserUid, match.players, match.format, match.maxPlayers, match.circuitId, match.id]);
 
   if (!match) return null;
 
@@ -247,8 +255,8 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
            <div>
               <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-none mb-1">Combat Theater</div>
               <h3 className="text-white font-black uppercase italic tracking-tighter text-lg">
-                {match.round !== 'NONE' ? match.round : 'GROUP PHASE'} 
-                {match.group !== 'NONE' && ` • SECTOR ${match.group}`}
+              {match.round !== 'NONE' ? (match.format === 'league' ? `LEAGUE • ROUND ${(match as any).roundNumber || 1}` : match.round) : 'GROUP PHASE'} 
+              {match.group && match.group !== 'NONE' && ` • SECTOR ${match.group}`}
               </h3>
            </div>
            {match.leg !== 'NONE' && (
@@ -534,24 +542,100 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                  </div>
               );
            }
+           if (match.status === 'CLOSED' || match.status === 'COMPLETED') {
+              const winnerUid = (match as any).championUid;
+              const isWinner = winnerUid === currentUserUid;
+              const isDraw = !winnerUid && Object.values(match.players).every(p => (p as any).claim === 'DRAW');
+              
+              return (
+                 <div className="bg-black/80 backdrop-blur-xl border-2 border-white/10 p-10 rounded-sm text-center animate-in zoom-in duration-500 shadow-2xl">
+                   {isDraw ? (
+                     <div className="w-20 h-20 bg-yellow-500/10 border border-yellow-500/40 rotate-45 flex items-center justify-center mx-auto mb-8">
+                        <Activity className="w-10 h-10 text-yellow-500 -rotate-45" />
+                     </div>
+                   ) : isWinner ? (
+                     <div className="w-20 h-20 bg-accent/10 border border-accent/40 rotate-45 flex items-center justify-center mx-auto mb-8 shadow-[0_0_50px_rgba(0,255,102,0.2)]">
+                        <Trophy className="w-10 h-10 text-accent -rotate-45" />
+                     </div>
+                   ) : (
+                     <div className="w-20 h-20 bg-red-500/10 border border-red-500/40 rotate-45 flex items-center justify-center mx-auto mb-8">
+                        <ShieldAlert className="w-10 h-10 text-red-500 -rotate-45" />
+                     </div>
+                   )}
+
+                   <h3 className={`text-4xl font-black italic uppercase tracking-tighter mb-2 ${isDraw ? 'text-yellow-500' : isWinner ? 'text-accent' : 'text-red-500'}`}>
+                     {isDraw ? 'CONSENSUS DRAW' : isWinner ? 'MISSION SECURED' : 'OPERATION FAILED'}
+                   </h3>
+                   <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.3em] mb-6">
+                     Intelligence: Match {match.status} // Tactical Outcome Recorded
+                   </p>
+
+                   {match.format === 'league' && (match as any).circuitId && (
+                      <div className="mb-8 p-4 bg-white/5 border border-white/5 rounded-sm max-w-md mx-auto">
+                         <h4 className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3 italic">Final Division Podium</h4>
+                         <div className="flex justify-center items-end gap-2">
+                            {/* RANK 2 */}
+                            <div className="flex flex-col items-center gap-1">
+                               <div className="w-12 h-1 bg-white/10 rounded-full mb-1" />
+                               <div className="text-[8px] font-bold text-gray-400 uppercase truncate max-w-[60px]">2ND</div>
+                            </div>
+                            {/* RANK 1 */}
+                            <div className="flex flex-col items-center gap-1 scale-110 px-4">
+                               <Crown className="w-4 h-4 text-accent mb-1 animate-bounce" />
+                               <div className="text-[10px] font-black text-accent uppercase truncate max-w-[80px]">CHAMPION</div>
+                            </div>
+                            {/* RANK 3 */}
+                            <div className="flex flex-col items-center gap-1">
+                               <div className="w-12 h-1 bg-white/10 rounded-full mb-1" />
+                               <div className="text-[8px] font-bold text-gray-400 uppercase truncate max-w-[60px]">3RD</div>
+                            </div>
+                         </div>
+                         <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mt-4">
+                            Visit the League Hub for the full tactical standings.
+                         </p>
+                      </div>
+                   )}
+                   
+                   <button 
+                     onClick={() => window.location.href = '/dashboard'}
+                     className="px-8 py-4 bg-white/5 border border-white/10 hover:bg-white/10 text-white font-black uppercase tracking-widest text-[10px] rounded-sm transition-all"
+                   >
+                     Return to Command Base
+                   </button>
+                 </div>
+              );
+           }
+           if (match.status === 'SCHEDULED') {
+              return (
+                 <div className="bg-black/60 backdrop-blur-md border-2 border-white/5 p-8 rounded-sm text-center animate-in zoom-in">
+                   <Lock className="w-12 h-12 text-gray-700 mx-auto mb-4 opacity-50" />
+                   <h3 className="text-xl font-black text-white italic uppercase tracking-widest mb-2">Sector Locked</h3>
+                   <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed max-w-xs mx-auto">
+                      You have advanced to this sector. Operation will commence automatically once all current round matches are secured. Stay in the comms channel to strategize.
+                   </p>
+                 </div>
+              );
+           }
            return null;
         })()}
 
 
-        {!isGatheringLobby && match.status !== 'WAITING' && (isResolutionTimer || (timerSeconds !== null && !['CLOSED', 'COMPLETED'].includes(match.status))) && (
+        {!isGatheringLobby && (match.status !== 'WAITING' || (match as any).readyDeadline) && (isResolutionTimer || (timerSeconds !== null && !['CLOSED', 'COMPLETED', 'SCHEDULED'].includes(match.status))) && (
           <div className={`${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'bg-red-950 border-red-500 shadow-[0_0_30px_rgba(220,38,38,0.2)]' : 'bg-black border-accent shadow-[0_0_30px_rgba(0,255,102,0.15)]'} border-2 p-6 rounded-sm flex flex-col items-center justify-center text-center relative overflow-hidden group animate-in fade-in zoom-in`}>
             {isUrgent && <div className="absolute inset-0 bg-red-600/5 animate-pulse pointer-events-none" />}
             
-            <h4 className={`text-[10px] ${ (match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-500' : 'text-accent'} font-black uppercase tracking-[0.3em] mb-4 flex items-center gap-2 z-10`}>
-              <Flame className={`w-4 h-4 ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-500' : 'text-accent'} animate-pulse`} /> 
+            <h4 className={`text-[10px] ${ (match.status === 'WAITING_FOR_OPPONENT' || isUrgent || !!(match as any).readyDeadline) ? 'text-red-500' : 'text-accent'} font-black uppercase tracking-[0.3em] mb-4 flex items-center gap-2 z-10`}>
+              <Flame className={`w-4 h-4 ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent || !!(match as any).readyDeadline) ? 'text-red-500' : 'text-accent'} animate-pulse`} /> 
               {isDisputed 
                 ? 'EXTRACTION HALTED'
                 : isResolutionTimer 
-                  ? (match.status === 'WAITING_FOR_OPPONENT' ? 'Strict Forfeit Timer' : 'Final Validation Countdown')
-                  : (hasGhostOpponent ? 'AUTO-VICTORY COUNTDOWN' : 'Tactical Extraction Deadline')}
+                  ? (match.status === 'WAITING_FOR_OPPONENT' ? 'Final Validation Countdown' : 'Strict Forfeit Timer')
+                  : (match as any).readyDeadline 
+                    ? 'Tactical Readiness Deadline'
+                    : (hasGhostOpponent ? 'AUTO-VICTORY COUNTDOWN' : 'Tactical Extraction Deadline')}
             </h4>
 
-            <div className={`text-6xl font-black ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'text-red-400 drop-shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-white drop-shadow-[0_0_10px_rgba(0,255,102,0.4)]'} italic tracking-tighter tabular-nums z-10`}>
+            <div className={`text-6xl font-black ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent || !!(match as any).readyDeadline) ? 'text-red-400 drop-shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-white drop-shadow-[0_0_10px_rgba(0,255,102,0.4)]'} italic tracking-tighter tabular-nums z-10`}>
               {timerSeconds !== null ? formatTime(timerSeconds) : '--'}
             </div>
 

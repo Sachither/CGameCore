@@ -22,6 +22,7 @@ export interface EngineMatch {
    group?: string;
    leg?: number | 'NONE';
    expiresAt?: admin.firestore.Timestamp | Date;
+   isTestMode?: boolean;
    [key: string]: any;
 }
 
@@ -54,5 +55,6 @@ export interface EngineCircuit {
    sfWinners?: string[];
    winnerUid?: string;
    runnerUpUid?: string;
+   isTestMode?: boolean;
    [key: string]: any;
 }

@@ -425,9 +425,10 @@ export async function createPartnerTournamentAction(
   idToken: string,
   game: 'CODM' | 'EFOOTBALL',
   entryFee: number,
-  format: 'BR' | 'FFA' | 'tournament' = 'tournament',
+  format: 'BR' | 'FFA' | 'tournament' | 'league' = 'tournament',
   maxPlayers: number = 8,
-  weaponClass: 'ALL GUNS' | 'SHOTGUN' | 'SNIPER' = 'ALL GUNS'
+  weaponClass: 'ALL GUNS' | 'SHOTGUN' | 'SNIPER' = 'ALL GUNS',
+  isTestMode: boolean = false
 ) {
   const uid = await getVerifiedUid(idToken);
   
@@ -447,8 +448,8 @@ export async function createPartnerTournamentAction(
       if (!allowedFFA.includes(maxPlayers)) throw new Error("Invalid FFA player count.");
     }
   } else if (game === 'EFOOTBALL') {
-    // Standardizing eFootball Elite to 16, 8, 4 or 2 player knockouts
-    const allowedEF = [2, 4, 8, 16];
+    // Standardizing eFootball Elite to 16, 10, 8, or 4 player knockouts
+    const allowedEF = [4, 8, 10, 16];
     if (!allowedEF.includes(maxPlayers)) maxPlayers = 16;
   }
 
@@ -494,6 +495,7 @@ export async function createPartnerTournamentAction(
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 6 * 3600 * 1000)), // 6 hour window
       roomName: entryFee === 0 ? `${profile.username.toUpperCase()} PRACTICE` : null,
+      isTestMode: !!isTestMode,
     };
 
     await matchRef.set(matchData);

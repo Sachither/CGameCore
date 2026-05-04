@@ -94,39 +94,42 @@ export default function LeaderboardView() {
   useEffect(() => {
     console.log("[Leaderboard] useEffect triggered - user:", (user as any)?.uid || 'null', "loading:", loading);
     
+    // We wait for auth to INITIALIZE, but we allow viewing if we want public leaderboards
+    // However, currently rules require isSignedIn(). So we check for user.
     if (!user) {
-      console.warn("[Leaderboard] ❌ NO USER AUTHENTICATED - Cannot query leaderboard");
-      console.log("[Leaderboard] user object is:", user);
-      console.log("[Leaderboard] user.uid might be:", (user as any)?.uid);
-      setLoading(false);
-      return;
+      const authTimeout = setTimeout(() => {
+        if (!user) {
+          console.warn("[Leaderboard] ❌ NO USER AUTHENTICATED after 3s - Leaderboard may be restricted.");
+          setLoading(false);
+        }
+      }, 3000);
+      return () => clearTimeout(authTimeout);
     }
 
-    console.log("[Leaderboard] ✅ User authenticated:", (user as any).uid);
-    console.log("[Leaderboard] Starting query for all users...");
+    console.log("[Leaderboard] ✅ User authenticated, initiating query:", (user as any).uid);
 
     // Query ALL users and sort by totalWins with default 0 for missing values
     const q = query(
       collection(db, "users"),
-      limit(500) // Get more users to ensure we have complete list
+      limit(500) 
     );
 
     let callbackFired = false;
     
-    // Set a timeout to warn if no callback fires
+    // Set a more generous timeout for slow networks
     const timeoutId = setTimeout(() => {
       if (!callbackFired) {
-        console.error("[Leaderboard] ❌ TIMEOUT: onSnapshot callback did not fire within 5 seconds!");
-        console.error("[Leaderboard] This may indicate a Firestore rules issue or network problem");
+        console.error("[Leaderboard] ❌ TIMEOUT: onSnapshot callback did not fire within 15 seconds!");
+        console.error("[Leaderboard] This usually means Firestore is waiting for an index, auth sync, or network is restricted.");
         setLeaderboardUsers([]);
         setLoading(false);
       }
-    }, 5000);
+    }, 15000);
 
     const unsub = onSnapshot(q, async (snap) => {
       callbackFired = true;
       clearTimeout(timeoutId);
-      console.log("[Leaderboard] 🔔 onSnapshot callback triggered!");
+      console.log("[Leaderboard] 🔔 Snapshot received. Count:", snap.docs.length);
       console.log(`[Leaderboard] Query returned ${snap.docs.length} documents`);
       
       if (snap.docs.length === 0) {

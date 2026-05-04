@@ -270,6 +270,7 @@ export default function CircuitWarRoom({
          <TacticalMap
             competition={competition}
             allMatches={allMatches}
+            userUid={userUid}
             isOpen={showTacticalMap}
             onClose={() => setShowTacticalMap(false)}
          />

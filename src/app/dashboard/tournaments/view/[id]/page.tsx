@@ -129,18 +129,21 @@ export default function WarRoomPage() {
       let tournamentMatches: Match[] = [];
       
       if (competition) {
-        const isCircuit = (competition as any).format === 'MASTER_CIRCUIT' || (competition as any).format === '16_TOURNAMENT';
+        const fmt = (competition as any).format || '';
+        const isNewLeague = fmt.includes('LEAGUE');
+        const isCircuit = fmt === 'MASTER_CIRCUIT' || fmt === '16_TOURNAMENT' || isNewLeague;
+        
         if (isCircuit) {
-          // For circuits (tournaments), only use circuitId matches
+          // For circuits & new leagues, use circuitId matches
           tournamentMatches = uniqueMatches.filter(m => 
             m.circuitId === id && 
-            (m.format === 'tournament' || m.round) // Only tournament format or matches with rounds
+            (m.format === 'tournament' || m.format === 'league' || m.round)
           );
         } else {
-          // For leagues, only use leagueId matches
+          // Legacy support for leagues using leagueId
           tournamentMatches = uniqueMatches.filter(m => 
             m.leagueId === id && 
-            (m.format === 'tournament' || m.round) // Only tournament format or matches with rounds
+            (m.format === 'tournament' || m.round)
           );
         }
       } else {
@@ -169,9 +172,12 @@ export default function WarRoomPage() {
   useEffect(() => {
     if (!competition || !user) return;
 
-    const isMaster = (competition as any).format === 'MASTER_CIRCUIT';
-    const isKnockout = (competition as any).format === '16_TOURNAMENT';
-    const max = isMaster ? 2 : isKnockout ? 1 : 0;
+    const fmt = (competition as any).format || '';
+    const isMaster = fmt === 'MASTER_CIRCUIT';
+    const isKnockout = fmt === '16_TOURNAMENT';
+    const isNewLeague = fmt.includes('LEAGUE');
+    const pCount = parseInt(fmt.split('_')[0]) || 0;
+    const max = isNewLeague ? (pCount - 1) : (isMaster ? 2 : (isKnockout ? 1 : 0));
     
     let played = 0;
     let qualified = false;
@@ -179,9 +185,16 @@ export default function WarRoomPage() {
 
     // 1. Calculate Status
     const currentPhase = (competition as any).status;
-    const isGroupsPhase = currentPhase === 'GROUPS' || currentPhase === 'FILLING' || currentPhase === 'ACTIVE';
+    const isGroupsPhase = currentPhase === 'GROUPS' || currentPhase === 'FILLING' || currentPhase === 'ACTIVE' || currentPhase === 'LEAGUE_ACTIVE';
 
-    if (isGroupsPhase && isMaster && (competition as any).groups) {
+    if (isNewLeague && (competition as any).standings) {
+       const myStats = (competition as any).standings[user.uid];
+       if (myStats) {
+          played = myStats.played || 0;
+          // In a league, you are only "eliminated" or "qualified" at the very end
+          // For now, we show them as "Active" (qualified=false, eliminated=false)
+       }
+    } else if (isGroupsPhase && isMaster && (competition as any).groups) {
       const groupEntry = Object.entries((competition as any).groups).find(([_, g]: any) => g.playerIds.includes(user.uid));
       if (groupEntry) {
         const [gCode, gData]: [string, any] = groupEntry;

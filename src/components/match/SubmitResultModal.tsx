@@ -24,7 +24,7 @@ export default function SubmitResultModal({
   const { user } = useAuth();
   const me = match.players[uid];
   const [file, setFile] = useState<File | null>(null);
-  const [claim, setClaim] = useState<'WIN' | 'LOSS' | null>((me as any)?.claim || null);
+  const [claim, setClaim] = useState<'WIN' | 'LOSS' | 'DRAW' | null>((me as any)?.claim || null);
   const [scoreFor, setScoreFor] = useState<string>((me as any)?.scoreFor?.toString() || "");
   const [scoreAgainst, setScoreAgainst] = useState<string>((me as any)?.scoreAgainst?.toString() || "");
   const [kills, setKills] = useState<string>((me as any)?.kills?.toString() || "");
@@ -59,11 +59,34 @@ export default function SubmitResultModal({
   const isFormValid = () => {
     if (!claim) return false;
     if (claim === 'WIN' && !file) return false;
+    if (claim === 'DRAW' && !file) return false;
+
     if (game === 'EFOOTBALL') {
-       return scoreFor !== "" && scoreAgainst !== "";
+       const hasScores = scoreFor !== "" && scoreAgainst !== "";
+       if (!hasScores) return false;
+       
+       // Score logic validation
+       const sFor = Number(scoreFor);
+       const sAgainst = Number(scoreAgainst);
+       if (claim === 'WIN' && sFor <= sAgainst) return false;
+       if (claim === 'LOSS' && sFor >= sAgainst) return false;
+       if (claim === 'DRAW' && sFor !== sAgainst) return false;
+       
+       return true;
     } else {
        return kills !== "";
     }
+  };
+
+  const getConflictError = () => {
+    if (game !== 'EFOOTBALL' || !claim || scoreFor === "" || scoreAgainst === "") return null;
+    const sFor = Number(scoreFor);
+    const sAgainst = Number(scoreAgainst);
+
+    if (claim === 'WIN' && sFor <= sAgainst) return "Victory requires a winning scoreline (e.g. 2-1).";
+    if (claim === 'LOSS' && sFor >= sAgainst) return "Defeat requires a losing scoreline (e.g. 0-1).";
+    if (claim === 'DRAW' && sFor !== sAgainst) return "A Draw requires equal scores (e.g. 1-1, 2-2).";
+    return null;
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,6 +126,10 @@ export default function SubmitResultModal({
       }
       if (claim === 'LOSS' && sFor >= sAgainst) {
         setError("Logical Conflict: You cannot admit DEFEAT with a winning scoreline.");
+        return;
+      }
+      if (claim === 'DRAW' && sFor !== sAgainst) {
+        setError("Logical Conflict: You cannot claim a DRAW with a non-equal scoreline.");
         return;
       }
     }
@@ -180,18 +207,26 @@ export default function SubmitResultModal({
              <div className="space-y-6">
                 <div>
                   <label className="block text-[10px] font-bold uppercase tracking-widest text-sub mb-3">Target Outcome</label>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className={`grid gap-4 ${match.format === 'league' ? 'grid-cols-3' : 'grid-cols-2'}`}>
                     <button 
                       onClick={() => setClaim('WIN')}
                       className={`py-4 rounded-[3px] font-black uppercase tracking-widest transition-all ${claim === 'WIN' ? 'bg-accent text-black shadow-[0_0_15px_rgba(0,255,102,0.3)]' : 'bg-surface-hover border border-surface-border text-gray-400'}`}
                     >
-                      I Won
+                      Win
                     </button>
+                    {match.format === 'league' && (
+                       <button 
+                         onClick={() => setClaim('DRAW')}
+                         className={`py-4 rounded-[3px] font-black uppercase tracking-widest transition-all ${claim === 'DRAW' ? 'bg-yellow-500 text-black shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'bg-surface-hover border border-surface-border text-gray-400'}`}
+                       >
+                         Draw
+                       </button>
+                    )}
                     <button 
                       onClick={() => setClaim('LOSS')}
                       className={`py-4 rounded-[3px] font-black uppercase tracking-widest transition-all ${claim === 'LOSS' ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.3)]' : 'bg-surface-hover border border-surface-border text-gray-400'}`}
                     >
-                      I Lost
+                      Loss
                     </button>
                   </div>
                 </div>
@@ -226,11 +261,20 @@ export default function SubmitResultModal({
                                  />
                               </div>
                            </div>
-                           <div className="bg-accent/5 border border-accent/20 p-3 rounded-sm">
-                              <p className="text-[9px] text-accent font-bold uppercase tracking-widest leading-relaxed text-center">
-                                 <span className="text-white">Tactical Agreement Required:</span> Your opponent must submit the exact same scoreline for auto-payout. Accuracy is mandatory.
-                              </p>
-                           </div>
+                           
+                            {getConflictError() ? (
+                               <div className="bg-red-500/10 border border-red-500/30 p-3 rounded-sm animate-pulse">
+                                  <p className="text-[10px] text-red-400 font-bold uppercase tracking-widest leading-relaxed text-center italic">
+                                     ⚠️ LOGICAL ERROR: {getConflictError()}
+                                  </p>
+                               </div>
+                            ) : (
+                               <div className="bg-accent/5 border border-accent/20 p-3 rounded-sm">
+                                  <p className="text-[9px] text-accent font-bold uppercase tracking-widest leading-relaxed text-center">
+                                     <span className="text-white">Tactical Agreement Required:</span> Your opponent must submit the exact same scoreline for auto-payout. Accuracy is mandatory.
+                                  </p>
+                               </div>
+                            )}
                         </div>
                     ) : (
                        <input 
@@ -245,7 +289,7 @@ export default function SubmitResultModal({
                   </div>
                 )}
 
-               {claim === 'WIN' && (
+               {(claim === 'WIN' || claim === 'DRAW') && (
                  <div className="animate-in slide-in-from-top-2 duration-300">
                     <label className="block text-[10px] font-bold uppercase tracking-widest text-sub mb-3">Visual Proof (Required)</label>
                     <input 
@@ -263,7 +307,7 @@ export default function SubmitResultModal({
                           <svg className={`w-5 h-5 ${file ? 'text-accent' : 'text-gray-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                        </div>
                        <span className="text-[11px] font-bold text-white uppercase tracking-widest text-center">
-                         {file ? file.name : "Tap to Select Victory Screen"}
+                         {file ? file.name : `Tap to Select ${claim} Screen`}
                        </span>
                     </div>
                  </div>

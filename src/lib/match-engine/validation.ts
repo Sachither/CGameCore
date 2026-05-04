@@ -1,7 +1,7 @@
 import admin from "firebase-admin";
 import { adminDb } from "@/lib/firebase-admin";
 import { EngineMatch, EngineCircuit } from "./types";
-import { handleKnockoutAdvancement } from "./progression";
+import { handleKnockoutAdvancement, handleLeagueAdvancement } from "./progression";
 
 /**
  * VALIDATION: Enforce Absolute Victory (No Draws)
@@ -15,6 +15,7 @@ export function validateAbsoluteVictory(scoreFor: number, scoreAgainst: number, 
          throw new Error("TACTICAL-ERROR: Absolute Victory required. No draws permitted in knockout combat (Single Leg or Tie-Breaker).");
       }
    }
+   // Draws are explicitly allowed for format === 'league'
 }
 
 /**
@@ -24,7 +25,8 @@ export async function resolveTechnicalWin(
    transaction: admin.firestore.Transaction,
    matchRef: admin.firestore.DocumentReference,
    matchData: EngineMatch,
-   winnerUid: string
+   winnerUid: string,
+   partnerSnap?: admin.firestore.DocumentSnapshot
 ) {
    // Find opponent — may be a ghost/system placeholder in finals
    const opponentId = matchData.playerIds.find(pid => pid !== winnerUid) || null;
@@ -36,6 +38,12 @@ export async function resolveTechnicalWin(
    if (matchData.circuitId) {
       circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
       circuitSnap = await transaction.get(circuitRef);
+      if (circuitSnap.exists) {
+         const cData = circuitSnap.data() as EngineCircuit;
+         if (cData.isPartnerTournament && cData.creatorId && !partnerSnap) {
+            partnerSnap = await transaction.get(adminDb.collection("users").doc(cData.creatorId));
+         }
+      }
    }
 
    // 1. Close Match — track ghost opponent score safely
@@ -67,8 +75,19 @@ export async function resolveTechnicalWin(
       };
 
       const g = matchData.group;
-      if (g && circuit.groups?.[g] && opponentId && !isGhostOpponent) {
-         // Only update group standings when a real opponent exists
+      const isLeague = circuit.format?.includes('LEAGUE');
+
+      if (isLeague && opponentId && !isGhostOpponent) {
+         // LEAGUE STANDINGS (Round Robin)
+         updates[`standings.${winnerUid}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${winnerUid}.wins`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${winnerUid}.pts`] = admin.firestore.FieldValue.increment(3);
+         updates[`standings.${winnerUid}.gf`] = admin.firestore.FieldValue.increment(2);
+         updates[`standings.${opponentId}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${opponentId}.losses`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${opponentId}.ga`] = admin.firestore.FieldValue.increment(2);
+      } else if (g && circuit.groups?.[g] && opponentId && !isGhostOpponent) {
+         // TOURNAMENT GROUP STANDINGS
          updates[`groups.${g}.standings.${winnerUid}.played`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${winnerUid}.wins`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${winnerUid}.pts`] = admin.firestore.FieldValue.increment(3);
@@ -86,6 +105,9 @@ export async function resolveTechnicalWin(
          // Promo: circuit engine handles all prize distribution (single source of truth)
          const { handlePromoAdvancement } = await import("./promo-engine");
          await handlePromoAdvancement(transaction, circuitRef, circuit, matchData.round || '', winnerUid, matchRef.id, 'SYSTEM_PROMO', matchData.game);
+      } else if (isLeague) {
+         // LEAGUE ADVANCEMENT
+         await handleLeagueAdvancement(transaction, circuitRef, circuit, matchData, winnerUid, 2, 0, partnerSnap || undefined);
       } else if (matchData.round === 'FINAL') {
          // Standard final: the winner IS the tournament champion — distribute prizes directly
          const runnerUpUid = opponentId && !isGhostOpponent ? opponentId : null;
@@ -163,7 +185,14 @@ export async function resolveDoubleNoShow(
       };
 
       const g = matchData.group;
-      if (g && circuit.groups?.[g]) {
+      const isLeague = circuit.format?.includes('LEAGUE');
+
+      if (isLeague) {
+         updates[`standings.${matchData.playerIds[0]}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${matchData.playerIds[0]}.losses`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${matchData.playerIds[1]}.played`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${matchData.playerIds[1]}.losses`] = admin.firestore.FieldValue.increment(1);
+      } else if (g && circuit.groups?.[g]) {
          updates[`groups.${g}.standings.${matchData.playerIds[0]}.played`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${matchData.playerIds[0]}.losses`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${matchData.playerIds[1]}.played`] = admin.firestore.FieldValue.increment(1);
@@ -175,6 +204,8 @@ export async function resolveDoubleNoShow(
       if (circuit.isPromo) {
          const { handlePromoAdvancement } = await import("./promo-engine");
          await handlePromoAdvancement(transaction, circuitRef, circuit, matchData.round || '', 'system', matchRef.id, 'SYSTEM_PROMO', matchData.game);
+      } else if (isLeague) {
+         await handleLeagueAdvancement(transaction, circuitRef, circuit, matchData, null, 0, 0);
       } else {
          const round = matchData.round;
          if (round === 'QF' || round === 'SF') {
@@ -186,5 +217,6 @@ export async function resolveDoubleNoShow(
              }
          }
       }
+
    }
 }

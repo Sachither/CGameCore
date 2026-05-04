@@ -225,3 +225,29 @@ export function getPartnerRevokedEmailTemplate(username: string) {
     </div>
   `;
 }
+
+/**
+ * TEMPLATE: Tactical Ping (Opponent Alert)
+ */
+export function getPingEmailTemplate(username: string, pingerName: string, matchId: string) {
+  return `
+    <div style="background-color: #000; color: #fff; font-family: 'Inter', sans-serif; padding: 40px; border: 1px solid #f59e0b; max-width: 600px; margin: auto;">
+      <h1 style="text-transform: uppercase; font-weight: 900; color: #f59e0b; margin: 0;">TACTICAL PING</h1>
+      <p style="color: #666; font-size: 10px; font-weight: 900; margin-bottom: 30px;">COMBAT ZONE // URGENT ALERT</p>
+      <p style="font-size: 14px; color: #aaa;">Operative ${username}, your opponent <strong>${pingerName}</strong> is waiting for you in the combat zone.</p>
+      <div style="background: #111; padding: 20px; border: 1px solid #222; margin: 20px 0; text-align: center;">
+        <p style="margin: 0; font-size: 16px; font-weight: 900; letter-spacing: 1px;">MATCH #${matchId.slice(-6)}</p>
+        <p style="margin: 10px 0 0 0; font-size: 10px; color: #666; text-transform: uppercase;">Engagement Required Immediately</p>
+      </div>
+      <a href="https://cgamecore.online/match/${matchId}" style="display: block; background: #f59e0b; color: #000; text-align: center; padding: 15px; font-weight: 900; text-decoration: none; text-transform: uppercase; font-size: 12px;">RETURN TO MISSION</a>
+      <div style="margin-top: 40px; border-top: 1px solid #222; padding-top: 20px; text-align: center;">
+        <p style="font-size: 10px; color: #444; text-transform: uppercase; font-weight: 800; margin-bottom: 10px;">
+          Neural Alert Frequency: Standard Deployment.
+        </p>
+        <p style="font-size: 10px; color: #666;">
+          Too many pings? <a href="https://cgamecore.online/unsubscribe" style="color: #888; text-decoration: underline;">Adjust frequency</a>
+        </p>
+      </div>
+    </div>
+  `;
+}

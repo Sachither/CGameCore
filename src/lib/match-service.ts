@@ -115,7 +115,8 @@ export const createMatch = async (
   duration: '12m' | '15m' | 'NONE' = 'NONE',
   maxPlayers: number = 2,
   roomName?: string,
-  roomPassword?: string
+  roomPassword?: string,
+  isTestMode?: boolean
 ) => {
   // SINGLETON CHECK for 50/100 CR (Leagues/Tournaments only)
   if ((format === 'league' || format === 'tournament') && (challengeFee === 50 || challengeFee === 100)) {
@@ -127,7 +128,7 @@ export const createMatch = async (
 
   const result = await createMatchAction(
     idToken, username, avatarId, game, format, challengeFee, inGameName, weaponClass, duration, maxPlayers,
-    undefined, undefined, undefined, undefined, undefined, roomName, roomPassword
+    undefined, undefined, undefined, undefined, undefined, roomName, roomPassword, isTestMode
   );
 
   if (!result.success) throw new Error(result.error);

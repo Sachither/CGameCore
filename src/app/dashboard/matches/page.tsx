@@ -1,17 +1,21 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { collection, query, where, onSnapshot, orderBy, limit, getDocs, writeBatch, arrayUnion, doc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, limit, getDocs, writeBatch, arrayUnion, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Match } from '@/lib/match-service';
-import { RefreshCw, ShieldAlert } from 'lucide-react';
+import { RefreshCw, ShieldAlert, Target, Table as TableIcon } from 'lucide-react';
+import LeagueStandingsModal from '@/components/dashboard/LeagueStandingsModal';
 
 export default function MyMatchesPage() {
   const { user } = useAuth();
   const [activeMatches, setActiveMatches] = useState<Match[]>([]);
   const [historyMatches, setHistoryMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
+  const [snapshotData, setSnapshotData] = useState<{ title: string, standings: any } | null>(null);
+  const [snapshotOpen, setSnapshotOpen] = useState(false);
+  const [fetchingSnapshot, setFetchingSnapshot] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -25,10 +29,13 @@ export default function MyMatchesPage() {
 
     const unsub = onSnapshot(q, (snap) => {
       const allMatches = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Match));
-      const activeStatuses = ['WAITING', 'READY', 'IN_PROGRESS', 'RESOLVING', 'DISPUTED', 'WAITING_FOR_OPPONENT'];
+      const activeStatuses = ['WAITING', 'READY', 'IN_PROGRESS', 'RESOLVING', 'DISPUTED', 'WAITING_FOR_OPPONENT', 'SCHEDULED'];
       
-      // Filter by involvement and status, then sort locally
-      const myInvolved = allMatches.filter(m => m.playerIds?.includes(user!.uid) || m.players[user!.uid]);
+      const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+      const myInvolved = allMatches.filter(m => {
+        const involved = m.playerIds?.includes(user!.uid) || m.players[user!.uid];
+        return involved && (isLocal || !m.isTestMode);
+      });
       
       const active = myInvolved
         .filter(m => activeStatuses.includes(m.status))
@@ -53,6 +60,33 @@ export default function MyMatchesPage() {
 
     return () => unsub();
   }, [user]);
+
+  const handleViewSnapshot = async (circuitId: string, title: string) => {
+    if (fetchingSnapshot) return;
+    setFetchingSnapshot(circuitId);
+    try {
+      // Deterministic check: Leagues first
+      let snap = await getDoc(doc(db, "leagues", circuitId));
+      if (!snap.exists()) {
+        snap = await getDoc(doc(db, "circuits", circuitId));
+      }
+
+      if (snap.exists()) {
+        const data = snap.data();
+        setSnapshotData({
+          title: data.title || title,
+          standings: data.standings || {}
+        });
+        setSnapshotOpen(true);
+      } else {
+        alert("Tactical snapshot lost or purged from archives.");
+      }
+    } catch (err) {
+      console.error("Snapshot Fetch Error:", err);
+    } finally {
+      setFetchingSnapshot(null);
+    }
+  };
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-12">
@@ -94,8 +128,8 @@ export default function MyMatchesPage() {
                          <div className="text-[10px] text-sub font-bold uppercase tracking-widest">{match.game} • {match.format}</div>
                          <div className="text-xl font-black text-main italic uppercase tracking-tight mt-1 items-center flex gap-3">
                             Lobby {match.id?.slice(0, 5)}
-                            <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest ${match.status === 'WAITING' ? 'bg-yellow-500/10 text-yellow-500' : match.status === 'READY' || match.status === 'IN_PROGRESS' ? 'bg-accent/10 text-accent' : 'bg-blue-500/10 text-blue-400'}`}>
-                               {match.status === 'WAITING' ? 'OPEN' : (match.status === 'READY' || match.status === 'IN_PROGRESS') ? 'CLOSED' : match.status}
+                            <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest ${match.status === 'WAITING' ? 'bg-yellow-500/10 text-yellow-500' : (match.status === 'READY' || match.status === 'IN_PROGRESS') ? 'bg-accent/10 text-accent' : match.status === 'SCHEDULED' ? 'bg-white/10 text-gray-500' : 'bg-blue-500/10 text-blue-400'}`}>
+                               {match.status === 'WAITING' ? 'OPEN' : (match.status === 'READY' || match.status === 'IN_PROGRESS') ? 'ACTIVE' : match.status === 'SCHEDULED' ? 'LOCKED' : match.status}
                             </span>
                          </div>
                          <div className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-2">
@@ -208,11 +242,22 @@ export default function MyMatchesPage() {
                              {isWinner ? 'Victory' : 'Defeat'}
                            </span>
                         </td>
-                         <td className="px-6 py-4">
-                            <span className={`text-main font-mono font-bold ${isWinner ? 'text-accent' : 'text-sub'}`}>
-                               {prizeString}
-                            </span>
-                         </td>
+                          <td className="px-6 py-4 text-right">
+                             <div className="flex flex-col items-end gap-1">
+                                <span className={`text-main font-mono font-bold ${isWinner ? 'text-accent' : 'text-sub'}`}>
+                                   {prizeString}
+                                </span>
+                                {match.circuitId && (
+                                   <button 
+                                      onClick={() => handleViewSnapshot(match.circuitId!, match.game + " " + match.format)}
+                                      disabled={!!fetchingSnapshot}
+                                      className="text-[8px] font-black text-accent hover:underline uppercase tracking-widest italic flex items-center gap-1"
+                                   >
+                                      {fetchingSnapshot === match.circuitId ? 'Fetching...' : 'View Table Snapshot'}
+                                   </button>
+                                )}
+                             </div>
+                          </td>
                       </tr>
                     );
                   })}
@@ -225,6 +270,13 @@ export default function MyMatchesPage() {
            </table>
         </div>
       </section>
+
+      <LeagueStandingsModal 
+        isOpen={snapshotOpen}
+        onClose={() => setSnapshotOpen(false)}
+        title={snapshotData?.title || "League Results"}
+        standings={snapshotData?.standings || {}}
+      />
 
     </div>
   );

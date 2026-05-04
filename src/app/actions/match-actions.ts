@@ -3,7 +3,7 @@
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { Match, MatchPlayer, Circuit, CircuitTie } from "@/lib/match-schema";
-import { getSummonEmailTemplate, getMatchStartEmailTemplate } from "@/lib/mail-templates";
+import { getSummonEmailTemplate, getMatchStartEmailTemplate, getPingEmailTemplate } from "@/lib/mail-templates";
 import { sendTacticalEmail } from "@/lib/mail";
 import { getVerifiedUid, getVerifiedIdentity, getVerifiedAdminUid } from "@/lib/server-utils";
 import { sanitize } from "@/lib/validation-utils";
@@ -11,6 +11,7 @@ import { checkRateLimit } from "@/lib/rate-limiter";
 import { createNotificationInternal } from "@/lib/notifications";
 import { 
    handleKnockoutAdvancement,
+   handleLeagueAdvancement,
    distributeCircuitPrizes
 } from "@/lib/match-engine/progression";
 import { 
@@ -107,7 +108,7 @@ export async function internalFinalizeMatchClosure(
   transaction: admin.firestore.Transaction,
   matchRef: admin.firestore.DocumentReference,
   matchData: Match,
-  championUid: string,
+  championUid: string | null,
   operatorUid: string, // Who triggered it (Admin or Player)
   circuitData?: any, // Pass circuit data if already fetched
   overridePlayers?: Record<string, any> // fresh submission data to avoid stale doc reads
@@ -171,7 +172,7 @@ export async function internalFinalizeMatchClosure(
     status: 'CLOSED',
     rewardAmount: victoryReward,
     resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
-    championUid,
+    championUid: championUid || null,
     isPromo: !!matchData.isPromo || !!circuitData?.isPromo,
     round: matchData.round || 'NONE'
   });
@@ -183,7 +184,8 @@ export async function internalFinalizeMatchClosure(
 
     const statsUpdate: any = {};
 
-    if (matchData.isRanked !== false) {
+    const allowTestFinancials = process.env.ALLOW_TEST_FINANCIALS === 'true';
+    if (matchData.isRanked !== false && (!matchData.isTestMode || allowTestFinancials)) {
       statsUpdate.totalMatches = admin.firestore.FieldValue.increment(1);
       if (isWinner) statsUpdate.totalWins = admin.firestore.FieldValue.increment(1);
 
@@ -207,7 +209,8 @@ export async function internalFinalizeMatchClosure(
   // 1.8 PARTNER COMMISSION ENGINE
   let partnerCommissionPaid = 0;
   try {
-    if (matchData.isPartnerTournament && partnerId && creatorSnap?.exists) {
+    const allowTestFinancials = process.env.ALLOW_TEST_FINANCIALS === 'true';
+    if (matchData.isPartnerTournament && partnerId && creatorSnap?.exists && (!matchData.isTestMode || allowTestFinancials)) {
       const creatorRef = adminDb.collection("users").doc(partnerId);
       const creatorData = creatorSnap.data()!;
       const expiryDate = creatorData.partnerExpiresAt?.seconds ? new Date(creatorData.partnerExpiresAt.seconds * 1000) : null;
@@ -234,7 +237,7 @@ export async function internalFinalizeMatchClosure(
           const expiryDate = referrerData.partnerExpiresAt?.seconds ? new Date(referrerData.partnerExpiresAt.seconds * 1000) : null;
           const isEligible = (Date.now() - new Date(profile.createdAt).getTime()) < (90 * 24 * 3600 * 1000);
 
-          if (referrerData.role === 'PARTNER' && expiryDate && expiryDate > new Date() && isEligible) {
+          if (referrerData.role === 'PARTNER' && expiryDate && expiryDate > new Date() && isEligible && (!matchData.isTestMode || allowTestFinancials)) {
             const commission = Math.floor((matchData.challengeFee * config.matchFeePercentage) * config.referralCommissionShare); 
             if (commission > 0) {
               partnerCommissionPaid += commission;
@@ -254,7 +257,10 @@ export async function internalFinalizeMatchClosure(
   }
 
   // 2. Payout Winner & Track Platform Finances
-  if (!matchData.circuitId && victoryReward > 0) {
+  const isLeague = matchData.format === 'league' || (circuitData?.format || '').includes('LEAGUE');
+
+  const allowTestFinancials = process.env.ALLOW_TEST_FINANCIALS === 'true';
+  if (!matchData.circuitId && championUid && victoryReward > 0 && (!matchData.isTestMode || allowTestFinancials)) {
     transaction.update(adminDb.collection("users").doc(championUid), { balanceCoins: admin.firestore.FieldValue.increment(victoryReward) });
     transaction.set(adminDb.collection("transactions").doc(), {
       uid: championUid, 
@@ -278,7 +284,7 @@ export async function internalFinalizeMatchClosure(
   // 2. Circuit Logic (Standings/Advancement)
   if (matchData.circuitId && circuitData) {
     const circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
-    if (matchData.group && circuitData.groups?.[matchData.group]) {
+    if (matchData.group && circuitData.groups?.[matchData.group] && championUid) {
       const g = matchData.group;
       const winner = (Object.values(matchData.players) as any[]).find(p => p.uid === championUid);
       const loser = (Object.values(matchData.players) as any[]).find(p => p.uid !== championUid);
@@ -298,7 +304,14 @@ export async function internalFinalizeMatchClosure(
           [`groups.${g}.standings.${loser.uid}.ga`]: admin.firestore.FieldValue.increment(winnerSF),
         });
       }
-    } else if (matchData.round) {
+    } else if (isLeague) {
+       // LEAGUE ADVANCEMENT
+       const p1 = matchData.playerIds[0];
+       const p2 = matchData.playerIds[1];
+       const p1Score = matchData.players[p1]?.scoreFor || 0;
+       const p2Score = matchData.players[p2]?.scoreFor || 0;
+       await handleLeagueAdvancement(transaction, circuitRef, circuitData as any, matchData as any, championUid, p1Score, p2Score, creatorSnap || undefined);
+    } else if (matchData.round && championUid) {
       if (circuitData.isPromo) {
          const finalizeResult = await handlePromoAdvancement(transaction, circuitRef, circuitData, matchData.round, championUid, matchRef.id, operatorUid, matchData.game);
          if (finalizeResult?.needsTournamentCleanup) {
@@ -344,7 +357,8 @@ export async function createMatchAction(
   group?: 'A' | 'B' | 'C' | 'D' | 'NONE',
   leg?: 1 | 2 | 3 | 'NONE',
   roomName?: string,
-  roomPassword?: string
+  roomPassword?: string,
+  isTestMode?: boolean
 ) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
   const username = profile.username || "Unknown";
@@ -354,10 +368,10 @@ export async function createMatchAction(
 
   // [PROT-TOUR-02] 🔒 Entry Fee Duplication Prevention
   // Only enforce for tournament format matches (gathering, not sub-matches)
-  if (format === 'tournament' && !circuitId) {
+  if ((format === 'tournament' || format === 'league') && !circuitId) {
     const existingTournaments = await adminDb
       .collection("matches")
-      .where("format", "==", "tournament")
+      .where("format", "in", ["tournament", "league"])
       .where("game", "==", game)
       .where("challengeFee", "==", challengeFee)
       .where("status", "in", ["WAITING", "READY"])
@@ -453,6 +467,7 @@ export async function createMatchAction(
         isProtected: !!roomPassword,
         isPartnerTournament: userData.role === 'PARTNER',
         partnerName: userData.role === 'PARTNER' ? userData.username : null,
+        isTestMode: !!isTestMode,
       };
 
       if (roomCode) matchData.roomCode = roomCode;
@@ -784,19 +799,6 @@ export async function submitMatchResultAction(
         ...(requiresAdminReview && { [`players.${uid}.requiresAdminReview`]: true })
       };
 
-      // 🛡️ TRIBUNAL VISIBILITY: Record evidence in the dedicated subcollection for Moderator Hub gallery
-      if (proofUrl) {
-         const evidenceRef = matchRef.collection("match_evidence").doc(`result_${uid}`);
-         transaction.set(evidenceRef, {
-            id: `result_${uid}`,
-            url: proofUrl,
-            type: 'image',
-            ownerUid: uid,
-            username: matchData.players[uid]?.username || "Operator",
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-         }, { merge: true });
-      }
-
       const updatedPlayers = { ...matchData.players, [uid]: { ...matchData.players[uid], claim } };
       const playerList = Object.entries(updatedPlayers).map(([pid, p]) => ({ ...(p as any), uid: pid }));
       const winners = playerList.filter(p => (p as any).claim === 'WIN');
@@ -806,16 +808,21 @@ export async function submitMatchResultAction(
 
       const isCircuitMatch = !!matchData.circuitId || ['tournament', '16_TOURNAMENT'].includes(matchData.format);
 
+      const draws = playerList.filter(p => (p as any).claim === 'DRAW');
+      const isConsensusDraw = (matchData.format === 'league') && totalSubmitted === totalPlayers && draws.length === totalPlayers;
+
       // 🔒 [SECURITY] MULTI-PLAYER CONSENSUS FIX
-      // Auto-resolve if: ALL players submitted AND exactly ONE winner declared
-      if (totalSubmitted === totalPlayers && winners.length === 1) {
+      // Auto-resolve if: ALL players submitted AND (exactly ONE winner OR consensus draw)
+      if (totalSubmitted === totalPlayers && (winners.length === 1 || isConsensusDraw)) {
          if (matchData.status !== 'CLOSED') {
             const attemptId = `finalize_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-            updates.championUid = (winners[0] as any).uid;
+            const winnerUid = winners.length === 1 ? (winners[0] as any).uid : null;
+            
+            updates.championUid = winnerUid;
             updates.status = 'CLOSED';
             updates.finalizationAttemptId = attemptId;
             
-            const finalizeResult = await internalFinalizeMatchClosure(transaction, matchRef, matchData, (winners[0] as any).uid, uid, circuitData, updatedPlayers);
+            const finalizeResult = await internalFinalizeMatchClosure(transaction, matchRef, matchData, winnerUid, uid, circuitData, updatedPlayers);
             if (finalizeResult.needsTournamentCleanup && finalizeResult.circuitId) {
                pendingTournamentCleanup = finalizeResult.circuitId;
             }
@@ -830,10 +837,23 @@ export async function submitMatchResultAction(
          updates.championUid = null;
       } 
       // 🕒 PENDING: Awaiting more results
-      else if (winners.length > 0 && matchData.status !== 'WAITING_FOR_OPPONENT' && matchData.status !== 'DISPUTED') {
+      else if (totalSubmitted > 0 && matchData.status !== 'WAITING_FOR_OPPONENT' && matchData.status !== 'DISPUTED') {
          updates.status = 'WAITING_FOR_OPPONENT';
          updates.resolutionEndTime = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-         updates.championUid = (winners[0] as any).uid || null;
+         updates.championUid = winners.length > 0 ? (winners[0] as any).uid : null;
+      }
+
+      // 🛡️ TRIBUNAL VISIBILITY: Record evidence (Moved to WRITE phase to avoid read-after-write errors)
+      if (proofUrl) {
+         const evidenceRef = matchRef.collection("match_evidence").doc(`result_${uid}`);
+         transaction.set(evidenceRef, {
+            id: `result_${uid}`,
+            url: proofUrl,
+            type: 'image',
+            ownerUid: uid,
+            username: matchData.players[uid]?.username || "Operator",
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+         }, { merge: true });
       }
 
       transaction.update(matchRef, updates);
@@ -990,11 +1010,20 @@ export async function executeMatchClosureAction(idToken: string, matchId: string
       }
 
       let championUid = matchData.championUid;
+      const isLeague = matchData.format === 'league' || (circuitSnap?.exists && circuitSnap.data()?.format?.includes('LEAGUE'));
+
       if (!championUid) {
          const winners = Object.values(matchData.players).filter(p => (p as any).claim === 'WIN');
          if (winners.length === 1) championUid = (winners[0] as any).uid;
+         
+         // Special handling for DRAWS in league mode
+         const draws = Object.values(matchData.players).filter(p => (p as any).claim === 'DRAW');
+         if (isLeague && draws.length === 2) {
+            championUid = null; // Valid state for league draw
+         } else if (!championUid) {
+            throw new Error("No champion detected. If this is a draw, both players must submit 'DRAW'.");
+         }
       }
-      if (!championUid) throw new Error("No champion detected.");
 
       const finalizeResult = await internalFinalizeMatchClosure(transaction, matchRef, matchData, championUid, uid, circuitSnap?.exists ? circuitSnap.data() : null);
       if (finalizeResult.needsTournamentCleanup && finalizeResult.circuitId) {
@@ -1251,10 +1280,10 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
     const result = await adminDb.runTransaction(async (transaction) => {
       const matchSnap = await transaction.get(matchRef);
       if (!matchSnap.exists) throw new Error("Match missing.");
-      const matchData = matchSnap.data() as Match;
+      const matchData = matchSnap.data() as any;
       
       const updatedPlayers = { ...matchData.players, [uid]: { ...matchData.players[uid], ready } };
-      const playersList = Object.values(updatedPlayers);
+      const playersList = Object.values(updatedPlayers) as any[];
       const isGathering = matchData.format === 'league' || matchData.format === 'tournament';
       
       let allReady = playersList.every(p => p.ready) && playersList.length >= (matchData.maxPlayers || 2);
@@ -1262,13 +1291,10 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
       // TACTICAL OVERRIDE: For gathering lobbies (leagues/tournaments), 
       // if the room is full and the host/creator triggers deployment, force allReady to true.
       if (isGathering && !allReady) {
-         // Fix: explicitly check the match format or round if maxPlayers isn't stored. Knockout rounds only expect 2.
          const targetSize = matchData.maxPlayers || (matchData.round ? 2 : 12);
          const isFull = playersList.length >= targetSize;
-         const isHost = matchData.hostUid === uid || (matchData as any).creatorId === uid;
          
-         // TACTICAL OVERRIDE FIX: Only allow for large lobbies. 1v1 matches MUST both be ready.
-         if (isFull && isHost && targetSize > 2) {
+         if (isFull && targetSize > 2) {
             allReady = true;
          }
       }
@@ -1286,6 +1312,19 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
             updates.status = 'COMPLETED';
          } else {
             updates.status = 'IN_PROGRESS';
+            updates.readyDeadline = null; // Clear deadline on start
+         }
+      } else if (playersList.length === 2) {
+         // 1v1 DUEL: Track readiness pressure
+         const readyPlayers = playersList.filter(p => p.ready);
+         if (readyPlayers.length === 1) {
+            // Start 30-minute extraction timer for the non-ready player
+            if (!matchData.readyDeadline) {
+               updates.readyDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+            }
+         } else {
+            // Both unready - clear deadline
+            updates.readyDeadline = null;
          }
       }
       transaction.update(matchRef, updates);
@@ -1434,9 +1473,17 @@ export async function applyExpirationExtractionAction(idToken: string, matchId: 
          if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
             await resolveDoubleNoShow(transaction, matchRef, matchData as any as EngineMatch);
          } else if (claimCount === 1) {
-            // 🏆 AUTO-RESOLVE: One person submitted, the other vanished. Award win to claimant.
-            const winnerUid = Object.keys(matchData.players).find(pid => !!(matchData.players[pid] as any).claim);
-            if (winnerUid) {
+            // 🏆 AUTO-RESOLVE: One person submitted, the other vanished. 
+            const claimantUid = Object.keys(matchData.players).find(pid => !!(matchData.players[pid] as any).claim);
+            if (claimantUid) {
+               const claim = (matchData.players[claimantUid] as any).claim;
+               let winnerUid = claimantUid;
+               
+               if (claim === 'LOSS') {
+                  // Admitted defeat: Award win to the ghosting opponent
+                  winnerUid = Object.keys(matchData.players).find(pid => pid !== claimantUid) || claimantUid;
+               }
+
                const { resolveTechnicalWin } = await import("@/lib/match-engine/validation");
                await resolveTechnicalWin(transaction, matchRef, matchData as any as EngineMatch, winnerUid);
             } else {
@@ -1566,64 +1613,81 @@ export async function pingOpponentAction(idToken: string, matchId: string) {
 
   try {
     const result = await adminDb.runTransaction(async (transaction) => {
-      const matchSnap = await transaction.get(matchRef);
-      if (!matchSnap.exists) throw new Error("Match not found.");
-      
-      const match = matchSnap.data()!;
-      if (!match.playerIds.includes(uid)) throw new Error("Unauthorized.");
-      if (match.status === 'CLOSED' || match.status === 'COMPLETED') throw new Error("Session closed.");
+       const matchSnap = await transaction.get(matchRef);
+       if (!matchSnap.exists) throw new Error("Match not found.");
+       
+       const match = matchSnap.data()!;
+       if (!match.playerIds.includes(uid)) throw new Error("Unauthorized.");
+       if (match.status === 'CLOSED' || match.status === 'COMPLETED') throw new Error("Session closed.");
 
-      // Check Cooldown (3 minutes)
-      const now = Date.now();
-      const lastPing = match.lastPingAt?.toMillis() || 0;
-      const cooldown = 3 * 60 * 1000;
-      
-      if (now - lastPing < cooldown) {
-        const remaining = Math.ceil((cooldown - (now - lastPing)) / 1000);
-        throw new Error(`Ping Cooldown Active: Wait ${remaining}s.`);
-      }
+       // Check Cooldown (3 minutes)
+       const now = Date.now();
+       const lastPing = match.lastPingAt?.toMillis() || 0;
+       const cooldown = 3 * 60 * 1000;
+       
+       if (now - lastPing < cooldown) {
+         const remaining = Math.ceil((cooldown - (now - lastPing)) / 1000);
+         throw new Error(`Ping Cooldown Active: Wait ${remaining}s.`);
+       }
 
-      // Identify Opponent
-      const opponentId = match.playerIds.find((pid: string) => pid !== uid);
-      if (!opponentId) throw new Error("No opponent found.");
+       // Identify Opponent
+       const opponentId = match.playerIds.find((pid: string) => pid !== uid);
+       if (!opponentId) throw new Error("No opponent found.");
 
-      // Update Match with lastPingAt
-      transaction.update(matchRef, {
-        lastPingAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      // 4. Send Tactical Ping Signals (Mass Broadcast to ALL participants)
-      const others = match.playerIds.filter((pid: string) => pid !== uid);
-      
-      for (const recipientId of others) {
-        const userRef = adminDb.collection("users").doc(recipientId);
-        
-        // Profile Signal (Real-Time HUD)
-        transaction.update(userRef, {
-          ping: {
-            active: true,
-            matchId: matchId,
-            from: profile.username,
-            message: `${profile.username} is waiting for you in the combat zone!`,
-            timestamp: admin.firestore.FieldValue.serverTimestamp()
+       // 3. Fetch Opponent Email if needed
+       let opponentEmail: string | null = null;
+       let opponentUsername: string = "Operative";
+       if (!match.pingEmailSent) {
+          const oppRef = adminDb.collection("users").doc(opponentId);
+          const oppSnap = await transaction.get(oppRef);
+          if (oppSnap.exists) {
+             opponentEmail = oppSnap.data()?.email || null;
+             opponentUsername = oppSnap.data()?.username || "Operative";
           }
-        });
+       }
 
-        // Historical Record (Notification Inbox)
-        const nRef = userRef.collection("notifications").doc();
-        transaction.set(nRef, {
-          type: 'QUICK_PING',
-          title: 'TACTICAL ALERT',
-          message: `${profile.username} is waiting for you in the combat zone!`,
-          matchId,
-          senderName: profile.username,
-          read: false,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-      }
+       // Update Match
+       const matchUpdates: any = {
+         lastPingAt: admin.firestore.FieldValue.serverTimestamp()
+       };
+       if (opponentEmail) {
+          matchUpdates.pingEmailSent = true;
+       }
+       transaction.update(matchRef, matchUpdates);
 
-      return { success: true };
+       // 4. Send Tactical Ping Signals (HUD & In-App)
+       const others = match.playerIds.filter((pid: string) => pid !== uid);
+       for (const recipientId of others) {
+         const userRef = adminDb.collection("users").doc(recipientId);
+         transaction.update(userRef, {
+           ping: {
+             active: true,
+             matchId: matchId,
+             from: profile.username,
+             message: `${profile.username} is waiting for you in the combat zone!`,
+             timestamp: admin.firestore.FieldValue.serverTimestamp()
+           }
+         });
+
+         const nRef = userRef.collection("notifications").doc();
+         transaction.set(nRef, {
+           type: 'QUICK_PING',
+           title: 'TACTICAL ALERT',
+           message: `${profile.username} is waiting for you in the combat zone!`,
+           matchId,
+           senderName: profile.username,
+           read: false,
+           createdAt: admin.firestore.FieldValue.serverTimestamp()
+         });
+       }
+
+       return { success: true, opponentEmail, opponentUsername };
     });
+
+    if (result.success && result.opponentEmail) {
+       const html = getPingEmailTemplate(result.opponentUsername, profile.username, matchId);
+       sendTacticalEmail(result.opponentEmail, `TACTICAL ALERT: ${profile.username} is waiting`, html).catch(e => console.error("Ping Email Error:", e));
+    }
 
     return result;
   } catch (error: any) {

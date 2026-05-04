@@ -106,7 +106,8 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
         game === 'EFOOTBALL' ? duration : 'NONE',
         maxPlayers,
         fee === 0 ? roomName.trim() || undefined : undefined,
-        fee === 0 ? roomPassword.trim() || undefined : undefined
+        fee === 0 ? roomPassword.trim() || undefined : undefined,
+        typeof window !== 'undefined' && window.location.hostname === 'localhost'
       );
       router.push(`/match/${matchId}`);
       onClose();
@@ -118,7 +119,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
 
   const getFormatsForGame = () => {
     if (game === 'CODM') return ['1v1', 'FFA', 'br', 'alcatraz'] as const;
-    return ['1v1', 'tournament'] as const;
+    return ['1v1', 'league', 'tournament'] as const;
   };
 
   const fees = [0, 50, 100];
@@ -181,18 +182,19 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                    <button 
                      key={f}
                      disabled={f === 'alcatraz'}
-                     onClick={() => {
-                       setFormat(f);
-                       if (f === 'br' || f === 'alcatraz') setMaxPlayers(20);
-                       else if (f === 'tournament') setMaxPlayers(16);
-                       else if (f === 'FFA') setMaxPlayers(8);
-                       else setMaxPlayers(2);
-                     }}
+                      onClick={() => {
+                        setFormat(f);
+                        if (f === 'br' || f === 'alcatraz') setMaxPlayers(20);
+                        else if (f === 'tournament') setMaxPlayers(16);
+                        else if (f === 'league') setMaxPlayers(8);
+                        else if (f === 'FFA') setMaxPlayers(8);
+                        else setMaxPlayers(2);
+                      }}
                      className={`py-4 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all border 
                        ${f === 'alcatraz' ? 'bg-black border-surface-border text-gray-800 opacity-50 cursor-not-allowed blur-[1px]' : 
                        (format === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600 hover:border-accent/20')}`}
                    >
-                     {f.toUpperCase()}
+                     {f === 'league' ? 'LEAGUE (ROBIN)' : f.toUpperCase()}
                    </button>
                  ))}
               </div>
@@ -237,18 +239,18 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
               </div>
             )}
 
-            {/* Player Selection for CODM FFA (3-8) */}
-            {game === 'CODM' && format === 'FFA' && (
+            {/* Player Selection for CODM FFA (3-8) or League (4-16) */}
+            {((game === 'CODM' && format === 'FFA') || (game === 'EFOOTBALL' && format === 'league')) && (
               <div className="space-y-4 animate-in slide-in-from-top-2">
-                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Operator Limits (3-8 PLYRs)</label>
-                <div className="grid grid-cols-3 gap-3">
-                   {[3, 4, 5, 6, 7, 8].map(n => (
+                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Operator Limits ({format === 'league' ? '4-16' : '3-8'} PLYRs)</label>
+                <div className="grid grid-cols-4 gap-2">
+                   {(format === 'league' ? [4, 8, 10, 16] : [3, 4, 5, 6, 7, 8]).map(n => (
                      <button 
                        key={n}
                        onClick={() => setMaxPlayers(n)}
                        className={`py-3 rounded-sm text-xs font-black italic transition-all border ${maxPlayers === n ? 'bg-accent text-black border-accent' : 'bg-black border-surface-border text-gray-500 hover:border-accent/40'}`}
                      >
-                       {n} PLYRs
+                       {n}
                      </button>
                    ))}
                 </div>

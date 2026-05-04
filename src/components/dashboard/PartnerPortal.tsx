@@ -17,6 +17,7 @@ export default function PartnerPortal() {
   const [codmPlayers, setCodmPlayers] = useState(20);
   const [codmWeaponClass, setCodmWeaponClass] = useState<'ALL GUNS' | 'SHOTGUN' | 'SNIPER'>('ALL GUNS');
   const [efootballPlayers, setEfootballPlayers] = useState(16);
+  const [efootballFormat, setEfootballFormat] = useState<'tournament' | 'league'>('league');
   const [deploymentSuccess, setDeploymentSuccess] = useState<string | null>(null);
   const router = useRouter();
 
@@ -42,10 +43,10 @@ export default function PartnerPortal() {
     setDeploymentSuccess(null);
     try {
       const idToken = await user.getIdToken();
-      const format = game === 'CODM' ? codmFormat : 'tournament';
+      const format = game === 'CODM' ? codmFormat : efootballFormat;
       const players = game === 'CODM' ? codmPlayers : efootballPlayers;
-      
-      const res = await createPartnerTournamentAction(idToken, game, selectedFee, format, players, codmWeaponClass);
+      const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+      const res = await createPartnerTournamentAction(idToken, game, selectedFee, format, players, codmWeaponClass, isLocal);
       if (res.success) {
         setDeploymentSuccess(`LOBBY DEPLOYED: Your ${game} Creator Cup is live!`);
         // Refresh stats to show new match/recruits without full page reload
@@ -321,17 +322,32 @@ export default function PartnerPortal() {
           <div className="bg-black/40 border border-surface-border p-5 rounded-sm relative overflow-hidden">
             <div className="relative z-10">
                <h4 className="text-sm font-black text-white italic mb-1 uppercase">eFootball ELITE SERIES</h4>
-               <div className="flex items-center gap-3 mb-6">
-                 <label className="text-[9px] text-gray-500 font-bold uppercase">Format:</label>
-                 <select 
-                   value={efootballPlayers}
-                   onChange={(e) => setEfootballPlayers(Number(e.target.value))}
-                   className="bg-black border border-white/10 text-white text-[10px] font-black px-2 py-1 outline-none"
-                 >
-                   <option value={8}>8 Player Knockout</option>
-                   <option value={16}>16 Player Knockout League</option>
-                 </select>
-               </div>
+                <div className="space-y-4 mb-6">
+                  <div className="flex items-center gap-3">
+                    <label className="text-[9px] text-gray-500 font-bold uppercase">Players:</label>
+                    <select 
+                      value={efootballPlayers}
+                      onChange={(e) => setEfootballPlayers(Number(e.target.value))}
+                      className="bg-black border border-white/10 text-white text-[10px] font-black px-2 py-1 outline-none"
+                    >
+                      <option value={4}>4 Operatives</option>
+                      <option value={8}>8 Operatives</option>
+                      <option value={10}>10 Operatives</option>
+                      <option value={16}>16 Operatives</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <label className="text-[9px] text-gray-500 font-bold uppercase">Format:</label>
+                    <select 
+                      value={efootballFormat}
+                      onChange={(e) => setEfootballFormat(e.target.value as any)}
+                      className="bg-black border border-white/10 text-accent text-[10px] font-black px-2 py-1 outline-none"
+                    >
+                      <option value="league">Elite League Season</option>
+                      <option value="tournament">Knockout Tournament</option>
+                    </select>
+                  </div>
+                </div>
                <div className="flex items-center justify-between gap-4">
                   <div className="text-xs font-black text-accent">
                      {selectedFee === 0 ? 'FREE PRACTICE' : `$${(selectedFee / 100).toFixed(2)} Entry`}

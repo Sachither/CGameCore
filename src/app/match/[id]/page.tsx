@@ -201,23 +201,35 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
 
             <div className="flex items-center gap-6">
                {(match?.format === 'league' || match?.format === 'tournament' || (match as any)?.circuitId || (match as any)?.leagueId) && (
-                  <button 
-                     onClick={() => {
-                        const targetId = (match as any).circuitId || (match as any).leagueId;
-                        if (targetId) {
-                           window.open(`/dashboard/tournaments/view/${targetId}`, '_blank');
-                        } else {
-                           showInfoToast("Awaiting Tournament Generation", "Brackets will be spawned instantly once all players join and the host deploys.");
-                        }
-                     }}
-                     className="flex text-[10px] font-black uppercase text-accent hover:text-white transition-colors tracking-widest items-center gap-2 underline decoration-accent/30 underline-offset-4"
-                  >
-                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                     </svg>
-                     View Group Stages & Tables
-                  </button>
-               )}
+                   (() => {
+                      const targetId = (match as any).circuitId || (match as any).leagueId;
+                      if (!targetId) return (
+                         <button 
+                            onClick={() => showInfoToast("Awaiting Tournament Generation", "Brackets will be spawned instantly once all players join and the host deploys.")}
+                            className="flex text-[10px] font-black uppercase text-accent hover:text-white transition-colors tracking-widest items-center gap-2 underline decoration-accent/30 underline-offset-4"
+                         >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            View Group Stages & Tables
+                         </button>
+                      );
+
+                      return (
+                         <Link 
+                            href={`/dashboard/tournaments/view/${targetId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex text-[10px] font-black uppercase text-accent hover:text-white transition-colors tracking-widest items-center gap-2 underline decoration-accent/30 underline-offset-4"
+                         >
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                            </svg>
+                            View Group Stages & Tables
+                         </Link>
+                      );
+                   })()
+                )}
                 <div className="hidden md:flex items-center gap-2 text-[10px] text-gray-400 font-bold uppercase tracking-widest bg-black border border-surface-border px-3 py-1.5 rounded-[3px]">
                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
                    Live Combat Operations

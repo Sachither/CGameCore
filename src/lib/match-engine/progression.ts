@@ -122,6 +122,87 @@ export async function pushMatchNotification(
 }
 
 /**
+ * LOGIC: Handle League Progression (Round Robin)
+ */
+export async function handleLeagueAdvancement(
+   transaction: admin.firestore.Transaction,
+   circuitRef: admin.firestore.DocumentReference,
+   circuit: EngineCircuit,
+   matchData: EngineMatch,
+   winnerUid: string | null,
+   p1Goals: number,
+   p2Goals: number,
+   partnerSnap?: admin.firestore.DocumentSnapshot
+) {
+   const matchesCompleted = (circuit.matchesCompleted || 0) + 1;
+   const totalMatches = circuit.totalMatches || 1;
+   const isDraw = !winnerUid && p1Goals === p2Goals;
+   
+   const updates: any = {
+      matchesCompleted: admin.firestore.FieldValue.increment(1)
+   };
+
+   // Update Standing for Player 1
+   const p1 = matchData.playerIds[0];
+   const p2 = matchData.playerIds[1];
+
+   if (p1 && p2) {
+      const p1Win = winnerUid === p1;
+      const p2Win = winnerUid === p2;
+
+      updates[`standings.${p1}.played`] = admin.firestore.FieldValue.increment(1);
+      updates[`standings.${p1}.gf`] = admin.firestore.FieldValue.increment(p1Goals);
+      updates[`standings.${p1}.ga`] = admin.firestore.FieldValue.increment(p2Goals);
+      
+      updates[`standings.${p2}.played`] = admin.firestore.FieldValue.increment(1);
+      updates[`standings.${p2}.gf`] = admin.firestore.FieldValue.increment(p2Goals);
+      updates[`standings.${p2}.ga`] = admin.firestore.FieldValue.increment(p1Goals);
+
+      if (isDraw) {
+         updates[`standings.${p1}.draws`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${p1}.pts`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${p2}.draws`] = admin.firestore.FieldValue.increment(1);
+         updates[`standings.${p2}.pts`] = admin.firestore.FieldValue.increment(1);
+      } else {
+         updates[`standings.${p1}.wins`] = admin.firestore.FieldValue.increment(p1Win ? 1 : 0);
+         updates[`standings.${p1}.losses`] = admin.firestore.FieldValue.increment(p1Win ? 0 : 1);
+         updates[`standings.${p1}.pts`] = admin.firestore.FieldValue.increment(p1Win ? 3 : 0);
+         
+         updates[`standings.${p2}.wins`] = admin.firestore.FieldValue.increment(p2Win ? 1 : 0);
+         updates[`standings.${p2}.losses`] = admin.firestore.FieldValue.increment(p2Win ? 0 : 1);
+         updates[`standings.${p2}.pts`] = admin.firestore.FieldValue.increment(p2Win ? 3 : 0);
+      }
+   }
+
+   transaction.update(circuitRef, updates);
+
+   const pCount = circuit.playerIds.length;
+   const roundSize = Math.floor(pCount / 2);
+   if (matchesCompleted % roundSize === 0 && matchesCompleted < totalMatches) {
+      const currentRound = (circuit as any).currentRound || 1;
+      const nextRound = currentRound + 1;
+      const nextRoundMatchIds = (circuit as any).roundSchedule?.[nextRound] || [];
+      const nextExpiry = new Date(Date.now() + 2 * 3600 * 1000); 
+      for (const mid of nextRoundMatchIds) {
+         transaction.update(adminDb.collection("matches").doc(mid), { 
+            status: 'WAITING',
+            expiresAt: nextExpiry
+         });
+      }
+      transaction.update(circuitRef, { currentRound: nextRound });
+      await pushGlobalCommand(transaction, circuitRef.id, `TACTICAL UPDATE: ROUND ${currentRound} SECURED. ACTIVATING ROUND ${nextRound} SECTORS.`);
+   }
+
+   if (matchesCompleted >= totalMatches) {
+      // 🏆 Final Standings: Merge the current updates into the circuit data for ranking
+      // Since we can't read the updated doc in the same transaction, we pass the merged data.
+      const finalCircuitData = { ...circuit, ...updates };
+      await distributeLeaguePrizes(transaction, circuitRef, finalCircuitData as any, partnerSnap);
+   }
+}
+
+
+/**
  * UTILITY: Post Automated HQ Broadcast to Global Command Comms
  */
 export async function pushGlobalCommand(
@@ -137,6 +218,19 @@ export async function pushGlobalCommand(
       isSystem: true,
       createdAt: admin.firestore.FieldValue.serverTimestamp()
    });
+}
+
+/**
+ * UTILITY: Purge Chat Messages for Completed Circuits/Leagues
+ */
+export async function purgeCompetitionChat(competitionId: string) {
+   const chatRef = adminDb.collection("competition_chats").doc(competitionId).collection("messages");
+   const snap = await chatRef.limit(500).get();
+   if (snap.empty) return;
+
+   const batch = adminDb.batch();
+   snap.docs.forEach(doc => batch.delete(doc.ref));
+   await batch.commit();
 }
 
 /**
@@ -302,9 +396,9 @@ export async function distributeCircuitPrizes(
    runnerUpUid: string | null,
    partnerSnap?: admin.firestore.DocumentSnapshot // Optional pre-fetched snap
 ) {
-    const totalPlayers = Object.keys(circuitData.players || {}).length;
+    const participantCount = circuitData.playerIds?.length || Object.keys(circuitData.players || {}).length;
     const challengeFee = circuitData.challengeFee || 0;
-    const totalStake = totalPlayers * challengeFee;
+    const totalStake = participantCount * challengeFee;
    
    // Apply 20% Platform Fee
    const platformFee = Math.floor(totalStake * 0.2);
@@ -315,11 +409,12 @@ export async function distributeCircuitPrizes(
 
    const finalWinnerUid = winnerUid || (runnerUpUid ? runnerUpUid : null);
 
-   if (!finalWinnerUid) {
-      await pushGlobalCommand(transaction, circuitRef.id, "GRAND FINAL CLOSED. DOUBLE DISQUALIFICATION DETECTED. PRIZE POOL SUSPENDED.");
-      transaction.update(circuitRef, { status: 'COMPLETED', prizeStatus: 'SUSPENDED' });
-      return;
-   }
+    if (!finalWinnerUid) {
+       console.warn("[Progression] Final resolution aborted: No winner UID identified.");
+       await pushGlobalCommand(transaction, circuitRef.id, "GRAND FINAL CLOSED. RESOLUTION INCOMPLETE: NO WINNER IDENTIFIED.");
+       transaction.update(circuitRef, { status: 'COMPLETED', prizeStatus: 'SUSPENDED' });
+       return;
+    }
 
    // 1. Calculate Shares
    let winnerShare = netPrizePool;
@@ -468,5 +563,64 @@ export async function distributeCircuitPrizes(
    await pushGlobalCommand(transaction, circuitRef.id, broadcast);
 
    // 6. CLEANUP WILL RUN IMMEDIATELY AFTER FINALIZATION
-   // Tournament metadata and bracket records are deleted once all payouts and announcements are complete.
 }
+
+/**
+ * LOGIC: Distribute League Prizes (Season Conclusion)
+ */
+export async function distributeLeaguePrizes(
+   transaction: admin.firestore.Transaction,
+   circuitRef: admin.firestore.DocumentReference,
+   circuitData: EngineCircuit,
+   partnerSnap?: admin.firestore.DocumentSnapshot
+) {
+   // Use the provided data (merged with latest updates by caller)
+   const standings = Object.values(circuitData.standings || {}) as any[];
+
+   // 2. Rank Players
+   // Rank by: Points -> Goal Difference -> Goals Scored
+   const ranked = [...standings].sort((a, b) => {
+      if (b.pts !== a.pts) return b.pts - a.pts;
+      const aGD = a.gf - a.ga;
+      const bGD = b.gf - b.ga;
+      if (bGD !== aGD) return bGD - aGD;
+      return b.gf - a.gf;
+   });
+
+   const winner = ranked[0];
+   const runnerUp = ranked[1] || null;
+
+    if (!winner) {
+       console.warn("[Progression] League resolution aborted: Empty standings.");
+       return;
+    }
+
+    if (winner.pts === 0 && ranked.length > 1) {
+        console.log("[Progression] League conclusion with zero activity.");
+    }
+
+   // 3. Reuse Prize Distribution logic
+   await distributeCircuitPrizes(transaction, circuitRef, circuitData, winner.uid, runnerUp?.uid || null, partnerSnap);
+   
+   await pushGlobalCommand(transaction, circuitRef.id, `LEAGUE SEASON CONCLUDED. ${winner.username.toUpperCase()} FINISHES TOP OF THE TABLE!`);
+
+   // 4. Send Tiered Notifications to all participants
+   const top3 = ranked.slice(0, 3);
+   const summary = `🥇 ${top3[0]?.username || 'TBD'} | 🥈 ${top3[1]?.username || 'TBD'} | 🥉 ${top3[2]?.username || 'TBD'}`;
+   
+   for (const pid of circuitData.playerIds) {
+      const nRef = adminDb.collection("users").doc(pid).collection("notifications").doc();
+      transaction.set(nRef, {
+         type: 'MATCH_RESOLUTION',
+         title: 'LEAGUE SEASON FINALIZED',
+         message: `Operation complete in ${circuitData.title}. Final Standings: ${summary}`,
+         read: false,
+         createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+   }
+
+   // 5. [LEAN MODE] Purge Chat Data to minimize storage costs
+   // We do this AFTER the transaction logic to ensure the payout is unaffected
+   purgeCompetitionChat(circuitRef.id).catch(err => console.error("Chat Purge Error:", err));
+}
+

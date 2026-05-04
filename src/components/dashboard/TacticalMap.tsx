@@ -6,11 +6,12 @@ import { X, Trophy, Swords, Target, Activity, ShieldCheck, ChevronRight, Users, 
 interface Props {
   competition: Circuit;
   allMatches?: Match[];
+  userUid?: string;
   isOpen: boolean;
   onClose: () => void;
 }
 
-export default function TacticalMap({ competition, allMatches, isOpen, onClose }: Props) {
+export default function TacticalMap({ competition, allMatches, userUid, isOpen, onClose }: Props) {
   if (!isOpen) return null;
 
   // TACTICAL HELPER: Get dynamic round names based on tournament scale
@@ -37,11 +38,13 @@ export default function TacticalMap({ competition, allMatches, isOpen, onClose }
   const availableRounds = Array.from(new Set(tournamentMatches.map(m => m.round || 'NONE')))
     .filter(r => r !== 'NONE')
     .sort((a, b) => {
-       const order = ['QR1', 'QR2', 'QR3', 'QR4', 'QF', 'SF', 'FINAL'];
+       const order = ['LEAGUE', 'QR1', 'QR2', 'QR3', 'QR4', 'QF', 'SF', 'FINAL'];
        return order.indexOf(a) - order.indexOf(b);
     });
 
-  const [activeRoundTab, setActiveRoundTab] = React.useState(availableRounds[0] || 'QR1');
+  const isLeague = competition.format?.includes('LEAGUE');
+  const [activeRoundTab, setActiveRoundTab] = React.useState(isLeague ? 'LEAGUE' : (availableRounds[0] || 'QR1'));
+  const [showAll, setShowAll] = React.useState(false);
 
   // Group matches by round for easy navigation
   const matchesByRound: Record<string, Match[]> = {};
@@ -112,12 +115,26 @@ export default function TacticalMap({ competition, allMatches, isOpen, onClose }
 
             {/* Dynamic Bracket Visualization */}
             <section className="space-y-12">
-               <div className="flex items-center gap-6">
-                  <h3 className="text-xl font-black text-white italic uppercase tracking-widest shrink-0 flex items-center gap-3">
+               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <h3 className="text-xl font-black text-white italic uppercase tracking-widest flex items-center gap-3">
                      <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
                      {getRoundTitle(activeRoundTab, competition.playerIds?.length || 16)} Bracket
                   </h3>
-                  <div className="h-px bg-white/5 flex-1" />
+                  
+                  <div className="flex items-center bg-white/5 border border-white/10 p-1 rounded-sm">
+                     <button 
+                        onClick={() => setShowAll(false)}
+                        className={`px-4 py-2 text-[9px] font-black uppercase tracking-widest transition-all rounded-sm ${!showAll ? 'bg-accent text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                     >
+                        My Missions
+                     </button>
+                     <button 
+                        onClick={() => setShowAll(true)}
+                        className={`px-4 py-2 text-[9px] font-black uppercase tracking-widest transition-all rounded-sm ${showAll ? 'bg-accent text-black shadow-lg' : 'text-gray-500 hover:text-white'}`}
+                     >
+                        All Sectors
+                     </button>
+                  </div>
                </div>
 
                <DynamicRoundGrid
@@ -126,7 +143,60 @@ export default function TacticalMap({ competition, allMatches, isOpen, onClose }
                  competition={competition}
                  totalPlayers={competition.playerIds?.length || 16}
                  getRoundTitle={getRoundTitle}
+                 showAll={showAll}
+                 userUid={userUid}
                />
+
+               {isLeague && activeRoundTab === 'LEAGUE' && (
+                  <section className="space-y-8 animate-in fade-in duration-700">
+                     <div className="flex items-center gap-6">
+                        <h3 className="text-xl font-black text-white italic uppercase tracking-widest shrink-0 flex items-center gap-3">
+                           <Crown className="w-5 h-5 text-accent" />
+                           Live League Standings
+                        </h3>
+                        <div className="h-px bg-white/5 flex-1" />
+                     </div>
+                     
+                     <div className="bg-black border border-white/10 rounded-sm overflow-hidden">
+                        <table className="w-full text-left border-collapse">
+                           <thead>
+                              <tr className="bg-white/5 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
+                                 <th className="px-6 py-4">Rank</th>
+                                 <th className="px-6 py-4">Operative</th>
+                                 <th className="px-6 py-4 text-center">P</th>
+                                 <th className="px-6 py-4 text-center">W</th>
+                                 <th className="px-6 py-4 text-center">D</th>
+                                 <th className="px-6 py-4 text-center">L</th>
+                                 <th className="px-6 py-4 text-center">GD</th>
+                                 <th className="px-6 py-4 text-center text-accent">PTS</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-white/5">
+                              {(Object.values((competition as any).standings || {}) as any[])
+                                 .sort((a, b) => {
+                                    if (b.pts !== a.pts) return b.pts - a.pts;
+                                    return (b.gf - b.ga) - (a.gf - a.ga);
+                                 })
+                                 .map((p, idx) => (
+                                 <tr key={p.uid} className={`text-xs font-bold uppercase transition-colors hover:bg-white/5 ${idx === 0 ? 'text-accent bg-accent/5' : 'text-gray-400'}`}>
+                                    <td className="px-6 py-4 tabular-nums">#{idx + 1}</td>
+                                    <td className="px-6 py-4 flex items-center gap-3">
+                                       <div className="w-2 h-2 rounded-full bg-current" />
+                                       {p.username}
+                                    </td>
+                                    <td className="px-6 py-4 text-center tabular-nums">{p.played}</td>
+                                    <td className="px-6 py-4 text-center tabular-nums">{p.wins}</td>
+                                    <td className="px-6 py-4 text-center tabular-nums">{p.draws}</td>
+                                    <td className="px-6 py-4 text-center tabular-nums">{p.losses}</td>
+                                    <td className="px-6 py-4 text-center tabular-nums">{p.gf - p.ga}</td>
+                                    <td className="px-6 py-4 text-center tabular-nums text-accent font-black">{p.pts}</td>
+                                 </tr>
+                              ))}
+                           </tbody>
+                        </table>
+                     </div>
+                  </section>
+               )}
             </section>
 
             {/* Footer Branding */}
@@ -146,27 +216,36 @@ export default function TacticalMap({ competition, allMatches, isOpen, onClose }
 
 // Dynamic Round Grid Component
 function DynamicRoundGrid({ 
-  roundKey, 
-  matches, 
-  competition, 
-  totalPlayers, 
-  getRoundTitle 
+   roundKey, 
+   matches, 
+   competition, 
+   totalPlayers, 
+   getRoundTitle,
+   showAll,
+   userUid
 }: { 
-  roundKey: string, 
-  matches: Match[], 
-  competition: Circuit, 
-  totalPlayers: number,
-  getRoundTitle: (r: string, t: number) => string
+   roundKey: string, 
+   matches: Match[], 
+   competition: Circuit, 
+   totalPlayers: number,
+   getRoundTitle: (r: string, t: number) => string,
+   showAll: boolean,
+   userUid?: string
 }) {
-  const isFinal = roundKey === 'FINAL';
+   const isFinal = roundKey === 'FINAL';
+   
+   // TACTICAL FILTER: Filter matches by current user participation if not showing all
+   const displayedMatches = showAll 
+     ? matches 
+     : matches.filter(m => m.playerIds?.includes(userUid || ''));
 
-  return (
+   return (
     <div className="space-y-16">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
          <StatusCard 
-            title="Operational Progress"
-            completed={matches.filter(m => m.status === 'CLOSED' || m.status === 'COMPLETED').length}
-            total={matches.length}
+            title={showAll ? "Operational Progress" : "My Campaign Progress"}
+            completed={displayedMatches.filter(m => m.status === 'CLOSED' || m.status === 'COMPLETED').length}
+            total={displayedMatches.length}
             icon={<Activity className="w-5 h-5" />}
             color="accent"
          />
@@ -177,28 +256,36 @@ function DynamicRoundGrid({
             </div>
             <div className="text-right">
                <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-1 italic">Arena Count</h4>
-               <p className="text-sm font-bold text-accent uppercase italic">{matches.length} Sectors Active</p>
+               <p className="text-sm font-bold text-accent uppercase italic">{displayedMatches.length} Sectors {showAll ? 'Active' : 'Assigned'}</p>
             </div>
          </div>
       </div>
 
-      <div className={`grid gap-4 ${
-        matches.length === 1 ? 'grid-cols-1 max-w-xl mx-auto' :
-        matches.length <= 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' :
-        'grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-6 3xl:grid-cols-8'
-      }`}>
-        {matches.map((m, i) => (
-          <MatchCard 
-            key={m.id || i}
-            match={m}
-            competition={competition}
-            matchNumber={i + 1}
-            isFinal={isFinal}
-          />
-        ))}
-      </div>
+      {displayedMatches.length === 0 ? (
+         <div className="py-20 text-center bg-white/5 border border-white/5 border-dashed rounded-sm">
+            <ShieldAlert className="w-12 h-12 text-gray-700 mx-auto mb-4 opacity-20" />
+            <p className="text-[10px] text-gray-500 font-black uppercase tracking-[0.3em]">No active missions assigned in this sector.</p>
+            <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest mt-2">Toggle "All Sectors" to observe global operations.</p>
+         </div>
+      ) : (
+         <div className={`grid gap-4 ${
+           displayedMatches.length === 1 ? 'grid-cols-1 max-w-xl mx-auto' :
+           displayedMatches.length <= 4 ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-4' :
+           'grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-6 3xl:grid-cols-8'
+         }`}>
+           {displayedMatches.map((m, i) => (
+             <MatchCard 
+               key={m.id || i}
+               match={m}
+               competition={competition}
+               matchNumber={showAll ? (matches.findIndex(original => original.id === m.id) + 1) : (i + 1)}
+               isFinal={isFinal}
+             />
+           ))}
+         </div>
+      )}
     </div>
-  );
+   );
 }
 
 // Individual Match Card (Redesigned for Premium High-Density Screens)

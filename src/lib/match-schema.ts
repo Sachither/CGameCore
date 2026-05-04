@@ -29,7 +29,7 @@ export interface Match {
   format: '1v1' | 'br' | 'FFA' | 'ffa' | 'alcatraz' | 'tournament' | 'league'; 
   duration?: '12m' | '15m' | 'NONE'; 
   challengeFee: number;
-  status: 'WAITING' | 'READY' | 'IN_PROGRESS' | 'WAITING_FOR_OPPONENT' | 'COMPLETED' | 'DISPUTED' | 'RESOLVING' | 'CLOSED';
+  status: 'WAITING' | 'READY' | 'IN_PROGRESS' | 'WAITING_FOR_OPPONENT' | 'COMPLETED' | 'DISPUTED' | 'RESOLVING' | 'CLOSED' | 'SCHEDULED';
   playerIds: string[]; 
   players: { [uid: string]: MatchPlayer };
   championUid: string | null;
@@ -48,15 +48,17 @@ export interface Match {
   isRanked?: boolean;
   circuitId?: string;   
   leagueId?: string;    
-  round?: 'QR1' | 'QR2' | 'QF' | 'SF' | 'FINAL' | 'NONE' | 'QF TIE-BREAKER' | 'SF TIE-BREAKER'; 
-  group?: 'A' | 'B' | 'C' | 'D' | 'NONE';
+  round?: 'QR1' | 'QR2' | 'QF' | 'SF' | 'FINAL' | 'NONE' | 'QF TIE-BREAKER' | 'SF TIE-BREAKER' | 'LEAGUE' | string; 
+  group?: 'A' | 'B' | 'C' | 'D' | 'NONE' | string;
   expiresAt?: any;     
+  readyDeadline?: string | null;
   leg?: 1 | 2 | 3 | 'NONE'; 
   adminAlert?: boolean;
   adminAlertAt?: any;
   isPromo?: boolean;
   promoId?: string;
   isPartnerTournament?: boolean;
+  isTestMode?: boolean;
   partnerName?: string;
   overseers?: { [uid: string]: any };
 }

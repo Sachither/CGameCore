@@ -82,7 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const redirectCooldown = useRef<number>(0);
-  const sessionStartRef = useRef(Date.now()); // 🛡️ Session Grace Period Tracker
+  const sessionStartRef = useRef(Date.now()); 
+  const lastSeenUserRef = useRef(Date.now());
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -112,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (firebaseUser) {
         setUser(firebaseUser);
+        lastSeenUserRef.current = Date.now();
         setProfile(null); // 🛡️ Clear old profile immediately to prevent stale redirects
         // Reset session start time when a new user is detected
         sessionStartRef.current = Date.now();
@@ -156,6 +158,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsInitialized(true);
         });
       } else {
+        // GUEST STATE - Wait for potential recovery if we just saw a user
+        const timeSinceSeen = (Date.now() - lastSeenUserRef.current) / 1000;
+        if (timeSinceSeen < 1) {
+           console.log("[AuthProvider] User vanished. Waiting for recovery...");
+           return;
+        }
+
         // GUEST STATE
         if (profileUnsub) {
           profileUnsub();
@@ -194,11 +203,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // LOGIC 1: Guest Access Control (with persistence grace)
     if (!user) {
       if (isDashboard) {
-        // 🛡️ Persistence Grace: Allow 3 seconds for Firebase to recover from cache
-        // This prevents "flicker" kicks on mobile reloads
+        // 🛡️ Persistence Grace: Allow 5 seconds for Firebase to recover from cache or tab sync
         const sessionTime = (Date.now() - sessionStartRef.current) / 1000;
-        if (sessionTime < 5) {
-          console.log("[Auth] User null but session fresh. Holding for cache recovery...");
+        const timeSinceSeen = (Date.now() - lastSeenUserRef.current) / 1000;
+        
+        if (sessionTime < 5 || timeSinceSeen < 5) {
+          console.log("[Auth] User null but state is fresh/recovering. Holding...");
           return;
         }
 
