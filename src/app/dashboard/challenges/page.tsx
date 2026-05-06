@@ -31,7 +31,10 @@ export default function ChallengesExplorerPage() {
     );
 
     const unsub = onSnapshot(q, (snap) => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Match));
+      const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+      const docs = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as Match))
+        .filter(d => isLocal || !d.isTestMode);
       setChallenges(docs);
       setLoading(false);
     }, (err) => {

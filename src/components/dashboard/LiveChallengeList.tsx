@@ -38,8 +38,11 @@ export default function LiveChallengeList() {
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Match));
       // Client-side filtering and sorting
+      const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+
       const sorted = docs
         .filter(d => d.format !== 'tournament' && !d.circuitId) 
+        .filter(d => isLocal || !d.isTestMode) // Filter out test mode if NOT local
 
         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
         .slice(0, 20); // Show more challenges
