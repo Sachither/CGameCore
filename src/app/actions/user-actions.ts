@@ -249,10 +249,11 @@ export async function registerUserAction(
   // 1. Sanitization & Basic Validation
   const username = formData.username.trim();
   const lowerUsername = username.toLowerCase();
-  const phone = formData.phone.replace(/[^0-9]/g, "");
+  const phone = formData.phone.trim();
+  const normalizedPhone = phone.replace(/[^0-9]/g, "");
   
   if (username.length < 3 || username.length > 20) throw new Error("Invalid handle length (3-20 chars).");
-  if (phone.length < 10 || phone.length > 11) throw new Error("Invalid phone line.");
+  if (normalizedPhone.length < 7 || normalizedPhone.length > 15) throw new Error("Invalid phone line. Must be 7-15 digits.");
 
   try {
     // 2. [SECURITY] Rate Limit Check (IP-based or UID-based)
@@ -263,7 +264,7 @@ export async function registerUserAction(
     // 3. TRANSACTIONAL IDENTITY RESERVATION
     const result = await adminDb.runTransaction(async (transaction) => {
       const usernameRef = adminDb.collection("usernames").doc(lowerUsername);
-      const phoneRef = adminDb.collection("phones").doc(phone);
+      const phoneRef = adminDb.collection("phones").doc(normalizedPhone);
       
       const [uSnap, pSnap] = await Promise.all([
         transaction.get(usernameRef),
