@@ -51,7 +51,7 @@ export default function LeagueStandingsModal({ title, standings, isOpen, onClose
                </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-               {sortedStandings.map((p, idx) => (
+               {sortedStandings.length > 0 ? sortedStandings.map((p, idx) => (
                <tr key={p.uid} className={`text-[11px] font-bold uppercase transition-colors hover:bg-white/5 ${idx === 0 ? 'text-accent bg-accent/5' : 'text-gray-400'}`}>
                   <td className="px-6 py-4 tabular-nums flex items-center gap-2">
                     #{idx + 1}
@@ -63,7 +63,13 @@ export default function LeagueStandingsModal({ title, standings, isOpen, onClose
                   <td className="px-6 py-4 text-center tabular-nums">{p.gf - p.ga}</td>
                   <td className="px-6 py-4 text-center tabular-nums text-accent font-black">{p.pts}</td>
                </tr>
-               ))}
+               )) : (
+                <tr>
+                   <td colSpan={6} className="px-6 py-20 text-center text-gray-500 text-[10px] font-black uppercase tracking-widest italic opacity-50">
+                      No group or league standings recorded for this mission phase.
+                   </td>
+                </tr>
+               )}
             </tbody>
           </table>
         </div>

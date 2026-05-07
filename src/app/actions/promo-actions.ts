@@ -22,6 +22,8 @@ export interface PromoEvent {
   circuitId?: string; // For EFOOTBALL (Knockout)
   matchId?: string;   // For CODM (BR Room)
   entryFeeCoins?: number; // New: Optional entry fee
+  zeroBalanceEntry?: boolean; // New: Allows entry with < 100 coins
+  customTitle?: string; // New: Custom card title
 }
 
 /**
@@ -33,10 +35,17 @@ export async function createPromoEventAction(
   participantLimit: number,
   prizeUSD: number,
   prizeNGN: number,
-  entryFeeCoins: number = 0
+  entryFeeCoins: number = 0,
+  zeroBalanceEntry: boolean = false,
+  customTitle: string = ""
 ) {
   const adminUid = await getVerifiedAdminUid(idToken, true);
   
+  const coinPrize = prizeUSD * 100;
+  const finalTitle = !customTitle 
+    ? `${coinPrize.toLocaleString()} CR PROMO RUSH` 
+    : customTitle;
+
   const promoRef = adminDb.collection("promo_events").doc();
   const promoData: any = {
     game,
@@ -44,6 +53,8 @@ export async function createPromoEventAction(
     prizeUSD,
     prizeNGN,
     entryFeeCoins,
+    zeroBalanceEntry,
+    customTitle: finalTitle,
     status: 'OPEN',
     participants: [],
     participantData: {},
@@ -104,8 +115,8 @@ export async function joinPromoEventAction(idToken: string, promoId: string) {
       const currentBalance = user.balanceCoins || 0;
       const entryFee = promo.entryFeeCoins || 0;
 
-      // Rule A: Global Verification Minimum (100 Coins)
-      if (currentBalance < 100) {
+      // Rule A: Global Verification Minimum (100 Coins) - Byassed if zeroBalanceEntry is true
+      if (!promo.zeroBalanceEntry && currentBalance < 100) {
         throw new Error("Activation Required: You must have at least $1.00 (100 Coins) in your wallet to join this promo.");
       }
 

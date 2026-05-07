@@ -9,6 +9,7 @@ import { db } from "@/lib/firebase";
 import { collection, query, where, orderBy, onSnapshot } from "firebase/firestore";
 import TacticalConfirmModal from "@/components/admin/TacticalConfirmModal";
 import { useToast } from "@/context/ToastContext";
+import WinningCardModal from "@/components/wallet/WinningCardModal";
 
 function PromoDeploymentCenter() {
   const { user } = useAuth();
@@ -21,7 +22,9 @@ function PromoDeploymentCenter() {
     limit: 128,
     prizeUSD: 35,
     prizeNGN: 50000,
-    entryFeeCoins: 0
+    entryFeeCoins: 0,
+    zeroBalanceEntry: false,
+    customTitle: ""
   });
 
   useEffect(() => {
@@ -48,7 +51,9 @@ function PromoDeploymentCenter() {
         formData.limit,
         formData.prizeUSD,
         formData.prizeNGN,
-        formData.entryFeeCoins
+        formData.entryFeeCoins,
+        formData.zeroBalanceEntry,
+        formData.customTitle
       );
       if (res.success) {
         toast.success("PROMO DEPLOYED", `Successfully launched ${formData.game} operations for ${formData.limit} players.`);
@@ -134,10 +139,12 @@ function PromoDeploymentCenter() {
             </div>
             <input
               type="number"
-              value={formData.prizeUSD}
+              step="0.1"
+              value={formData.prizeUSD === 0 ? '' : formData.prizeUSD}
               onChange={(e) => {
-                const val = parseInt(e.target.value) || 0;
-                setFormData({ ...formData, prizeUSD: val, prizeNGN: Math.round(val * rate) });
+                const val = parseFloat(e.target.value);
+                const finalVal = isNaN(val) ? 0 : val;
+                setFormData({ ...formData, prizeUSD: finalVal, prizeNGN: Math.round(finalVal * rate) });
               }}
               className="w-full bg-black border border-white/10 p-4 rounded-sm text-xs font-bold text-white outline-none focus:border-accent"
               placeholder="35"
@@ -156,13 +163,51 @@ function PromoDeploymentCenter() {
             </div>
             <input
               type="number"
-              value={formData.entryFeeCoins}
-              onChange={(e) => setFormData({ ...formData, entryFeeCoins: parseInt(e.target.value) || 0 })}
+              value={formData.entryFeeCoins === 0 ? '' : formData.entryFeeCoins}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                setFormData({ ...formData, entryFeeCoins: isNaN(val) ? 0 : val })
+              }}
               className="w-full bg-black border border-white/10 p-4 rounded-sm text-xs font-bold text-white outline-none focus:border-accent"
               placeholder="0"
             />
             <div className="h-6 flex items-center">
               <p className="text-[8px] text-gray-500 font-bold uppercase italic px-1 leading-none">0 = Free Enrollment</p>
+            </div>
+          </div>
+
+          {/* Zero Balance Entry Toggle */}
+          <div className="flex flex-col">
+            <div className="h-6 flex items-center mb-2">
+              <label className="text-[10px] font-black text-accent uppercase tracking-widest px-1 italic">Free Entry (Zero Balance)</label>
+            </div>
+            <button
+              onClick={() => setFormData({ ...formData, zeroBalanceEntry: !formData.zeroBalanceEntry })}
+              className={`w-full p-4 rounded-sm text-xs font-bold uppercase tracking-widest transition-all ${
+                formData.zeroBalanceEntry ? 'bg-accent/20 border border-accent text-accent' : 'bg-black border border-white/10 text-gray-500'
+              }`}
+            >
+              {formData.zeroBalanceEntry ? 'ENABLED (NO MIN BALANCE)' : 'DISABLED (REQUIRES 100 CR)'}
+            </button>
+            <div className="h-6 flex items-center">
+              <p className="text-[8px] text-gray-500 font-bold uppercase italic px-1 leading-none">Overrides 100 Coin rule</p>
+            </div>
+          </div>
+
+          {/* Custom Title */}
+          <div className="flex flex-col md:col-span-2">
+            <div className="h-6 flex items-center mb-2">
+              <label className="text-[10px] font-black text-accent uppercase tracking-widest px-1 italic">Custom Title</label>
+            </div>
+            <input
+              type="text"
+              value={formData.customTitle}
+              onChange={(e) => setFormData({ ...formData, customTitle: e.target.value })}
+              className="w-full bg-black border border-white/10 p-4 rounded-sm text-xs font-bold text-white outline-none focus:border-accent"
+              placeholder="100K Promo Rush"
+            />
+            <div className="h-6 flex items-center">
+              <p className="text-[8px] text-gray-500 font-bold uppercase italic px-1 leading-none">Displayed on Promo Card</p>
             </div>
           </div>
 
@@ -196,13 +241,12 @@ function PromoDeploymentCenter() {
 export default function AdminPromoPage() {
   const { user } = useAuth();
   const [events, setEvents] = useState<any[]>([]);
+  const [selectedWinnerPromo, setSelectedWinnerPromo] = useState<any>(null);
 
   useEffect(() => {
-    // 🛡️ PRUNING PROTOCOL: Only show OPEN and ACTIVE operations in the primary feed.
+    // 🛡️ PRUNING PROTOCOL: Fetch OPEN, ACTIVE, and COMPLETED operations.
     const q = query(
       collection(db, "promo_events"),
-      where("status", "!=", "COMPLETED"),
-      orderBy("status"), // Required for inequality filters in some Firestore versions
       orderBy("createdAt", "desc")
     );
     const unsub = onSnapshot(q, (snap) => {
@@ -239,7 +283,7 @@ export default function AdminPromoPage() {
                 </div>
                 <div>
                   <h4 className="text-white font-black italic uppercase tracking-tighter text-lg leading-none mb-1">
-                    100K RUSH: {e.game}
+                    {e.customTitle || "100K RUSH"}: {e.game}
                   </h4>
                   <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest italic">
                     Limit: {e.participantLimit} Participants · Fee: {e.entryFeeCoins || 0} Coins · Created: {e.createdAt?.toDate?.()?.toLocaleString() || "Syncing..."}
@@ -252,15 +296,41 @@ export default function AdminPromoPage() {
                   <p className="text-[9px] text-gray-600 font-black uppercase tracking-widest mb-1">Enlisted</p>
                   <p className="text-xl font-black text-white italic tracking-tighter">{e.participants?.length || 0} / {e.participantLimit}</p>
                 </div>
-                <div className={`px-4 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest ${e.status === 'OPEN' ? 'bg-accent/10 text-accent border border-accent/20 animate-pulse' : e.status === 'ACTIVE' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 'bg-gray-500/10 text-gray-400 border border-gray-500/20'}`}>
+                <div className={`px-4 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest ${
+                  e.status === 'OPEN' ? 'bg-accent/10 text-accent border border-accent/20 animate-pulse' : 
+                  e.status === 'ACTIVE' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' : 
+                  e.status === 'CLOSED' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                  'bg-gray-500/10 text-gray-400 border border-gray-500/20'
+                }`}>
                   {e.status === 'ACTIVE' ? 'FULL / ACTIVE' : e.status}
                 </div>
+                {e.status === 'CLOSED' && e.winnerUsername && (
+                  <button 
+                    onClick={() => setSelectedWinnerPromo(e)}
+                    className="px-4 py-2 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors flex items-center gap-2"
+                  >
+                    <Trophy className="w-3 h-3" /> Winner Card
+                  </button>
+                )}
                 <DeletePromoButton promo={e} />
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {selectedWinnerPromo && (
+        <WinningCardModal
+          isOpen={true}
+          onClose={() => setSelectedWinnerPromo(null)}
+          username={selectedWinnerPromo.winnerUsername || "OPERATIVE"}
+          game={selectedWinnerPromo.game}
+          amount={(selectedWinnerPromo.prizeCR || selectedWinnerPromo.prizeUSD * 100).toString()}
+          date={selectedWinnerPromo.createdAt?.toDate?.()?.toLocaleDateString() || new Date().toLocaleDateString()}
+          txId={selectedWinnerPromo.winnerTxId || "N/A"}
+          currency="NGN"
+        />
+      )}
     </div>
   );
 }

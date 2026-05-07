@@ -128,7 +128,15 @@ export default function PromoTournamentCard() {
              </div>
 
              <h2 className="text-4xl md:text-6xl font-black text-white italic uppercase tracking-tighter mb-4 leading-none">
-                100K <span className="text-accent-aware">Promo Rush</span>
+                {promo.customTitle ? (
+                  <>
+                    {promo.customTitle.split(' ')[0]} <span className="text-accent-aware">{promo.customTitle.substring(promo.customTitle.indexOf(' ') + 1)}</span>
+                  </>
+                ) : (
+                  <>
+                    100K <span className="text-accent-aware">Promo Rush</span>
+                  </>
+                )}
              </h2>
              
              <p className="max-w-xl text-[11px] md:text-xs text-gray-400 font-bold uppercase tracking-widest leading-relaxed mb-8">
@@ -137,7 +145,11 @@ export default function PromoTournamentCard() {
                 {promo.entryFeeCoins > 0 ? (
                   ` A 100 Coin wallet balance is required for verification (the ${promo.entryFeeCoins} fee will be deducted).`
                 ) : (
-                  " Requires a minimum 100 Coin wallet balance for verification, but no coins will be deducted."
+                  promo.zeroBalanceEntry ? (
+                    " No minimum wallet balance is required. Free entry for all verified operatives."
+                  ) : (
+                    " Requires a minimum 100 Coin wallet balance for verification, but no coins will be deducted."
+                  )
                 )}
              </p>
 
@@ -218,7 +230,7 @@ export default function PromoTournamentCard() {
                 )}
                 
                 <p className="text-center text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-6">
-                   {promo.entryFeeCoins > 0 ? `Fee deducted upon enrollment` : `Verification only · No coins taken`}
+                   {promo.entryFeeCoins > 0 ? `Fee deducted upon enrollment` : (promo.zeroBalanceEntry ? `Open to all operatives · No balance required` : `Verification only · No coins taken`)}
                 </p>
              </div>
           </div>

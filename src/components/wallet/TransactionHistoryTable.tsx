@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getWalletTransactionsAction } from "@/app/actions/wallet-actions";
-import { Loader2, ArrowUpRight, ArrowDownLeft, Landmark } from "lucide-react";
+import { Loader2, ArrowUpRight, ArrowDownLeft, Landmark, Share2 } from "lucide-react";
+import WinningCardModal from "./WinningCardModal";
 
 interface Transaction {
   id: string;
@@ -16,9 +17,10 @@ interface Transaction {
 }
 
 export default function TransactionHistoryTable() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
 
   useEffect(() => {
     const fetch = async () => {
@@ -102,8 +104,28 @@ export default function TransactionHistoryTable() {
                         )}
                       </div>
                     </td>
-                    <td className={`p-5 text-right font-mono font-black text-lg ${tx.amount.startsWith('+') ? 'text-accent' : 'text-main'}`}>
-                      {tx.amount} <span className="text-[10px] opacity-30 italic">CR</span>
+                    <td className="p-5 text-right flex flex-col items-end gap-2 justify-center">
+                      <div className={`font-mono font-black text-lg ${tx.amount.startsWith('+') ? 'text-accent' : 'text-main'}`}>
+                        {tx.amount} <span className="text-[10px] opacity-30 italic">CR</span>
+                      </div>
+                      
+                      {(tx.type.toLowerCase().includes('victory') || tx.type.toLowerCase().includes('prize')) && tx.amount.startsWith('+') && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSelectedTx(tx); }}
+                          className="flex items-center gap-1.5 px-3 py-1 bg-accent/10 hover:bg-accent/20 border border-accent/20 rounded-sm text-[9px] font-black uppercase tracking-widest text-accent transition-colors mt-2"
+                        >
+                          <Share2 className="w-3 h-3" /> Share Win
+                        </button>
+                      )}
+                      
+                      {tx.type.toLowerCase().includes('withdrawal') && tx.status.toLowerCase() === 'completed' && (
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSelectedTx(tx); }}
+                          className="flex items-center gap-1.5 px-3 py-1 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-sm text-[9px] font-black uppercase tracking-widest text-green-400 transition-colors mt-2"
+                        >
+                          <Share2 className="w-3 h-3" /> Share Payout
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -112,6 +134,20 @@ export default function TransactionHistoryTable() {
           </table>
         </div>
       </div>
+
+      {selectedTx && (
+        <WinningCardModal
+          isOpen={true}
+          onClose={() => setSelectedTx(null)}
+          username={profile?.username || user?.displayName || 'OPERATIVE'}
+          game={selectedTx.match || 'Arena Match'}
+          amount={selectedTx.amount.replace('+', '').replace('-', '')}
+          date={selectedTx.date}
+          txId={selectedTx.displayId}
+          currency={profile?.currency || 'USD'}
+          cardType={selectedTx.type.toLowerCase().includes('withdrawal') ? 'WITHDRAWAL' : 'VICTORY'}
+        />
+      )}
     </div>
   );
 }

@@ -113,7 +113,7 @@ export default function ActiveTournamentsTable() {
             game: data.game,
             title: data.title,
             challengeFee: data.challengeFee || 0,
-            totalPool: data.totalPool || 0,
+            totalPool: data.isPromo ? (parseFloat(data.prizeUSD) || parseFloat(data.totalPool) || 0) * 100 : (data.totalPool || 0),
             playerCount: (data.playerIds || []).length,
             quota,
             format: data.format,

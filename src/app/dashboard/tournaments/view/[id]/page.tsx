@@ -174,8 +174,9 @@ export default function WarRoomPage() {
 
     const fmt = (competition as any).format || '';
     const isMaster = fmt === 'MASTER_CIRCUIT';
-    const isKnockout = fmt === '16_TOURNAMENT';
+    const isKnockout = fmt.includes('TOURNAMENT');
     const isNewLeague = fmt.includes('LEAGUE');
+    const isPromo = (competition as any).isPromo || fmt === 'PROMO_TOURNAMENT';
     const pCount = parseInt(fmt.split('_')[0]) || 0;
     const max = isNewLeague ? (pCount - 1) : (isMaster ? 2 : (isKnockout ? 1 : 0));
     
@@ -305,10 +306,8 @@ export default function WarRoomPage() {
              }
           }
        }
-    } else if (isKnockout || (competition as any).format === 'PROMO_TOURNAMENT') {
+    } else if (isKnockout || isPromo) {
        // PROMO or Standard Knockout Check
-       const isPromo = (competition as any).format === 'PROMO_TOURNAMENT';
-       
        if (isPromo) {
           // Promo format tracks winners explicitly
           const currentWinners = (competition as any).roundWinners || [];

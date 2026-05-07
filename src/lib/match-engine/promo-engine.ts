@@ -89,7 +89,7 @@ export async function spurnPromoTournamentInternal(promoId: string) {
 
         // Initialize Circuit record
         const initialUpdateObj: any = {
-          title: `100K PROMO RUSH: ${game}`,
+          title: promo.customTitle || `PROMO RUSH: ${game}`,
           game,
           format: 'PROMO_TOURNAMENT',
           challengeFee: 0,
@@ -358,7 +358,13 @@ async function distributePromoPrizes(
 
   if (circuit.promoId) {
     const promoRef = adminDb.collection("promo_events").doc(circuit.promoId);
-    transaction.update(promoRef, { status: 'CLOSED' });
+    transaction.update(promoRef, { 
+      status: 'CLOSED',
+      winnerUid: winnerUid,
+      winnerUsername: circuit.players[winnerUid]?.username || 'AGENT',
+      winnerTxId: winLogRef.id,
+      prizeCR: coinPrize
+    });
   }
 
   await pushGlobalCommand(transaction, circuitRef.id, `🏆 TOURNAMENT COMPLETE! ${circuit.players[winnerUid]?.username.toUpperCase() || 'AGENT'} IS THE PROMO RUSH CHAMPION!`);

@@ -635,7 +635,7 @@ export async function adjustUserBalanceAction(
     await createNotificationInternal(
       targetUid,
       amount > 0 ? "Credits Deposited" : "Credits Deducted",
-      `Tactical update: ${Math.abs(amount)} CR ${amount > 0 ? 'added to' : 'removed from'} your wallet.`,
+      `Tactical update: ${Math.abs(amount)} CR ${amount > 0 ? 'added to' : 'removed from'} your wallet. Reason: ${justification}`,
       "SYSTEM"
     );
 
