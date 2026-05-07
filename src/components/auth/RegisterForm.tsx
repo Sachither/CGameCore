@@ -246,7 +246,6 @@ export default function RegisterForm() {
               type="tel" 
               name="phone"
               required 
-              maxLength={11}
               value={formData.phone}
               onChange={handleChange}
               onKeyDown={handleKeyDown}

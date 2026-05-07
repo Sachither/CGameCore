@@ -10,8 +10,8 @@ export const REGEX = {
   // Email: Standard RFC 5322 compliant regex
   EMAIL: /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/,
   
-  // Phone: Nigerian format (Strictly 11 digits starting with 07, 08, or 09)
-  PHONE: /^0[789]\d{9}$/,
+  // Phone: Global format (Optional + followed by 7-15 digits)
+  PHONE: /^\+?[0-9]{7,15}$/,
   
   // Amount: Positive numbers, up to 2 decimal places (optional)
   AMOUNT: /^\d+(\.\d{1,2})?$/,
@@ -62,7 +62,7 @@ export function validate(key: keyof typeof REGEX, value: string): string | null 
     switch (key) {
       case "USERNAME": return "Username must be 3-15 alphanumeric chars.";
       case "EMAIL": return "Please enter a valid email address.";
-      case "PHONE": return "Invalid phone format. Use 081... or +234...";
+      case "PHONE": return "Invalid phone format. Enter a valid number.";
       case "AMOUNT": return "Amount must be a positive number.";
       case "ACCOUNT_NUMBER": return "Account number must be 10 digits.";
       case "REFERRAL_CODE": return "Referral code must be 3-10 alphanumeric chars.";
