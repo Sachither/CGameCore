@@ -8,9 +8,9 @@
  * 5. Checkdigit must match Account[9].
  */
 export function validateNuban(accountNumber: string, bankCode: string): boolean {
-  // Simplified: All Nigerian Bank accounts must be 10 digits.
-  // We've removed the strict checksum check to allow fintechs like OPay.
-  return accountNumber.length === 10 && /^\d+$/.test(accountNumber);
+  // Global Account Validation: Accept 7-15 digits for international compatibility.
+  // Nigerian NUBAN is strictly 10, but other regions (GH/KE) vary.
+  return accountNumber.length >= 7 && accountNumber.length <= 15 && /^\d+$/.test(accountNumber);
 }
 
 // Network-specific crypto address validators

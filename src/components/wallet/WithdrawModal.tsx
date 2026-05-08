@@ -447,13 +447,13 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
                       onChange={e => {
                         let val = e.target.value;
                         if (!isCrypto) {
-                           // For Banks: Strip non-digits and cap at 10
-                           val = val.replace(/\D/g, '').slice(0, 10);
+                           // For Banks/Mobile: Strip non-digits
+                           val = val.replace(/\D/g, '');
                         }
                         setAccountNumber(val);
                       }}
                       className={`w-full bg-black border ${bankCode && accountNumber && !isValidAddress ? 'border-red-500/50' : 'border-surface-border focus:border-white'} text-white font-mono font-bold text-xs md:text-sm p-3 rounded-[3px] outline-none transition-all placeholder-gray-800 tracking-widest disabled:opacity-50 disabled:cursor-not-allowed`}
-                      placeholder={!bankCode ? "Select Gateway First..." : (isCrypto ? `E.g. ${cryptoValidation.format}` : "Enter 10-Digit Account Number...")}
+                      placeholder={!bankCode ? "Select Gateway First..." : (isCrypto ? `E.g. ${cryptoValidation.format}` : "Enter Account/Wallet Number...")}
                     />
                     {!bankCode && <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest mt-2 ml-1 animate-pulse">Select a bank or crypto gateway to enable this field</p>}
                     {bankCode && isCrypto && !isValidAddress && accountNumber && (
