@@ -7,6 +7,9 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { subscribeToUserActiveMatch, Match } from "@/lib/match-service";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import SystemBanner from "./SystemBanner";
+import CommunityIntelOverlay from "../notifications/CommunityIntelOverlay";
+import QuickPingOverlay from "../notifications/QuickPingOverlay";
+import { getTierFromWins } from "@/lib/tier-utils";
 
 export default function ClientDashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -150,7 +153,12 @@ export default function ClientDashboardLayout({ children }: { children: React.Re
                         <span className="text-sm font-black text-main italic uppercase tracking-tighter group-hover:text-accent-aware transition-colors">
                           {profile?.username || user?.displayName || "Player"}
                         </span>
-                        <span className="text-[10px] text-accent-aware font-bold uppercase tracking-widest leading-none">Pro Tier</span>
+                        <span 
+                          className="text-[10px] font-bold uppercase tracking-widest leading-none"
+                          style={{ color: getTierFromWins(profile?.totalWins || 0).color }}
+                        >
+                          {getTierFromWins(profile?.totalWins || 0).label.split(':')[0]}
+                        </span>
                       </>
                     )}
                  </div>
@@ -179,6 +187,8 @@ export default function ClientDashboardLayout({ children }: { children: React.Re
         </main>
         
         {/* Real-time Global Elements */}
+        <CommunityIntelOverlay />
+        <QuickPingOverlay />
       </div>
     </div>
   );

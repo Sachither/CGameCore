@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { collection, query, where, onSnapshot, limit } from "firebase/firestore";
+import { collection, query, where, onSnapshot, limit, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Match, joinMatch } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -14,6 +14,7 @@ export default function LiveChallengeList() {
   const { user, profile } = useAuth();
   const toast = useToast();
   const [challenges, setChallenges] = useState<Match[]>([]);
+  const [showDummyData, setShowDummyData] = useState<boolean>(true);
   const [searchFee, setSearchFee] = useState<string>("");
   const [selectedGame, setSelectedGame] = useState<'ALL' | 'CODM' | 'EFOOTBALL'>('ALL');
   const [loading, setLoading] = useState(true);
@@ -27,6 +28,13 @@ export default function LiveChallengeList() {
 
   useEffect(() => {
     if (!user) return;
+
+    // Listen for System Config
+    const configUnsub = onSnapshot(doc(db, "system", "config"), (docSnap) => {
+       if (docSnap.exists()) {
+          setShowDummyData(docSnap.data().showDummyData ?? true);
+       }
+    });
 
     const q = query(
       collection(db, "matches"),
@@ -66,7 +74,7 @@ export default function LiveChallengeList() {
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => { unsub(); configUnsub(); };
   }, [user, joiningMatch]);
 
   // Sync game username from profile when joining
@@ -149,18 +157,25 @@ export default function LiveChallengeList() {
           </button>
       </div>
 
-      {challenges.length === 0 ? (
+      {challenges.length === 0 && false ? ( // Disabled empty state completely since we have dummy data now
         <div className="bg-surface/50 border border-surface-border border-dashed p-10 rounded-sm text-center">
            <Swords className="w-8 h-8 text-gray-700 mx-auto mb-3 opacity-20" />
            <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest">No active duels found.</p>
         </div>
       ) : (
-        <div className="flex overflow-x-auto gap-4 pb-6 snap-x snap-mandatory no-scrollbar">
-          {challenges.map((c) => {
-            const creator = Object.values(c.players).find(p => p.uid === c.creatorId);
+        <div className="flex overflow-x-auto gap-4 pb-6 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          {[...challenges, 
+            ...(showDummyData ? [
+              { id: 'dummy-1', roomName: 'Sniper Only Lobby', game: 'CODM', format: '1v1', challengeFee: 50, maxPlayers: 2, players: { 1: {}, 2: {} }, creatorId: '1', isDummy: true, isProtected: true },
+              { id: 'dummy-2', roomName: 'Pro Circuit Qualifier', game: 'EFOOTBALL', format: '1v1', challengeFee: 200, maxPlayers: 2, players: { 1: {}, 2: {} }, creatorId: '1', isDummy: true },
+              { id: 'dummy-3', roomName: 'Casual Grind', game: 'CODM', format: '4v4', challengeFee: 10, maxPlayers: 8, players: { 1: {}, 2: {}, 3: {}, 4: {}, 5: {}, 6: {}, 7: {}, 8: {} }, creatorId: '1', isDummy: true },
+              { id: 'dummy-4', roomName: 'High Stakes Duos', game: 'CODM', format: '2v2', challengeFee: 500, maxPlayers: 4, players: { 1: {}, 2: {}, 3: {}, 4: {} }, creatorId: '1', isDummy: true, isPartnerTournament: true, partnerName: 'EliteGaming' }
+            ] : [])
+          ].map((c: any) => {
+            const creator: any = c.isDummy ? { username: c.roomName, avatarId: parseInt(c.id.split('-')[1]) } : Object.values(c.players).find((p: any) => p.uid === c.creatorId);
             const target = c.maxPlayers || 2;
-            const current = Object.keys(c.players).length;
-            const isFull = current >= target;
+            const current = Object.keys(c.players || {}).length;
+            const isFull = current >= target || c.isDummy;
             const isPartnerMatch = !!c.isPartnerTournament;
             
             return (
@@ -177,7 +192,9 @@ export default function LiveChallengeList() {
                 {isFull && (
                    <div className="absolute inset-0 bg-black/60 backdrop-blur-[2px] z-20 flex items-center justify-center rounded-sm">
                       <div className="border-2 border-red-500/50 px-4 py-2 rotate-[-10deg] shadow-[0_0_20px_rgba(239,68,68,0.2)]">
-                         <span className="text-red-500 font-black italic uppercase tracking-[0.3em] text-xs">Arena Locked</span>
+                         <span className="text-red-500 font-black italic uppercase tracking-[0.3em] text-xs">
+                           {c.isDummy ? 'Match In Progress' : 'Arena Locked'}
+                         </span>
                       </div>
                    </div>
                 )}
@@ -227,16 +244,20 @@ export default function LiveChallengeList() {
 
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => !isFull && setJoiningMatch(c)}
+                    onClick={() => !isFull && !c.isDummy && setJoiningMatch(c)}
                     disabled={isFull && c.creatorId !== user?.uid}
                     className={`flex-1 py-3 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isFull ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (isPartnerMatch ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-main hover:bg-main-hover text-accent shadow-[0_0_15px_rgba(0,255,102,0.1)]')}`}
                   >
-                    {isFull ? (c.creatorId === user?.uid ? "Enter War Room" : "Arena Locked") : (c.creatorId === user?.uid ? "Enter War Room" : (isPartnerMatch ? "Enlist in Creator Cup" : "Join Combat Duel"))}
+                    {isFull ? (c.creatorId === user?.uid ? "Enter War Room" : (c.isDummy ? "Match In Progress" : "Arena Locked")) : (c.creatorId === user?.uid ? "Enter War Room" : (isPartnerMatch ? "Enlist in Creator Cup" : "Join Combat Duel"))}
                     {(!isFull || c.creatorId === user?.uid) && <ChevronRight className="w-3 h-3" />}
                   </button>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
+                      if (c.isDummy) {
+                         toast.error("Arena Locked", "This match is already in progress.");
+                         return;
+                      }
                       const url = window.location.origin + "/dashboard?join=" + c.id;
                       navigator.clipboard.writeText(url);
                       toast.success("INVITE LINK COPIED", "Share this URL with squad members to invite them to this mission.");

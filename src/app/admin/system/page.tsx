@@ -2,22 +2,25 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
-import { getAuditLogsAction, toggleSystemLockdownAction, resetAdminSecurityPinAction, getStaffListAction, setupAdminPinAction } from "@/app/actions/admin-actions";
+import { getAuditLogsAction, toggleSystemLockdownAction, toggleDummyDataAction, resetAdminSecurityPinAction, getStaffListAction, setupAdminPinAction } from "@/app/actions/admin-actions";
 import { syncPlatformRatesAction } from "@/app/actions/rate-actions";
-import { ShieldAlert, History, Lock, Unlock, Loader2, AlertTriangle, TrendingUp, RefreshCcw, Landmark, Trash2, Database, Eraser, ShieldCheck, Users, RotateCcw } from "lucide-react";
+import { ShieldAlert, History, Lock, Unlock, Loader2, AlertTriangle, TrendingUp, RefreshCcw, Landmark, Trash2, Database, Eraser, ShieldCheck, Users, RotateCcw, Ghost } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import { resetPlatformFinancesAction, purgeFinancialLogsAction } from "@/app/actions/admin-financial-actions";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import AdminConfirmModal from "@/components/admin/AdminConfirmModal";
+import { useCommandModal } from "@/context/CommandModalContext";
 import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
 
 export default function SuperAdminSystemPage() {
   const { user, profile, loading } = useAuth();
   const router = useRouter();
+  const command = useCommandModal();
   
   const [lockdownActive, setLockdownActive] = useState(false);
+  const [dummyDataActive, setDummyDataActive] = useState(true);
   const [lockdownLoading, setLockdownLoading] = useState(false);
+  const [dummyDataLoading, setDummyDataLoading] = useState(false);
   const [globalAuditData, setGlobalAuditData] = useState<any[]>([]);
   const [globalAuditView, setGlobalAuditView] = useState(false);
   const [rates, setRates] = useState<any>(null);
@@ -27,22 +30,6 @@ export default function SuperAdminSystemPage() {
   const [staffLoading, setStaffLoading] = useState(false);
   const toast = useToast();
 
-  // 🛡️ Modal State
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    variant: 'danger' | 'warning' | 'info';
-    confirmText?: string;
-  }>({
-    isOpen: false,
-    title: "",
-    message: "",
-    onConfirm: () => {},
-    variant: 'danger'
-  });
-
   // 🔒 Security PIN States
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
@@ -51,6 +38,7 @@ export default function SuperAdminSystemPage() {
 
   type PendingAction = 
     | { type: 'LOCKDOWN', active: boolean }
+    | { type: 'TOGGLE_DUMMY_DATA', active: boolean }
     | { type: 'RESET_FINANCE' }
     | { type: 'PURGE_LOGS' }
     | { type: 'PURGE_PIN', targetUid: string };
@@ -70,6 +58,7 @@ export default function SuperAdminSystemPage() {
         if (snap.exists()) {
           const data = snap.data();
           setLockdownActive(data?.lockdownActive || false);
+          setDummyDataActive(data?.showDummyData ?? true);
           setRates(data?.rates || null);
         }
       });
@@ -91,8 +80,7 @@ export default function SuperAdminSystemPage() {
   };
 
   const handleToggleLockdown = () => {
-    setConfirmModal({
-      isOpen: true,
+    command.confirm({
       title: lockdownActive ? "LIFT LOCKDOWN" : "AUTHORIZE LOCKDOWN",
       message: lockdownActive 
         ? "Lift emergency lockdown? Platform matchmaking and financial operations will resume immediately." 
@@ -100,22 +88,34 @@ export default function SuperAdminSystemPage() {
       variant: lockdownActive ? 'info' : 'danger',
       confirmText: lockdownActive ? "Resume Operations" : "Execute Lockdown",
       onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
         setPendingAction({ type: 'LOCKDOWN', active: !lockdownActive });
         setIsPinModalOpen(true);
       }
     });
   };
 
+  const handleToggleDummyData = () => {
+    command.confirm({
+      title: dummyDataActive ? "DISABLE DUMMY DATA" : "ENABLE DUMMY DATA",
+      message: dummyDataActive 
+        ? "Remove all simulated active matches from the public dashboard feeds?" 
+        : "Inject simulated matches into the dashboard feeds to make the platform appear highly active?",
+      variant: 'info',
+      confirmText: dummyDataActive ? "Disable Data" : "Enable Data",
+      onConfirm: () => {
+        setPendingAction({ type: 'TOGGLE_DUMMY_DATA', active: !dummyDataActive });
+        setIsPinModalOpen(true);
+      }
+    });
+  };
+
   const handleResetFinances = () => {
-    setConfirmModal({
-      isOpen: true,
+    command.confirm({
       title: "NUKE: FINANCIAL STATS",
       message: "CRITICAL PROTOCOL: This will reset all aggregate profit, deposit, and payout stats to ZERO. This action is IRREVERSIBLE. Confirm treasury reset?",
       variant: 'danger',
       confirmText: "Wipe Stats",
       onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
         setPendingAction({ type: 'RESET_FINANCE' });
         setIsPinModalOpen(true);
       }
@@ -123,14 +123,12 @@ export default function SuperAdminSystemPage() {
   };
 
   const handlePurgeLogs = () => {
-    setConfirmModal({
-      isOpen: true,
+    command.confirm({
       title: "NUKE: TRANSACTION LEDGER",
       message: "NUKE PROTOCOL: This will PERMANENTLY DELETE current transaction ledger entries. This makes past matches un-auditable. Proceed?",
       variant: 'danger',
       confirmText: "Purge Ledger",
       onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
         setPendingAction({ type: 'PURGE_LOGS' });
         setIsPinModalOpen(true);
       }
@@ -138,14 +136,12 @@ export default function SuperAdminSystemPage() {
   };
 
   const handlePurgePin = (targetUid: string) => {
-    setConfirmModal({
-      isOpen: true,
+    command.confirm({
       title: "PURGE SECURITY PIN",
       message: "CAUTION: This will physically wipe this admin's security PIN. They will be forced to set a NEW master key on their next action. Proceed?",
       variant: 'warning',
       confirmText: "Authorize Wipe",
       onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
         setPendingAction({ type: 'PURGE_PIN', targetUid });
         setIsPinModalOpen(true);
       }
@@ -172,6 +168,9 @@ export default function SuperAdminSystemPage() {
       if (pendingAction.type === 'LOCKDOWN') {
         setLockdownLoading(true);
         actionResult = await toggleSystemLockdownAction(idToken, pendingAction.active, "Super Admin Override", pin);
+      } else if (pendingAction.type === 'TOGGLE_DUMMY_DATA') {
+        setDummyDataLoading(true);
+        actionResult = await toggleDummyDataAction(idToken, pendingAction.active, pin);
       } else if (pendingAction.type === 'RESET_FINANCE') {
         setFinanceLoading(true);
         actionResult = await resetPlatformFinancesAction(idToken, pin);
@@ -190,6 +189,7 @@ export default function SuperAdminSystemPage() {
         
         // Refresh UI
         if (pendingAction.type === 'LOCKDOWN') setLockdownActive(pendingAction.active);
+        if (pendingAction.type === 'TOGGLE_DUMMY_DATA') setDummyDataActive(pendingAction.active);
         if (pendingAction.type === 'PURGE_PIN') loadStaff();
       } else {
         if (actionResult?.error?.includes("SECURITY_UNCONFIGURED")) {
@@ -299,6 +299,35 @@ export default function SuperAdminSystemPage() {
             }`}
           >
             {lockdownLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : lockdownActive ? "LIFT LOCKDOWN" : "AUTHORIZE LOCKDOWN"}
+          </button>
+        </div>
+
+        {/* DUMMY DATA TOGGLE */}
+        <div className={`p-8 border rounded-sm transition-colors ${dummyDataActive ? 'bg-blue-500/10 border-blue-500 shadow-[0_0_50px_rgba(59,130,246,0.15)] text-blue-500' : 'bg-[#0a0a0a] border-white/5 text-gray-400'}`}>
+          <div className="flex items-center gap-4 mb-4">
+            <div className={`p-3 rounded-sm ${dummyDataActive ? 'bg-blue-500 text-black' : 'bg-white/5 text-blue-500'}`}>
+               <Ghost className="w-8 h-8" />
+            </div>
+            <div>
+               <h2 className="text-2xl font-black italic uppercase tracking-tighter text-white">
+                  {dummyDataActive ? "SIMULATION ACTIVE" : "Activity Simulation"}
+               </h2>
+               <p className="text-[10px] uppercase font-bold tracking-widest mt-1">
+                 {dummyDataActive ? "Mock rooms are currently populating public dashboard feeds." : "Inject mock rooms into public feeds to simulate high platform activity."}
+               </p>
+            </div>
+          </div>
+
+          <button 
+            onClick={handleToggleDummyData}
+            disabled={dummyDataLoading}
+            className={`w-full py-4 text-xs border rounded-sm transition-all font-black uppercase tracking-[0.2em] disabled:opacity-50 flex items-center justify-center gap-2 ${
+               dummyDataActive 
+               ? 'bg-blue-500 text-black border-blue-500 hover:bg-blue-600' 
+               : 'bg-blue-500/10 text-blue-500 border-blue-500/20 hover:bg-blue-500/20'
+            }`}
+          >
+            {dummyDataLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : dummyDataActive ? "DISABLE SIMULATION" : "ENABLE SIMULATION"}
           </button>
         </div>
 
@@ -511,17 +540,6 @@ export default function SuperAdminSystemPage() {
           )}
         </div>
       </div>
-
-      {/* 🛡️ Sovereign Confirmation Terminal */}
-      <AdminConfirmModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmModal.onConfirm}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        variant={confirmModal.variant}
-        confirmText={confirmModal.confirmText}
-      />
 
       {/* 🔒 Security Terminal */}
       <AdminPinTerminal

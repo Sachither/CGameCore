@@ -14,7 +14,7 @@ import {
 import { setUserRoleAction, setupAdminPinAction, resetAdminSecurityPinAction } from "@/app/actions/admin-actions";
 import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
 import { useToast } from "@/context/ToastContext";
-import AdminConfirmModal from "@/components/admin/AdminConfirmModal";
+import { useCommandModal } from "@/context/CommandModalContext";
 
 interface UserDoc {
   id: string;
@@ -160,28 +160,13 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
   const [customPartnerCode, setCustomPartnerCode] = useState("");
   const [partnerDuration, setPartnerDuration] = useState(2160); // Default 90 days (2160 hours)
   const toast = useToast();
+  const command = useCommandModal();
 
   // 🔒 [FORTRESS] Security PIN States
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
   const [isFirstTimePinSetup, setIsFirstTimePinSetup] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ type: 'BALANCE' | 'BAN' | 'ROLE' | 'PARTNER' | 'PURGE', payload?: any } | null>(null);
-
-  // 🛡️ [SOVEREIGN] Confirmation Modal States
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    variant: 'danger' | 'warning' | 'info';
-    confirmText?: string;
-  }>({
-    isOpen: false,
-    title: "",
-    message: "",
-    onConfirm: () => {},
-    variant: 'danger'
-  });
 
   const handlePinSuccess = async (pin: string) => {
     if (!adminUser || !pendingAction) return;
@@ -257,14 +242,12 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
   };
 
   const handlePurgePin = () => {
-    setConfirmModal({
-      isOpen: true,
+    command.confirm({
       title: "PURGE SECURITY PIN",
       message: "CAUTION: This will physically wipe this admin's security PIN. They will be forced to set a NEW master key on their next action. Proceed?",
       variant: 'danger',
       confirmText: "Authorize Wipe",
       onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
         setPendingAction({ type: 'PURGE' });
         setIsPinModalOpen(true);
       }
@@ -458,17 +441,6 @@ function UserModal({ user: u, adminUser, adminProfile, onClose, onRefresh }: {
            durationHours={showConfirm.type === 'PARTNER' ? partnerDuration : banDuration}
            onDurationChange={showConfirm.type === 'PARTNER' ? setPartnerDuration : setBanDuration}
            type={showConfirm.type}
-        />
-
-        {/* 🛡️ Sovereign Confirmation Terminal */}
-        <AdminConfirmModal
-          isOpen={confirmModal.isOpen}
-          onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-          onConfirm={confirmModal.onConfirm}
-          title={confirmModal.title}
-          message={confirmModal.message}
-          variant={confirmModal.variant}
-          confirmText={confirmModal.confirmText}
         />
 
         {/* Security Terminal */}

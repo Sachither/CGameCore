@@ -97,7 +97,11 @@ export const findActiveMatchByType = async (
   
   const snap = await getDocs(q);
   if (snap.empty) return null;
-  return { id: snap.docs[0].id, ...snap.docs[0].data() } as Match;
+  
+  const matches = snap.docs.map(d => ({ id: d.id, ...d.data() } as Match));
+  const unprotectedMatch = matches.find(m => !m.isProtected);
+  
+  return unprotectedMatch || null;
 };
 
 /**
@@ -118,14 +122,6 @@ export const createMatch = async (
   roomPassword?: string,
   isTestMode?: boolean
 ) => {
-  // SINGLETON CHECK for 50/100 CR (Leagues/Tournaments only)
-  if ((format === 'league' || format === 'tournament') && (challengeFee === 50 || challengeFee === 100)) {
-    const existing = await findActiveMatchByType(game, format, challengeFee);
-    if (existing) {
-       throw new Error(`A ${format.toUpperCase()} unit (Stake: ${challengeFee} CR) is already forming. Join sector #${existing.id?.slice(0, 4)} instead!`);
-    }
-  }
-
   const result = await createMatchAction(
     idToken, username, avatarId, game, format, challengeFee, inGameName, weaponClass, duration, maxPlayers,
     undefined, undefined, undefined, undefined, undefined, roomName, roomPassword, isTestMode
@@ -209,7 +205,7 @@ export const resolveMatch = async (matchId: string, championUid: string, loserUi
 
     const playersCount = Object.keys(matchData.players).length;
     const totalPool = matchData.challengeFee * playersCount;
-    const netPool = Math.floor(totalPool * 0.8); // 20% commission
+    const netPool = Math.floor(totalPool * 0.9); // 10% commission
     
     let victoryReward = netPool;
     const gameKey = matchData.game; // 'CODM' or 'EFOOTBALL'

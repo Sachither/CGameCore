@@ -368,7 +368,7 @@ export async function createMatchAction(
 
   // [PROT-TOUR-02] 🔒 Entry Fee Duplication Prevention
   // Only enforce for tournament format matches (gathering, not sub-matches)
-  if ((format === 'tournament' || format === 'league') && !circuitId) {
+  if ((format === 'tournament' || format === 'league') && !circuitId && profile.role !== 'PARTNER') {
     const existingTournaments = await adminDb
       .collection("matches")
       .where("format", "in", ["tournament", "league"])

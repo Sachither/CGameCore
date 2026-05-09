@@ -2,13 +2,31 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
 
 export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: any) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // --- NOTIFICATION INTEL LISTENER ---
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, "users", user.uid, "notifications"),
+      where("isRead", "==", false)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setUnreadCount(snap.size);
+    }, (err) => {
+      console.error("[SidebarIntel] Notification count error:", err);
+    });
+    return () => unsub();
+  }, [user]);
 
   const isModerator = profile?.isAdmin || profile?.role === 'MODERATOR' || profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN';
 
@@ -55,12 +73,32 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
         </div>
         
         <nav className="flex-1 px-4 space-y-2">
-           <Link href="/dashboard" className={isActive('/dashboard') ? activeLinkClass : inactiveLinkClass} onClick={() => setMobileOpen(false)}>
-             <svg className={`w-5 h-5 shrink-0 ${isActive('/dashboard') ? 'text-accent' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-             </svg>
-             {!collapsed && <span>Dashboard</span>}
-           </Link>
+            <Link href="/dashboard" className={isActive('/dashboard') ? activeLinkClass : inactiveLinkClass} onClick={() => setMobileOpen(false)}>
+              <svg className={`w-5 h-5 shrink-0 ${isActive('/dashboard') ? 'text-accent' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+              </svg>
+              {!collapsed && <span>Dashboard</span>}
+            </Link>
+            <Link href="/dashboard/community" className={isActive('/dashboard/community') ? activeLinkClass : inactiveLinkClass} onClick={() => setMobileOpen(false)}>
+              <div className="relative">
+                <svg className={`w-5 h-5 shrink-0 ${isActive('/dashboard/community') ? 'text-accent' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" />
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#EA4335] rounded-full border border-surface animate-pulse" />
+                )}
+              </div>
+              {!collapsed && (
+                <div className="flex-1 flex items-center justify-between">
+                  <span>Community</span>
+                  {unreadCount > 0 && (
+                    <span className="bg-[#EA4335]/20 text-[#EA4335] text-[9px] px-1.5 py-0.5 rounded-sm font-black italic">
+                      {unreadCount}
+                    </span>
+                  )}
+                </div>
+              )}
+            </Link>
            <Link href="/dashboard/matches" className={isActive('/dashboard/matches') ? activeLinkClass : inactiveLinkClass} onClick={() => setMobileOpen(false)}>
              <svg className={`w-5 h-5 shrink-0 ${isActive('/dashboard/matches') ? 'text-accent' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />

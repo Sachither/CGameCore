@@ -6,10 +6,12 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { Match } from '@/lib/match-service';
 import { RefreshCw, ShieldAlert, Target, Table as TableIcon } from 'lucide-react';
+import { useCommandModal } from '@/context/CommandModalContext';
 import LeagueStandingsModal from '@/components/dashboard/LeagueStandingsModal';
 
 export default function MyMatchesPage() {
   const { user } = useAuth();
+  const command = useCommandModal();
   const [activeMatches, setActiveMatches] = useState<Match[]>([]);
   const [historyMatches, setHistoryMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,7 +81,11 @@ export default function MyMatchesPage() {
         });
         setSnapshotOpen(true);
       } else {
-        alert("Tactical snapshot lost or purged from archives.");
+        command.alert({
+          title: "ARCHIVE UNAVAILABLE",
+          message: "Tactical snapshot lost or purged from archives. Metadata may have been scrubbed.",
+          variant: 'warning'
+        });
       }
     } catch (err) {
       console.error("Snapshot Fetch Error:", err);

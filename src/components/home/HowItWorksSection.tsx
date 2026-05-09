@@ -2,23 +2,27 @@ export default function HowItWorksSection() {
   const steps = [
     {
       num: "01",
-      title: "Deposit & Queue",
-      desc: "Buy CGame Coins via Crypto ($1.00 USD = 100 Coins). Join a 'Sit & Go' queue for your favorite game mode. Your security deposit is locked securely in Escrow."
+      title: "Tactical Induction",
+      desc: "Buy CGame Coins via Crypto. Join a 'Sit & Go' queue for your favorite sector. Your entry is protected by our unbreachable security protocols.",
+      benefit: "Anti-Ghost Security"
     },
     {
       num: "02",
-      title: "Play the Match",
-      desc: "One player is chosen as Host to create a private room in CODM or eFootball. Both players join and play the match using our strict competitive rulebook."
+      title: "The Engagement",
+      desc: "Face off in a high-stakes 1v1. One player hosts, both play. Every move counts when your reputation and wallet are on the line.",
+      benefit: "Fair Play Guaranteed"
     },
     {
       num: "03",
-      title: "Report & Earn",
-      desc: "Upload the end-game screenshot to claim your win. If both players agree, Escrow directly releases the prize pool to the winner's wallet minus a 20% platform rake."
+      title: "Intelligence Capture",
+      desc: "Upload your victory evidence. Our neural network verifies the data. Once confirmed, the prize pool is instantly released to your wallet.",
+      benefit: "Instant Payouts"
     },
     {
       num: "04",
-      title: "Dispute Resolution",
-      desc: "Opponent lied? Upload a recording of the match. Our AI OCR and human admins instantly review killfeeds and rule-breaks to award you the win and punish cheaters."
+      title: "Staff Oversight",
+      desc: "Our elite moderators and AI OCR systems are always watching. Cheaters are purged, and honest operatives are always protected.",
+      benefit: "Cheat-Free Arena"
     }
   ];
 
@@ -40,6 +44,9 @@ export default function HowItWorksSection() {
             <div key={i} className="bg-surface border border-surface-border p-8 hover:border-accent/50 transition-colors rounded-sm relative group">
               <div className="absolute top-0 right-0 p-4 opacity-10 font-black text-6xl text-white group-hover:text-accent transition-colors">
                 {step.num}
+              </div>
+              <div className="mb-4 inline-block px-2 py-1 bg-accent/10 border border-accent/20 rounded-sm">
+                 <p className="text-[8px] font-black text-accent uppercase tracking-widest">{step.benefit}</p>
               </div>
               <h3 className="text-xl font-bold text-white mb-4 relative z-10">{step.title}</h3>
               <p className="text-gray-400 text-sm leading-relaxed relative z-10">

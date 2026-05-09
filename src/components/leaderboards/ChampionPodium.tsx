@@ -1,4 +1,4 @@
-export default function ChampionPodium({ topUsers }: { topUsers: any[] }) {
+export default function ChampionPodium({ topUsers, activeFilter }: { topUsers: any[], activeFilter: string }) {
   const PodiumCard = ({ rank, user, height, colorClass, highlight }: any) => {
     if (!user) {
       return (
@@ -10,14 +10,32 @@ export default function ChampionPodium({ topUsers }: { topUsers: any[] }) {
               <div className="-rotate-45 relative z-10 text-lg font-black italic text-accent shadow-[0_0_10px_rgba(0,255,102,0.3)]">#{rank}</div>
            </div>
            <div className={`w-full bg-gradient-to-t ${colorClass} border border-surface-border rounded-t-sm p-4 h-full flex flex-col items-center justify-center`}>
-              <div className="text-[10px] font-black text-sub uppercase tracking-[0.2em] animate-pulse">Recruiting...</div>
+              <div className="text-[10px] font-black text-sub uppercase tracking-0.2em animate-pulse">Recruiting...</div>
            </div>
         </div>
       );
     }
 
     const winRate = user.totalMatches ? Math.round((user.totalWins / user.totalMatches) * 100) : 0;
-    const formattedWon = (user.balanceCoins || 0).toLocaleString();
+    
+    // Dynamic Stat Calculation
+    let displayValue = user.totalWins || 0;
+    let displayLabel = "Total Wins";
+    let isCurrency = false;
+
+    if (activeFilter === 'Weekly-Earners') {
+      displayValue = user.amount || 0;
+      displayLabel = "Weekly Profit";
+      isCurrency = true;
+    } else if (activeFilter === 'CODM') {
+      displayValue = user.stats?.CODM?.wins || 0;
+      displayLabel = "CODM Arena Wins";
+    } else if (activeFilter === 'eFootball') {
+      displayValue = user.stats?.EFOOTBALL?.wins || 0;
+      displayLabel = "eFootball Wins";
+    } else if (activeFilter === 'Monthly') {
+      displayLabel = "Monthly Wins";
+    }
 
     return (
       <div className={`flex flex-col items-center justify-end ${height} w-[32%] md:w-1/3 relative group px-0.5 md:px-1`}>
@@ -64,7 +82,10 @@ export default function ChampionPodium({ topUsers }: { topUsers: any[] }) {
           </div>
 
           <div className="text-main font-black tracking-wider text-2xl font-mono mt-auto pt-4 border-t border-surface-border/50 w-full text-center">
-            {user.totalWins || 0} <span className="text-[10px] text-accent uppercase font-sans tracking-widest mb-1 block mt-1">Total Wins</span>
+            {isCurrency ? displayValue.toLocaleString() : displayValue} 
+            <span className={`text-[10px] ${isCurrency ? 'text-accent' : 'text-accent'} uppercase font-sans tracking-widest mb-1 block mt-1`}>
+              {isCurrency ? 'CR Earned' : displayLabel}
+            </span>
           </div>
         </div>
       </div>

@@ -7,6 +7,7 @@ import {
   adminDeleteMatchAction,
   adminDeleteCircuitByIdAction,
 } from "@/app/actions/admin-actions";
+import { useCommandModal } from "@/context/CommandModalContext";
 import {
   Loader2,
   RefreshCw,
@@ -213,6 +214,7 @@ function MatchRow({
 
 export default function AdminMatchesPage() {
   const { user } = useAuth();
+  const command = useCommandModal();
   const [matches, setMatches] = useState<ActiveMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -252,49 +254,69 @@ export default function AdminMatchesPage() {
   }, [fetchMatches]);
 
   const handleForceClose = async (matchId: string) => {
-    if (!user || !confirm(`Force-close match #${matchId.slice(-8).toUpperCase()}? No payout will be triggered.`)) return;
-    setActionLoading(matchId);
-    const idToken = await user.getIdToken();
-    const res = await adminForceCloseMatchAction(idToken, matchId);
-    if (res.success) {
-      showToast("Match force-closed.", true);
-      setMatches(prev => prev.filter(m => m.id !== matchId));
-    } else {
-      showToast(res.error || "Failed.", false);
-    }
-    setActionLoading(null);
+    command.confirm({
+      title: "FORCE CLOSE MATCH",
+      message: `Authorize immediate closure of match #${matchId.slice(-8).toUpperCase()}? No payout will be triggered. This is a destructive action.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        if (!user) return;
+        setActionLoading(matchId);
+        const idToken = await user.getIdToken();
+        const res = await adminForceCloseMatchAction(idToken, matchId);
+        if (res.success) {
+          showToast("Match force-closed.", true);
+          setMatches(prev => prev.filter(m => m.id !== matchId));
+        } else {
+          showToast(res.error || "Failed.", false);
+        }
+        setActionLoading(null);
+      }
+    });
   };
 
   const handleDelete = async (matchId: string, withCircuit: boolean) => {
     const label = withCircuit ? "ALL CIRCUIT MATCHES (including sub-legs)" : `match #${matchId.slice(-8).toUpperCase()}`;
-    if (!user || !confirm(`⚠️ Permanently delete ${label}? This cannot be undone.`)) return;
-    setActionLoading(matchId);
-    const idToken = await user.getIdToken();
-    const res = await adminDeleteMatchAction(idToken, matchId, withCircuit);
-    if (res.success) {
-      showToast(`Deleted ${(res as any).deletedCount} match(es).`, true);
-      await fetchMatches(); // refresh since multiple could be gone
-    } else {
-      showToast((res as any).error || "Failed.", false);
-    }
-    setActionLoading(null);
+    command.confirm({
+      title: "PERMANENT DELETION",
+      message: `Permanently erase ${label}? This operation cannot be undone and will be logged in the tactical audit feed.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        if (!user) return;
+        setActionLoading(matchId);
+        const idToken = await user.getIdToken();
+        const res = await adminDeleteMatchAction(idToken, matchId, withCircuit);
+        if (res.success) {
+          showToast(`Deleted ${(res as any).deletedCount} match(es).`, true);
+          await fetchMatches(); // refresh since multiple could be gone
+        } else {
+          showToast((res as any).error || "Failed.", false);
+        }
+        setActionLoading(null);
+      }
+    });
   };
 
   const handleManualNuke = async () => {
     if (!manualNukeId.trim()) return;
-    if (!user || !confirm(`⚠️ Permanently delete circuit/league ${manualNukeId}? This cannot be undone.`)) return;
-    
-    setActionLoading("manual-nuke");
-    const idToken = await user.getIdToken();
-    const res = await adminDeleteCircuitByIdAction(idToken, manualNukeId.trim());
-    
-    if (res.success) {
-      showToast(`Successfully nuked Circuit ${manualNukeId}.`, true);
-      setManualNukeId("");
-    } else {
-      showToast(res.error || "Failed to delete.", false);
-    }
-    setActionLoading(null);
+    command.confirm({
+      title: "EXECUTE NUCLEAR PURGE",
+      message: `Authorize permanent erasure of circuit/league ${manualNukeId}? ALL associated match data, scoring, and history will be wiped from the grid.`,
+      variant: 'danger',
+      onConfirm: async () => {
+        if (!user) return;
+        setActionLoading("manual-nuke");
+        const idToken = await user.getIdToken();
+        const res = await adminDeleteCircuitByIdAction(idToken, manualNukeId.trim());
+        
+        if (res.success) {
+          showToast(`Successfully nuked Circuit ${manualNukeId}.`, true);
+          setManualNukeId("");
+        } else {
+          showToast(res.error || "Failed to delete.", false);
+        }
+        setActionLoading(null);
+      }
+    });
   };
 
   // Filter logic

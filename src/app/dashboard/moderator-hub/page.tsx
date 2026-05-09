@@ -3,19 +3,24 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
 import { getDisputedMatchesAction, getUserAuditHistoryAction, searchUserAction, alertPlayersOfAdminPresence, setUserRoleAction, resolveDisputeAction, setupAdminPinAction, resetAdminSecurityPinAction, getStaffListAction } from "@/app/actions/admin-actions";
-import { ShieldAlert, Search, AlertTriangle, History, BarChart3, Loader2, Users, BellRing, Settings, CheckCircle2, RotateCcw, Gavel, ExternalLink, ImageIcon, XCircle, Lock, ShieldCheck, Terminal, MessageSquare, PlayCircle, Image as LucideImage } from "lucide-react";
+import { getReportedMessagesAction, adminDeleteMessageAction } from "@/app/actions/community-actions";
+import { ShieldAlert, Search, AlertTriangle, History, BarChart3, Loader2, Users, BellRing, Settings, CheckCircle2, RotateCcw, Gavel, ExternalLink, ImageIcon, XCircle, Lock, ShieldCheck, Terminal, MessageSquare, PlayCircle, Image as LucideImage, MessageCircleOff, MessageCircle, Flag, Trash2, UserX } from "lucide-react";
 import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
 import { useToast } from "@/context/ToastContext";
 import { db } from "@/lib/firebase";
 import SafeImage from "@/components/ui/SafeImage";
 import Link from "next/link";
 import AdminConfirmModal from "@/components/admin/AdminConfirmModal";
+import { adminToggleChatSuspensionAction } from "@/app/actions/admin-actions";
+import { useCommandModal } from "@/context/CommandModalContext";
 
 export default function ModeratorHubPage() {
   const { user, profile, loading } = useAuth();
+  const command = useCommandModal();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"disputes" | "search" | "alerts" | "admin" | "super">("disputes");
+  const [activeTab, setActiveTab] = useState<"disputes" | "search" | "alerts" | "admin" | "super" | "reports">("disputes");
   const [disputes, setDisputes] = useState<any[]>([]);
+  const [reportedMessages, setReportedMessages] = useState<any[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -28,22 +33,6 @@ export default function ModeratorHubPage() {
   const [roleLoading, setRoleLoading] = useState<string | null>(null);
   const toast = useToast();
   const [staffList, setStaffList] = useState<any[]>([]);
-  
-  // 🛡️ Modal State
-  const [confirmModal, setConfirmModal] = useState<{
-    isOpen: boolean;
-    title: string;
-    message: string;
-    onConfirm: () => void;
-    variant: 'danger' | 'warning' | 'info';
-    confirmText?: string;
-  }>({
-    isOpen: false,
-    title: "",
-    message: "",
-    onConfirm: () => {},
-    variant: 'danger'
-  });
 
   // 🔒 Security PIN States
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
@@ -92,9 +81,27 @@ export default function ModeratorHubPage() {
     }
   };
 
+  const loadReports = async () => {
+    if (!user) return;
+    setDataLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const result = await getReportedMessagesAction(idToken);
+      if (result.success) setReportedMessages(result.messages || []);
+    } catch (error) {
+      console.error("Failed to load reports:", error);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (activeTab === "disputes") {
       loadDisputes();
+    }
+    
+    if (activeTab === "reports") {
+      loadReports();
     }
 
     if (activeTab === "super" && isSuperAdmin) {
@@ -154,8 +161,7 @@ export default function ModeratorHubPage() {
   };
 
   const handleResolve = (matchId: string, winnerId: string, winnerName: string) => {
-     setConfirmModal({
-        isOpen: true,
+     command.confirm({
         title: "TRIBUNAL VERDICT",
         message: winnerId === "REFUND" 
            ? "Are you sure you want to VOID this match and REFUND all players?" 
@@ -163,7 +169,6 @@ export default function ModeratorHubPage() {
         variant: winnerId === "REFUND" ? 'warning' : 'info',
         confirmText: winnerId === "REFUND" ? "Execute Refund" : "Award Victory",
         onConfirm: () => {
-           setConfirmModal(prev => ({ ...prev, isOpen: false }));
            setPendingAction({ type: 'RESOLVE', matchId, winnerId, winnerName });
            setIsPinModalOpen(true);
         }
@@ -171,14 +176,12 @@ export default function ModeratorHubPage() {
   };
 
   const handleSetRole = (uid: string, role: any) => {
-     setConfirmModal({
-        isOpen: true,
+     command.confirm({
         title: "CLEARANCE MODIFICATION",
         message: `Are you sure you want to set this operator's role to ${role}? This will immediately adjust their platform permissions.`,
         variant: 'warning',
         confirmText: "Update Role",
         onConfirm: () => {
-           setConfirmModal(prev => ({ ...prev, isOpen: false }));
            setPendingAction({ type: 'ROLE', targetUid: uid, role });
            setIsPinModalOpen(true);
         }
@@ -186,14 +189,12 @@ export default function ModeratorHubPage() {
   };
 
   const handlePurgePin = (uid: string) => {
-    setConfirmModal({
-      isOpen: true,
+    command.confirm({
       title: "PURGE SECURITY PIN",
       message: "CAUTION: This will physically wipe this admin's security PIN. They will be forced to set a NEW master key on their next action. Proceed?",
       variant: 'danger',
       confirmText: "Authorize Wipe",
       onConfirm: () => {
-        setConfirmModal(prev => ({ ...prev, isOpen: false }));
         setPendingAction({ type: 'PURGE', targetUid: uid });
         setIsPinModalOpen(true);
       }
@@ -279,42 +280,46 @@ export default function ModeratorHubPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-8 border-b border-white/5 overflow-x-auto custom-scrollbar">
+      <div className="flex flex-wrap items-center gap-1 mb-8 border-b border-white/5 p-1 bg-white/[0.02] rounded-sm">
         <button
           onClick={() => setActiveTab("disputes")}
-          className={`px-4 py-3 text-sm font-black uppercase tracking-widest transition-all border-b-2 whitespace-nowrap ${
-            activeTab === "disputes" ? "text-accent border-accent" : "text-gray-500 border-transparent hover:text-main"
+          className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all rounded-sm flex items-center gap-2 ${
+            activeTab === "disputes" ? "bg-accent text-black shadow-[0_0_15px_rgba(0,255,102,0.3)]" : "text-gray-500 hover:text-white"
           }`}
         >
-          <div className="flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4" />
-            Active Disputes
-          </div>
+          <ShieldAlert className="w-4 h-4" />
+          Active Disputes
+        </button>
+
+        <button
+          onClick={() => setActiveTab("reports")}
+          className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all rounded-sm flex items-center gap-2 ${
+            activeTab === "reports" ? "bg-accent text-black shadow-[0_0_15px_rgba(0,255,102,0.3)]" : "text-gray-500 hover:text-white"
+          }`}
+        >
+          <Flag className="w-4 h-4" />
+          Operational Reports
         </button>
 
         <button
           onClick={() => setActiveTab("search")}
-          className={`px-4 py-3 text-sm font-black uppercase tracking-widest transition-all border-b-2 whitespace-nowrap ${
-            activeTab === "search" ? "text-accent border-accent" : "text-gray-500 border-transparent hover:text-main"
+          className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all rounded-sm flex items-center gap-2 ${
+            activeTab === "search" ? "bg-accent text-black shadow-[0_0_15px_rgba(0,255,102,0.3)]" : "text-gray-500 hover:text-white"
           }`}
         >
-          <div className="flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            Intelligence Search
-          </div>
+          <Search className="w-4 h-4" />
+          Intelligence Search
         </button>
 
         {(isAdmin || isSuperAdmin) && (
           <button
             onClick={() => setActiveTab("admin")}
-            className={`px-4 py-3 text-sm font-black uppercase tracking-widest transition-all border-b-2 whitespace-nowrap ${
-              activeTab === "admin" ? "text-accent border-accent" : "text-gray-500 border-transparent hover:text-main"
+            className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest transition-all rounded-sm flex items-center gap-2 ${
+              activeTab === "admin" ? "bg-accent text-black shadow-[0_0_15px_rgba(0,255,102,0.3)]" : "text-gray-500 hover:text-white"
             }`}
           >
-            <div className="flex items-center gap-2">
-              <Settings className="w-4 h-4" />
-              Admin Tools
-            </div>
+            <Settings className="w-4 h-4" />
+            Admin Protocols
           </button>
         )}
 
@@ -506,6 +511,88 @@ export default function ModeratorHubPage() {
           </div>
         )}
 
+        {activeTab === "reports" && (
+          <div className="p-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+             <div className="flex items-center justify-between mb-8">
+               <div>
+                  <h2 className="text-xl font-black text-white italic uppercase tracking-tighter">Reported Intel</h2>
+                  <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Messages Flagged by the Community for Review</p>
+               </div>
+               <button 
+                 onClick={loadReports}
+                 className="text-[10px] font-black uppercase tracking-widest text-accent hover:text-white flex items-center gap-2"
+               >
+                 <RotateCcw className="w-3 h-3" /> Refresh Feed
+               </button>
+             </div>
+
+             {dataLoading ? (
+               <div className="flex justify-center py-20">
+                 <Loader2 className="w-8 h-8 text-accent animate-spin" />
+               </div>
+             ) : reportedMessages.length === 0 ? (
+               <div className="text-center py-20 border border-dashed border-white/5 rounded-sm">
+                 <Flag className="w-8 h-8 text-gray-800 mx-auto mb-3" />
+                 <p className="text-gray-600 text-xs font-black uppercase tracking-widest">No active reports in sector</p>
+               </div>
+             ) : (
+               <div className="space-y-4">
+                  {reportedMessages.map(msg => (
+                    <div key={msg.id} className="p-5 bg-black border border-white/5 rounded-sm flex flex-col md:flex-row gap-6 items-start md:items-center group hover:border-yellow-500/20 transition-all">
+                       <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                             <div className="px-2 py-0.5 bg-red-500/10 border border-red-500/20 rounded-sm">
+                                <p className="text-[10px] font-black text-red-500 uppercase tracking-widest">{msg.reportCount} Reports</p>
+                             </div>
+                             <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest italic">{msg.game} Channel</p>
+                          </div>
+                          <p className="text-sm text-white font-medium italic border-l-2 border-yellow-500/40 pl-4 py-1 leading-relaxed">
+                             "{msg.content}"
+                          </p>
+                          <p className="text-[9px] text-gray-600 font-black uppercase tracking-widest mt-2">
+                             Operative: {msg.username} · {new Date(msg.createdAt).toLocaleString()}
+                          </p>
+                       </div>
+                       
+                       <div className="flex gap-2 w-full md:w-auto">
+                          <button 
+                             onClick={async () => {
+                                command.confirm({
+                                   title: "PURGE INTEL",
+                                   message: "Authorize permanent erasure of this community transmission? Data will be wiped from all tactical mirrors.",
+                                   variant: 'danger',
+                                   onConfirm: async () => {
+                                      const idToken = await user?.getIdToken();
+                                      if (!idToken) return;
+                                      const res = await adminDeleteMessageAction(idToken, msg.id);
+                                      if (res.success) {
+                                         toast.success("INTEL PURGED", "The flagged transmission has been erased.");
+                                         loadReports();
+                                      }
+                                   }
+                                });
+                             }}
+                             className="flex-1 md:w-32 py-2 bg-red-500/5 hover:bg-red-500/10 border border-red-500/10 text-red-500 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2"
+                          >
+                             <Trash2 className="w-3.5 h-3.5" /> Purge
+                          </button>
+                          <button 
+                             onClick={() => {
+                                setSelectedUser({ uid: msg.userId, username: msg.username, role: 'USER' });
+                                // This will trigger the Examine Profile modal where suspension can happen
+                             }}
+                             className="flex-1 md:w-32 py-2 bg-yellow-500/5 hover:bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center justify-center gap-2"
+                          >
+                             <UserX className="w-3.5 h-3.5" /> Suspend
+                          </button>
+                       </div>
+                    </div>
+                  ))}
+               </div>
+             )}
+          </div>
+        )}
+
         {activeTab === "search" && (
           <div className="p-6">
              <div className="flex gap-3 mb-8">
@@ -555,6 +642,16 @@ export default function ModeratorHubPage() {
                 ))}
              </div>
           </div>
+        )}
+
+        {activeTab === "admin" && isAdmin && (
+           <div className="p-6">
+              {/* Future Admin Tools */}
+              <div className="text-center py-20 border border-dashed border-white/5 rounded-sm">
+                 <Settings className="w-8 h-8 text-gray-800 mx-auto mb-3" />
+                 <p className="text-gray-600 text-xs font-black uppercase tracking-widest">Advanced Admin Protocols Standby</p>
+              </div>
+           </div>
         )}
 
         {activeTab === "super" && isSuperAdmin && (
@@ -696,13 +793,65 @@ export default function ModeratorHubPage() {
               </div>
 
               {/* Footer Actions */}
-              <div className="p-4 bg-black border-t border-surface-border flex justify-end gap-3">
+              <div className="p-4 bg-black border-t border-surface-border flex justify-end gap-3 flex-wrap">
                  <button 
                    onClick={() => { setSelectedUser(null); setAuditData([]); }}
                    className="px-6 py-2 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-all"
                  >
                    Close Terminal
                  </button>
+                 
+                 {/* Chat Suspension Control */}
+                 <div className="flex items-center gap-2">
+                    {!selectedUser.isChatSuspended && (
+                      <select 
+                        id="suspension-duration"
+                        className="bg-black border border-white/10 text-white text-[9px] font-black uppercase tracking-widest px-2 py-2 rounded-sm outline-none focus:border-yellow-500/50"
+                        defaultValue="24"
+                      >
+                         <option value="1">1 Hour</option>
+                         <option value="24">24 Hours</option>
+                         <option value="72">3 Days</option>
+                         <option value="168">7 Days</option>
+                         <option value="0">Indefinite</option>
+                      </select>
+                    )}
+                    
+                    <button 
+                      onClick={async () => {
+                         const duration = !selectedUser.isChatSuspended ? parseInt((document.getElementById('suspension-duration') as HTMLSelectElement)?.value || '0') : 0;
+                         const durationText = duration > 0 ? `${duration} hours` : 'indefinitely';
+                         
+                         command.confirm({
+                            title: selectedUser.isChatSuspended ? "RESTORE ACCESS" : "SUSPEND OPERATIVE",
+                            message: `Authorize ${selectedUser.isChatSuspended ? 'restoration' : `suspension (${durationText})`} of chat privileges for ${selectedUser.username}? Operational logs will reflect this clearance change.`,
+                            variant: selectedUser.isChatSuspended ? 'success' : 'danger',
+                            onConfirm: async () => {
+                               const idToken = await user?.getIdToken();
+                               if (!idToken) return;
+                               
+                               const res = await adminToggleChatSuspensionAction(idToken, selectedUser.uid, !selectedUser.isChatSuspended, duration);
+                               
+                               if (res.success) {
+                                 toast.success("PERMISSION UPDATED", `Chat privileges ${!selectedUser.isChatSuspended ? 'suspended' : 'restored'}.`);
+                                 setSelectedUser({ ...selectedUser, isChatSuspended: !selectedUser.isChatSuspended });
+                               } else {
+                                 toast.error("UPDATE FAILED", res.error);
+                               }
+                            }
+                         });
+                      }}
+                      className={`px-6 py-2 border text-[10px] font-black uppercase tracking-widest rounded-sm transition-all flex items-center gap-2 ${
+                        selectedUser.isChatSuspended 
+                          ? 'bg-green-500/10 border-green-500/20 text-green-500 hover:bg-green-500/20' 
+                          : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-500 hover:bg-yellow-500/20'
+                      }`}
+                    >
+                      {selectedUser.isChatSuspended ? <MessageCircle className="w-3.5 h-3.5" /> : <MessageCircleOff className="w-3.5 h-3.5" />}
+                      {selectedUser.isChatSuspended ? 'Restore Chat' : 'Suspend Chat'}
+                    </button>
+                 </div>
+
                  {isSuperAdmin && (
                    <button 
                      onClick={() => {
@@ -719,17 +868,6 @@ export default function ModeratorHubPage() {
            </div>
         </div>
       )}
-
-      {/* 🛡️ Sovereign Confirmation Terminal */}
-      <AdminConfirmModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmModal.onConfirm}
-        title={confirmModal.title}
-        message={confirmModal.message}
-        variant={confirmModal.variant}
-        confirmText={confirmModal.confirmText}
-      />
 
       {/* 🔒 Security Terminal */}
       <AdminPinTerminal

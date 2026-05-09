@@ -1,8 +1,9 @@
-export default function RankingTable({ users, searchQuery, activeFilter }: { users: any[], searchQuery: string, activeFilter: string }) {
+export default function RankingTable({ users, searchQuery, activeFilter, fullList }: { users: any[], searchQuery: string, activeFilter: string, fullList?: any[] }) {
   const filteredPlayers = users.map(p => {
     // Map categorical stats based on active filter
     let displayWins = p.totalWins || 0;
     let displayMatches = p.totalMatches || 0;
+    let displayEarnings = 0;
     
     if (activeFilter === 'CODM') {
       displayWins = p.stats?.CODM?.wins || 0;
@@ -10,9 +11,14 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
     } else if (activeFilter === 'eFootball') {
       displayWins = p.stats?.EFOOTBALL?.wins || 0;
       displayMatches = p.stats?.EFOOTBALL?.matches || 0;
+    } else if (activeFilter === 'Weekly-Earners') {
+      displayEarnings = p.amount || 0;
+      // We use displayWins as the primary sort/display value to keep logic simple, 
+      // but we'll label it as coins in the UI
+      displayWins = displayEarnings; 
     }
     
-    return { ...p, displayWins, displayMatches };
+    return { ...p, displayWins, displayMatches, isWeekly: activeFilter === 'Weekly-Earners' };
   }).filter(p => {
     const term = (searchQuery || '').trim().toLowerCase();
     const name = (p.username || '').toLowerCase();
@@ -29,13 +35,13 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
                 <th className="p-6 font-bold w-16 text-center">Rank</th>
                 <th className="p-6 font-bold">Player Name</th>
                 <th className="p-6 font-bold text-center">
-                   {activeFilter === 'All-Time' ? 'Total Wins' : `${activeFilter} Wins`}
+                   {activeFilter === 'Weekly-Earners' ? 'Weekly Profit' : activeFilter === 'All-Time' ? 'Total Wins' : `${activeFilter} Wins`}
                 </th>
                 <th className="p-6 font-bold text-center">
-                   {activeFilter === 'CODM' ? 'KD/Rating' : activeFilter === 'eFootball' ? 'Matches Played' : 'Win Rate'}
+                   {activeFilter === 'Weekly-Earners' ? 'Efficiency' : activeFilter === 'CODM' ? 'KD/Rating' : activeFilter === 'eFootball' ? 'Matches Played' : 'Win Rate'}
                 </th>
                 <th className="p-6 font-bold text-center">
-                   {activeFilter === 'CODM' ? 'Total Kills' : activeFilter === 'eFootball' ? 'Total Goals' : 'Combat Engagement'}
+                   {activeFilter === 'Weekly-Earners' ? 'Total Record' : activeFilter === 'CODM' ? 'Total Kills' : activeFilter === 'eFootball' ? 'Total Goals' : 'Combat Engagement'}
                 </th>
               </tr>
             </thead>
@@ -45,7 +51,7 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
                 return (
                   <tr key={p.id} className="border-b border-surface-border/50 hover:bg-surface-hover/50 transition-colors group">
                     <td className="p-6 text-center font-black italic text-sub text-sm">
-                      #{index + 1}
+                      #{p.rank || index + 1}
                     </td>
                     <td className="p-6">
                       <div className="flex items-center gap-3">
@@ -87,18 +93,24 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
                     </td>
                     <td className="p-6 text-center">
                        <div className="flex items-center justify-center gap-2">
-                          <span className="text-lg font-black text-main italic">{p.displayWins}</span>
-                          <span className="text-[8px] text-accent font-black uppercase tracking-widest">Wins</span>
+                          <span className={`text-lg font-black italic ${p.isWeekly ? 'text-accent' : 'text-main'}`}>
+                            {p.isWeekly ? p.displayWins.toLocaleString() : p.displayWins}
+                          </span>
+                          <span className="text-[8px] text-accent font-black uppercase tracking-widest">
+                            {p.isWeekly ? 'CR' : 'Wins'}
+                          </span>
                        </div>
                     </td>
                     <td className="p-6 text-center">
                       <div className="inline-flex items-center">
-                         <span className={`text-xs font-mono font-bold ${activeFilter === 'CODM' ? 'text-accent' : (activeFilter === 'eFootball') ? 'text-accent' : 'text-sub'}`}>
-                            {activeFilter === 'CODM' 
-                              ? (p.displayMatches ? ((p.displayWins * 12.5) / (p.displayMatches || 1)).toFixed(2) : '0.00') 
-                              : activeFilter === 'eFootball' 
-                                ? (p.stats?.EFOOTBALL?.matches || 0)
-                                : `${winRate}%`
+                         <span className={`text-xs font-mono font-bold ${activeFilter === 'CODM' || activeFilter === 'Weekly-Earners' ? 'text-accent' : (activeFilter === 'eFootball') ? 'text-accent' : 'text-sub'}`}>
+                            {activeFilter === 'Weekly-Earners'
+                              ? `${p.totalMatches ? Math.round((p.totalWins / p.totalMatches) * 100) : 0}%`
+                              : activeFilter === 'CODM' 
+                                ? (p.displayMatches ? ((p.displayWins * 12.5) / (p.displayMatches || 1)).toFixed(2) : '0.00') 
+                                : activeFilter === 'eFootball' 
+                                  ? (p.stats?.EFOOTBALL?.matches || 0)
+                                  : `${winRate}%`
                             }
                          </span>
                       </div>
@@ -106,15 +118,17 @@ export default function RankingTable({ users, searchQuery, activeFilter }: { use
                     <td className="p-6 text-center">
                        <div className="flex items-center justify-center gap-2">
                           <span className="text-lg font-black text-main italic">
-                            {activeFilter === 'CODM' 
-                              ? (p.displayWins * 12) 
-                              : activeFilter === 'eFootball' 
-                                ? (p.stats?.EFOOTBALL?.goalsFor || 0)
-                                : (p.displayMatches !== undefined ? p.displayMatches : '--')
+                            {activeFilter === 'Weekly-Earners'
+                              ? `${p.totalWins}W` 
+                              : activeFilter === 'CODM' 
+                                ? (p.displayWins * 12) 
+                                : activeFilter === 'eFootball' 
+                                  ? (p.stats?.EFOOTBALL?.goalsFor || 0)
+                                  : (p.displayMatches !== undefined ? p.displayMatches : '--')
                             }
                           </span>
                           <span className="text-[8px] text-accent font-black uppercase tracking-widest whitespace-nowrap">
-                            {activeFilter === 'CODM' ? 'Kills' : activeFilter === 'eFootball' ? 'Goals' : 'Engagements'}
+                            {activeFilter === 'Weekly-Earners' ? 'History' : activeFilter === 'CODM' ? 'Kills' : activeFilter === 'eFootball' ? 'Goals' : 'Engagements'}
                           </span>
                        </div>
                     </td>

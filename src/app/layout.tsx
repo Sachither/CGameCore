@@ -100,6 +100,8 @@ export const viewport = {
   viewportFit: 'cover',
 };
 
+import { CommandModalProvider } from "@/context/CommandModalContext";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -110,13 +112,15 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col bg-background text-foreground scroll-smooth">
         <AuthProvider>
           <ToastProvider>
-            <GlobalInterventionOverlay />
-            <MatchReadyDispatcher />
-            <PushNotificationManager />
-            <QuickPingOverlay />
-            <ClientLayoutWrapper>
-              {children}
-            </ClientLayoutWrapper>
+            <CommandModalProvider>
+              <GlobalInterventionOverlay />
+              <MatchReadyDispatcher />
+              <PushNotificationManager />
+              <QuickPingOverlay />
+              <ClientLayoutWrapper>
+                {children}
+              </ClientLayoutWrapper>
+            </CommandModalProvider>
           </ToastProvider>
         </AuthProvider>
         <Analytics />

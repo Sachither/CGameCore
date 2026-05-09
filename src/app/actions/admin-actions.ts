@@ -340,6 +340,61 @@ export async function setBanStatusAction(
 }
 
 /**
+ * ADMIN ACTION: TOGGLE CHAT SUSPENSION
+ */
+export async function adminToggleChatSuspensionAction(
+  idToken: string,
+  targetUid: string,
+  isChatSuspended: boolean,
+  durationHours: number = 0 // 0 = permanent/manual toggle
+) {
+  const adminUid = await getVerifiedAdminUid(idToken); // Allows Moderators
+
+  try {
+    const userRef = adminDb.collection("users").doc(targetUid);
+    
+    let chatSuspendedUntil: any = null;
+    if (isChatSuspended && durationHours > 0) {
+      chatSuspendedUntil = admin.firestore.Timestamp.fromDate(
+        new Date(Date.now() + durationHours * 60 * 60 * 1000)
+      );
+    }
+
+    await userRef.update({
+      isChatSuspended,
+      chatSuspendedUntil,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Notify user
+    const durationLabel = durationHours > 0 ? `${durationHours} hours` : "an indefinite period";
+    await createNotificationInternal(
+      targetUid,
+      isChatSuspended ? "Communication Privileges Revoked" : "Communication Privileges Restored",
+      isChatSuspended 
+        ? `Your access to the community chat has been suspended for ${durationLabel} for violation of protocols.` 
+        : "Your access to the community chat has been restored. Please adhere to war room rules.",
+      "SYSTEM"
+    );
+
+    // Audit log
+    const auditRef = adminDb.collection("admin_audit_log").doc();
+    await auditRef.set({
+      action: isChatSuspended ? "SUSPEND_CHAT" : "UNSUSPEND_CHAT",
+      adminUid,
+      targetUid,
+      durationHours: isChatSuspended ? durationHours : null,
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[AdminAction] adminToggleChatSuspension error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * ADMIN ACTION: SET USER ROLE (RBAC)
  */
 export async function setUserRoleAction(
@@ -1610,6 +1665,38 @@ export async function toggleSystemLockdownAction(idToken: string, active: boolea
     return { success: false, error: error.message };
   }
 }
+
+/**
+ * SUPER ADMIN: TOGGLE DUMMY DATA DISPLAY
+ */
+export async function toggleDummyDataAction(idToken: string, active: boolean, pin: string) {
+  const superAdminUid = await getVerifiedSuperAdminUid(idToken);
+  
+  try {
+    const auth = await verifyAdminSecurityPin(superAdminUid, pin);
+    if (!auth.success) return auth;
+
+    const configRef = adminDb.collection("system").doc("config");
+    await configRef.set({
+      showDummyData: active,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedBy: superAdminUid
+    }, { merge: true });
+
+    const auditRef = adminDb.collection("admin_audit_log").doc();
+    await auditRef.set({
+      action: active ? "dummy_data_activated" : "dummy_data_deactivated",
+      adminUid: superAdminUid,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      severity: "INFO"
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
 
 /**
  * SUPER ADMIN: GET AUDIT LOGS

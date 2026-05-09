@@ -3,9 +3,11 @@ import React, { useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { updateUserRegionAction } from "@/app/actions/user-actions";
 import { Loader2, Globe, CheckCircle2 } from "lucide-react";
+import { useCommandModal } from "@/context/CommandModalContext";
 
 export default function RegionGate() {
   const { user, profile } = useAuth();
+  const command = useCommandModal();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -31,7 +33,11 @@ export default function RegionGate() {
         // Page will refresh via AuthProvider snapshot or user can dismiss
         setTimeout(() => window.location.reload(), 1500);
       } else {
-        alert("Failed to save region: " + res.error);
+        command.alert({
+          title: "GATEWAY ERROR",
+          message: "Failed to synchronize regional protocols: " + res.error,
+          variant: 'danger'
+        });
       }
     } catch (e) {
       console.error(e);

@@ -2,18 +2,36 @@
 import React, { useState, useEffect } from 'react';
 import ChampionPodium from "@/components/leaderboards/ChampionPodium";
 import RankingTable from "@/components/leaderboards/RankingTable";
-import { collection, query, onSnapshot, orderBy, limit, updateDoc, doc, getDocs, where, Timestamp } from 'firebase/firestore';
+import { CollectionReference, collection, query, onSnapshot, orderBy, limit, updateDoc, doc, getDocs, where, Timestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, Zap } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { getWeeklyEarnersAction } from '@/app/actions/leaderboard-actions';
 
 export default function LeaderboardView() {
   const { user, profile } = useAuth();
-  const [filter, setFilter] = useState<'All-Time'|'Monthly'|'CODM'|'eFootball'>('All-Time');
+  const [filter, setFilter] = useState<'All-Time'|'Monthly'|'CODM'|'eFootball'|'Weekly-Earners'>('All-Time');
   const [search, setSearch] = useState('');
   const [leaderboardUsers, setLeaderboardUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [isDataFetching, setIsDataFetching] = useState(false);
+
+  // --- WEEKLY EARNERS FETCH ---
+  useEffect(() => {
+    if (filter === 'Weekly-Earners') {
+      const fetchWeekly = async () => {
+        setIsDataFetching(true);
+        const res = await getWeeklyEarnersAction();
+        if (res.success && res.earners) {
+          setLeaderboardUsers(res.earners);
+        }
+        setIsDataFetching(false);
+        setLoading(false);
+      };
+      fetchWeekly();
+    }
+  }, [filter]);
 
   // --- LEGACY STATS AUTO-SYNC ---
   useEffect(() => {
@@ -106,6 +124,8 @@ export default function LeaderboardView() {
       return () => clearTimeout(authTimeout);
     }
 
+    if (filter === 'Weekly-Earners') return;
+
     console.log("[Leaderboard] ✅ User authenticated, initiating query:", (user as any).uid);
 
     // Query ALL users and sort by totalWins with default 0 for missing values
@@ -144,16 +164,24 @@ export default function LeaderboardView() {
       let users = snap.docs
         .map((doc, index) => {
           const data = doc.data();
-          console.log(`[Leaderboard] User ${doc.id}: username=${data.username}, wins=${data.totalWins || 0}`);
           return {
             id: doc.id,
-            totalWins: data.totalWins || 0, // Default to 0 if missing
+            totalWins: data.totalWins || 0,
             totalMatches: data.totalMatches || 0,
             ...data
-          };
-        })
-        .sort((a, b) => (b.totalWins || 0) - (a.totalWins || 0)) // Sort by wins descending
-        .map((user, index) => ({
+          } as any;
+        });
+
+      // --- DYNAMIC SORTING BASED ON FILTER ---
+      if (filter === 'CODM') {
+        users.sort((a: any, b: any) => (b.stats?.CODM?.wins || 0) - (a.stats?.CODM?.wins || 0));
+      } else if (filter === 'eFootball') {
+        users.sort((a: any, b: any) => (b.stats?.EFOOTBALL?.wins || 0) - (a.stats?.EFOOTBALL?.wins || 0));
+      } else {
+        users.sort((a: any, b: any) => (b.totalWins || 0) - (a.totalWins || 0));
+      }
+
+      users = users.map((user: any, index: number) => ({
           ...user,
           rank: index + 1
         }))
@@ -203,7 +231,7 @@ export default function LeaderboardView() {
       clearTimeout(timeoutId);
       unsub();
     };
-  }, [user]);
+  }, [user, filter]);
 
   if (loading) {
     return (
@@ -218,7 +246,7 @@ export default function LeaderboardView() {
   const remaining = leaderboardUsers.slice(3);
 
   return (
-    <div className="w-full max-w-6xl mx-auto pb-10 animate-in fade-in duration-700">
+    <div className="w-full max-w-6xl mx-auto pb-10 animate-in fade-in duration-700 relative">
       <div className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
          <div>
            <h1 className="text-3xl md:text-5xl font-black text-main italic tracking-tighter uppercase">
@@ -245,13 +273,16 @@ export default function LeaderboardView() {
          {/* Filters & Search */}
          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
             <div className="flex bg-black border border-surface-border rounded-[3px] overflow-hidden shadow-lg">
-               {(['All-Time', 'Monthly', 'CODM', 'eFootball'] as const).map(f => (
+               {(['All-Time', 'Monthly', 'CODM', 'eFootball', 'Weekly-Earners'] as const).map(f => (
                  <button 
                    key={f}
                    onClick={() => setFilter(f)}
-                   className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors ${filter === f ? 'bg-accent/10 text-accent-aware border-b-2 border-accent' : 'text-gray-500 hover:bg-surface hover:text-main border-b-2 border-transparent'}`}
+                   className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-2 ${filter === f ? 'bg-accent/10 text-accent-aware border-b-2 border-accent' : 'text-gray-500 hover:bg-surface hover:text-main border-b-2 border-transparent'}`}
                  >
-                   {f}
+                   {f === 'Weekly-Earners' && (
+                     isDataFetching ? <Loader2 className="w-3 h-3 text-accent animate-spin" /> : <Zap className="w-3 h-3 text-accent" />
+                   )}
+                   {f === 'Weekly-Earners' ? 'Weekly Top 10' : f}
                  </button>
                ))}
             </div>
@@ -271,8 +302,13 @@ export default function LeaderboardView() {
          </div>
       </div>
 
-      <ChampionPodium topUsers={top3} />
-      <RankingTable users={leaderboardUsers} searchQuery={search} activeFilter={filter} />
+      <ChampionPodium topUsers={top3} activeFilter={filter} />
+      <RankingTable 
+        users={leaderboardUsers.slice(3)} 
+        searchQuery={search} 
+        activeFilter={filter} 
+        fullList={leaderboardUsers}
+      />
     </div>
   );
 }

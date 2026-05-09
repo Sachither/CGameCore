@@ -37,7 +37,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
     const checkExisting = async () => {
       setCheckingExisting(true);
       try {
-        if (fee > 0) {
+        if (profile?.role !== 'PARTNER') {
           const existing = await findActiveMatchByType(game, format, fee);
           setExistingMatchId(existing?.id || null);
         } else {
@@ -51,7 +51,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
 
     const debounce = setTimeout(checkExisting, 500);
     return () => clearTimeout(debounce);
-  }, [game, format, fee, isOpen]);
+  }, [game, format, fee, isOpen, profile?.role]);
 
   // IDENTITY SYNC: Auto-populate In-Game Name from profile
   useEffect(() => {
@@ -60,12 +60,12 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
         setInGameName(tag || "");
 
         // PARTNER SYNC: For free matches, default password to their promo/referral code
-        if (profile.role === 'PARTNER' && fee === 0) {
-           if (!roomPassword && profile.myReferralCode) {
+        if (profile.role === 'PARTNER') {
+           if (fee === 0 && !roomPassword && profile.myReferralCode) {
               setRoomPassword(profile.myReferralCode.toUpperCase());
            }
            if (!roomName) {
-              setRoomName(`${profile.username.toUpperCase()} PRACTICE`);
+              setRoomName(`${profile.username.toUpperCase()} ${fee === 0 ? 'PRACTICE' : 'LOBBY'}`);
            }
         }
      }
@@ -105,7 +105,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
         weaponClass, 
         game === 'EFOOTBALL' ? duration : 'NONE',
         maxPlayers,
-        fee === 0 ? roomName.trim() || undefined : undefined,
+        roomName.trim() || undefined,
         fee === 0 ? roomPassword.trim() || undefined : undefined,
         typeof window !== 'undefined' && window.location.hostname === 'localhost'
       );
@@ -273,40 +273,42 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                </div>
             </div>
 
-            {fee === 0 && (
-              <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
-                <div className="space-y-2">
-                  <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Room Name</label>
-                  <input 
-                    type="text" 
-                    value={roomName}
-                    onChange={(e) => setRoomName(e.target.value)}
-                    placeholder="e.g. Scrims #1"
-                    className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-xs transition-colors"
-                  />
-                </div>
-                {profile?.role !== 'PARTNER' && (
-                  <div className="space-y-2">
-                    <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Password (Opt)</label>
-                    <input 
-                      type="text" 
-                      value={roomPassword}
-                      onChange={(e) => setRoomPassword(e.target.value)}
-                      placeholder="Leave blank for public"
-                      className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-xs transition-colors"
-                    />
-                  </div>
-                )}
-                {profile?.role === 'PARTNER' && (
-                  <div className="space-y-2 flex flex-col justify-center">
-                    <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em] block mb-1">Partner Gating Active</label>
-                    <div className="bg-accent/10 border border-accent/20 p-2 rounded-sm">
-                       <p className="text-[8px] text-accent font-bold uppercase tracking-widest">Only your Recruits or people using code <span className="underline">{profile.myReferralCode}</span> can join.</p>
-                    </div>
-                  </div>
-                )}
+            <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
+              <div className="space-y-2">
+                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Room Name</label>
+                <input 
+                  type="text" 
+                  value={roomName}
+                  onChange={(e) => setRoomName(e.target.value)}
+                  placeholder="e.g. Scrims #1"
+                  className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-xs transition-colors"
+                />
               </div>
-            )}
+              {fee === 0 && (
+                <>
+                  {profile?.role !== 'PARTNER' && (
+                    <div className="space-y-2">
+                      <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Password (Opt)</label>
+                      <input 
+                        type="text" 
+                        value={roomPassword}
+                        onChange={(e) => setRoomPassword(e.target.value)}
+                        placeholder="Leave blank for public"
+                        className="w-full bg-black border border-surface-border focus:border-accent text-main px-4 py-3 rounded-sm outline-none font-bold uppercase tracking-widest text-xs transition-colors"
+                      />
+                    </div>
+                  )}
+                  {profile?.role === 'PARTNER' && (
+                    <div className="space-y-2 flex flex-col justify-center">
+                      <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em] block mb-1">Partner Gating Active</label>
+                      <div className="bg-accent/10 border border-accent/20 p-2 rounded-sm">
+                         <p className="text-[8px] text-accent font-bold uppercase tracking-widest">Only your Recruits or people using code <span className="underline">{profile.myReferralCode}</span> can join.</p>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
             {/* Security Warning */}
             <div className="bg-accent/5 border border-accent/20 p-5 rounded-sm flex gap-4">

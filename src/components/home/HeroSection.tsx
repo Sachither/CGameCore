@@ -12,15 +12,14 @@ export default function HeroSection() {
           <span className="text-xs font-bold text-accent uppercase tracking-wider">Skill-Based Escrow Matchmaking</span>
         </div>
         
-        <h1 className="text-5xl md:text-7xl font-black tracking-tighter mb-6 uppercase italic">
-          Stop Playing <br className="hidden md:block" />
-          <span className="text-accent">For Free.</span>
+        <h1 className="text-5xl md:text-8xl font-black tracking-tighter mb-6 uppercase italic leading-none">
+          Turn Your <br className="hidden md:block" />
+          <span className="text-accent">Passion Into Profit.</span>
         </h1>
         
-        <p className="mt-4 text-lg md:text-xl text-gray-400 max-w-2xl mx-auto mb-10">
-          Join Africa's highest-stakes competitive ladder. Back your skills with real money in 
-          <span className="text-white font-bold"> COD Mobile</span> and 
-          <span className="text-white font-bold"> eFootball</span>. Our automated AI Escrow system ensures you get paid for every win.
+        <p className="mt-4 text-lg md:text-2xl text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed font-medium">
+          Africa's premier destination where gaming skills translate to <span className="text-white font-bold">real-world earnings</span>. 
+          Stop playing for nothing and start building your financial legacy in <span className="text-white font-bold">COD Mobile</span> and <span className="text-white font-bold">eFootball</span>.
         </p>
         
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">

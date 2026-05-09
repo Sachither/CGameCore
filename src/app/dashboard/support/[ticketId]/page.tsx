@@ -9,6 +9,7 @@ import {
   deleteTicketAction,
 } from '@/app/actions/ticket-actions';
 import { useRouter, useParams } from 'next/navigation';
+import { useCommandModal } from '@/context/CommandModalContext';
 
 interface Message {
   messageId: string;
@@ -36,6 +37,7 @@ export default function TicketDetailPage() {
   const router = useRouter();
   const params = useParams();
   const { user } = useAuth();
+  const command = useCommandModal();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const ticketId = params?.ticketId as string;
 
@@ -149,23 +151,29 @@ export default function TicketDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!user || !window.confirm("Are you sure you want to permanently delete this ticket? This action cannot be undone.")) return;
-    
-    setStatusChangeLoading(true);
-    try {
-      const token = await user.getIdToken();
-      const result = await deleteTicketAction(token, ticketId);
-      if (result.success) {
-        toast.success('Ticket Deleted', 'Ticket has been permanently deleted');
-        setTimeout(() => router.push('/dashboard/support'), 1500);
-      } else {
-        toast.error('Error', result.error || 'Failed to delete ticket');
+    command.confirm({
+      title: "PERMANENT ERASURE",
+      message: "Are you sure you want to permanently delete this ticket? This action cannot be undone and will be logged in the system audit.",
+      variant: 'danger',
+      onConfirm: async () => {
+        if (!user) return;
+        setStatusChangeLoading(true);
+        try {
+          const token = await user.getIdToken();
+          const result = await deleteTicketAction(token, ticketId);
+          if (result.success) {
+            toast.success('Ticket Deleted', 'Ticket has been permanently deleted');
+            setTimeout(() => router.push('/dashboard/support'), 1500);
+          } else {
+            toast.error('Error', result.error || 'Failed to delete ticket');
+          }
+        } catch (error: any) {
+          toast.error('Error', error.message || 'Failed to delete ticket');
+        } finally {
+          setStatusChangeLoading(false);
+        }
       }
-    } catch (error: any) {
-      toast.error('Error', error.message || 'Failed to delete ticket');
-    } finally {
-      setStatusChangeLoading(false);
-    }
+    });
   };
 
   const formatDate = (date: any) => {

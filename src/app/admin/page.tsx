@@ -4,8 +4,9 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { getPlatformStatsAction, wipeCombatQueueAction } from "@/app/actions/admin-actions";
 import { useRouter } from "next/navigation";
 import { createPromoEventAction } from "@/app/actions/promo-actions";
-import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink, RefreshCw, Eraser, ShieldAlert, Trophy, Plus, Settings } from "lucide-react";
+import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink, RefreshCw, Eraser, ShieldAlert, Trophy, Plus, Settings, MessageSquare } from "lucide-react";
 import Link from "next/link";
+import { useCommandModal } from "@/context/CommandModalContext";
 
 interface Stats {
   totalUsers: number;
@@ -53,6 +54,7 @@ function StatCard({
 
 function WipeButton({ queueId, label, icon: Icon }: { queueId: string; label: string; icon: any }) {
   const { user } = useAuth();
+  const command = useCommandModal();
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -63,10 +65,18 @@ function WipeButton({ queueId, label, icon: Icon }: { queueId: string; label: st
       const idToken = await user.getIdToken();
       const res: any = await wipeCombatQueueAction(idToken, queueId);
       if (res.success) {
-        alert(`SUCCESS: Queue ${label} wiped. ${res.refundedCount} players refunded.`);
+        command.alert({
+          title: "TACTICAL WIPE COMPLETE",
+          message: `Queue ${label} has been purged. ${res.refundedCount} operators have been refunded.`,
+          variant: 'success'
+        });
         setShowConfirm(false);
       } else {
-        alert("WIPE FAILED: " + res.error);
+        command.alert({
+          title: "WIPE FAILURE",
+          message: "Authorization rejected or system error: " + res.error,
+          variant: 'danger'
+        });
       }
     } catch (e) {
       console.error(e);
@@ -275,7 +285,7 @@ export default function AdminOverviewPage() {
                    $ {(stats.financeRevenue / 100).toFixed(2)} USD
                 </div>
                 <p className="text-[10px] text-green-900 font-black leading-relaxed uppercase tracking-widest">
-                   Secured 20% commission on resolved matches.
+                   Secured 10% commission on resolved matches.
                 </p>
              </div>
           </div>
@@ -508,6 +518,20 @@ export default function AdminOverviewPage() {
             </div>
           </div>
         </div>
+
+        <Link
+          href="/admin/messages"
+          className="bg-[#0a0a0a] border border-accent/20 hover:border-accent p-6 rounded-sm group transition-all"
+        >
+          <MessageSquare className="w-6 h-6 text-accent mb-4 group-hover:scale-110 transition-transform" />
+          <h3 className="text-white font-black italic uppercase tracking-tighter text-lg mb-1">Community Control</h3>
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed mb-4">
+            Broadcast global announcements and manage tactical data purges for the war room.
+          </p>
+          <div className="bg-accent/10 border border-accent/20 py-2 rounded-sm text-center text-[10px] font-black uppercase tracking-widest text-accent group-hover:bg-accent/20 transition-all">
+             Open Comms Hub
+          </div>
+        </Link>
       </div>
     </div>
   );

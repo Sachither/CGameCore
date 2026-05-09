@@ -7,6 +7,8 @@ import { Match } from "@/lib/match-service";
 import { sanitize } from "@/lib/validation-utils";
 import { Gavel, ShieldCheck, ShieldAlert, Send, Terminal } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
+import TierBadge from "@/components/community/TierBadge";
+import { getTierFromWins } from "@/lib/tier-utils";
 
 interface Message {
   id: string;
@@ -17,6 +19,7 @@ interface Message {
   isMod?: boolean;
   role?: string;
   createdAt: any;
+  userWins?: number;
 }
 
 export default function MatchChat({ match }: { match: Match }) {
@@ -162,7 +165,8 @@ Secure the objective.`,
       senderName,
       role: profile?.role || (profile?.isAdmin ? 'ADMIN' : 'USER'),
       isMod,
-      createdAt: { seconds: Math.floor(Date.now() / 1000) } // Mock Firestore timestamp
+      createdAt: { seconds: Math.floor(Date.now() / 1000) }, // Mock Firestore timestamp
+      userWins: profile?.totalWins || 0
     };
 
     setMessages(prev => [...prev, optimisticMsg]);
@@ -182,6 +186,7 @@ Secure the objective.`,
         role: profile?.role || (profile?.isAdmin ? 'ADMIN' : 'USER'),
         isMod,
         createdAt: serverTimestamp(),
+        userWins: profile?.totalWins || 0
       });
       // Note: The real message will arrive via onSnapshot and replace the list
     } catch (err: any) {
@@ -231,10 +236,10 @@ Secure the objective.`,
            </div>
          )}
 
-         {messages.map((m) => (
+          {messages.map((m) => (
            <div key={m.id} className={`flex flex-col gap-1 ${m.isSystem ? 'items-center my-4 w-full' : m.senderUid === user?.uid ? 'items-end' : 'items-start'}`}>
               {!m.isSystem && (
-                <div className="flex items-center gap-1.5 mb-1">
+                <div className={`flex items-center gap-1.5 mb-1 ${m.senderUid === user?.uid ? 'flex-row-reverse' : ''}`}>
                   {(m.isMod || m.role === 'ADMIN' || m.role === 'MODERATOR') && (
                     <span className="text-[7.5px] font-black bg-red-600 text-white px-2 py-0.5 rounded-[2px] uppercase tracking-[0.15em] shadow-[0_0_15px_rgba(220,38,38,0.4)] flex items-center gap-1 border border-red-400/30">
                       <Gavel className="w-2 h-2" /> COMMAND ADMIN
@@ -243,6 +248,9 @@ Secure the objective.`,
                   <span className={`text-[9px] uppercase font-black tracking-widest px-1 ${m.senderUid === user?.uid ? 'text-accent' : ((m.isMod || m.role === 'ADMIN' || m.role === 'MODERATOR') ? 'text-red-400/80' : 'text-gray-500')}`}>
                     {(m.isMod || m.role === 'ADMIN' || m.role === 'MODERATOR') ? `${m.senderName}` : m.senderName} {m.senderUid === user?.uid && '(You)'}
                   </span>
+                  {!m.isMod && m.role !== 'ADMIN' && m.role !== 'MODERATOR' && (
+                     <TierBadge tier={getTierFromWins(m.userWins || 0)} />
+                  )}
                 </div>
               )}
               <div className={`p-3 rounded-[3px] text-xs shadow-md border transition-all ${

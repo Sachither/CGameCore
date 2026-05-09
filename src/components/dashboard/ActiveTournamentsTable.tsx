@@ -28,9 +28,10 @@ interface LeagueListing {
 
 export default function ActiveTournamentsTable() {
   const { user, profile } = useAuth();
-   const [circuits, setCircuits] = useState<LeagueListing[]>([]);
+  const [circuits, setCircuits] = useState<LeagueListing[]>([]);
   const [leagues, setLeagues] = useState<LeagueListing[]>([]);
   const [gatherMatches, setGatherMatches] = useState<LeagueListing[]>([]);
+  const [showDummyData, setShowDummyData] = useState<boolean>(true);
   const [loading, setLoading] = useState(true);
   const [loadingCounter, setLoadingCounter] = useState(0);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -81,6 +82,13 @@ export default function ActiveTournamentsTable() {
 
   useEffect(() => {
     if (!user) return;
+
+    // Listen for System Config
+    const configUnsub = onSnapshot(doc(db, "system", "config"), (docSnap) => {
+       if (docSnap.exists()) {
+          setShowDummyData(docSnap.data().showDummyData ?? true);
+       }
+    });
 
     // Reset loading state when user changes
     setLoading(true);
@@ -231,7 +239,7 @@ export default function ActiveTournamentsTable() {
             game: data.game,
             title: data.isPartnerTournament ? `${data.partnerName}'s ${data.game} CUP` : `${data.game} TOURNAMENT (GATHERING)`,
             challengeFee: data.challengeFee || 0,
-            totalPool: (data.challengeFee || 0) * quota * 0.8,
+            totalPool: (data.challengeFee || 0) * quota * 0.9,
             playerCount: pCount,
             quota,
             format: data.format,
@@ -261,7 +269,7 @@ export default function ActiveTournamentsTable() {
       });
     });
 
-    return () => { unsubCircuits(); unsubLeagues(); unsubMatches(); };
+    return () => { unsubCircuits(); unsubLeagues(); unsubMatches(); configUnsub(); };
   }, [user]);
 
   if (loading) return (
@@ -270,7 +278,54 @@ export default function ActiveTournamentsTable() {
     </div>
   );
 
-  const allComps = [...circuits, ...leagues, ...gatherMatches].sort((a: any, b: any) =>
+  const DUMMY_TOURNAMENTS: LeagueListing[] = [
+    {
+      id: "dummy-t-1",
+      game: "CODM",
+      title: "Sniper Elite Series",
+      challengeFee: 200,
+      totalPool: 2560,
+      playerCount: 16,
+      quota: 16,
+      format: "16_TOURNAMENT",
+      status: "ACTIVE",
+      isGathering: false,
+      playerIds: Array(16).fill("x"),
+      isDummy: true
+    } as any,
+    {
+      id: "dummy-t-2",
+      game: "EFOOTBALL",
+      title: "Creator Cup Invitational",
+      challengeFee: 500,
+      totalPool: 6400,
+      playerCount: 16,
+      quota: 16,
+      format: "16_TOURNAMENT",
+      status: "KNOCKOUT_Q",
+      isGathering: false,
+      playerIds: Array(16).fill("x"),
+      isPartnerTournament: true,
+      partnerName: "DavuPro",
+      isDummy: true
+    } as any,
+    {
+      id: "dummy-t-3",
+      game: "CODM",
+      title: "Global Qualifiers",
+      challengeFee: 1000,
+      totalPool: 12800,
+      playerCount: 16,
+      quota: 16,
+      format: "MASTER_CIRCUIT",
+      status: "ACTIVE",
+      isGathering: false,
+      playerIds: Array(16).fill("x"),
+      isDummy: true
+    } as any
+  ];
+
+  const allComps = [...circuits, ...leagues, ...gatherMatches, ...(showDummyData ? DUMMY_TOURNAMENTS : [])].sort((a: any, b: any) =>
     (b.status === 'FILLING' || b.status === 'WAITING' || b.status === 'KNOCKOUT_Q' || b.status === 'GROUPS') ? 1 : -1
   );
 
@@ -301,7 +356,7 @@ export default function ActiveTournamentsTable() {
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {allComps.length > 0 ? allComps.map((t) => {
+        {allComps.length > 0 ? allComps.map((t: any) => {
           const progress = Math.min(((t.playerCount || 0) / (t.quota || 12)) * 100, 100);
           return (
             <LeagueCard key={t.id} league={t} progress={progress} onJoin={setJoiningMatch} currentUserUid={user?.uid} />
@@ -454,13 +509,19 @@ function LeagueCard({ league: t, progress, onJoin, currentUserUid }: { league: L
 
       <div className="p-6 pt-0">
         {!t.isGathering ? (
-          <Link href={detailHref}>
-            <button className={`w-full py-4 font-black uppercase tracking-widest text-[10px] rounded-sm transition-all shadow-lg active:scale-95 ${isPartner ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-white hover:bg-accent text-black'}`}>
-              {isCircuit 
-                ? (currentUserUid && (t.playerIds?.includes(currentUserUid) || t.creatorId === currentUserUid) ? 'Enter War Room' : 'Observe War Room') 
-                : 'View Rankings Standings'}
-            </button>
-          </Link>
+          (t as any).isDummy ? (
+             <button className={`w-full py-4 font-black uppercase tracking-widest text-[10px] rounded-sm transition-all shadow-lg bg-surface-hover text-gray-500 border border-surface-border cursor-not-allowed`}>
+               Match In Progress
+             </button>
+          ) : (
+            <Link href={detailHref}>
+              <button className={`w-full py-4 font-black uppercase tracking-widest text-[10px] rounded-sm transition-all shadow-lg active:scale-95 ${isPartner ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-white hover:bg-accent text-black'}`}>
+                {isCircuit 
+                  ? (currentUserUid && (t.playerIds?.includes(currentUserUid) || t.creatorId === currentUserUid) ? 'Enter War Room' : 'Observe War Room') 
+                  : 'View Rankings Standings'}
+              </button>
+            </Link>
+          )
         ) : (
           <button 
              onClick={() => {

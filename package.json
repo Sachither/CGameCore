@@ -9,10 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.4.0",
+    "drizzle-orm": "^0.45.2",
     "firebase": "^12.11.0",
     "firebase-admin": "^13.7.0",
     "html-to-image": "^1.11.13",
@@ -28,8 +30,10 @@
     "@tailwindcss/postcss": "^4",
     "@types/crypto-js": "^4.2.2",
     "@types/node": "^20",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "tailwindcss": "^4",

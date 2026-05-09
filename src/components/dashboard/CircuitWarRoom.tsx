@@ -4,6 +4,7 @@ import { Circuit, Match } from '@/lib/match-service';
 import { Swords, ChevronRight, Loader2, Target, ShieldCheck, ShieldAlert, Activity, LayoutGrid } from 'lucide-react';
 import Link from 'next/link';
 import { requestAdminInterventionAction } from '@/app/actions/match-actions';
+import { useCommandModal } from '@/context/CommandModalContext';
 import CompetitionChat from './CompetitionChat';
 import TacticalMap from './TacticalMap';
 
@@ -26,6 +27,7 @@ export default function CircuitWarRoom({
    idToken,
    playerStatus
 }: Props) {
+   const command = useCommandModal();
    const [intervening, setIntervening] = useState(false);
    const [intervened, setIntervened] = useState(false);
    const [showReportModal, setShowReportModal] = useState(false);
@@ -71,21 +73,35 @@ export default function CircuitWarRoom({
 
    const handleIntervention = async (mId: string) => {
       if (!idToken || intervening) return;
-      const reason = prompt("Describe the tactical blockage (e.g., Opponent no-show, Score dispute):");
-      if (!reason) return;
 
-      setIntervening(true);
-      try {
-         const res = await requestAdminInterventionAction(idToken, mId, reason);
-         if (res.success) {
-            setIntervened(true);
-            alert("ALPHA-1 notified. A moderator will review this match shortly.");
-         } else {
-            alert(res.error);
+      command.prompt({
+         title: "TACTICAL INTERVENTION",
+         message: "Describe the operational blockage. ALPHA-1 moderators will review this transmission.",
+         placeholder: "e.g., Opponent no-show, Score dispute...",
+         variant: 'warning',
+         onConfirmWithInput: async (reason) => {
+            setIntervening(true);
+            try {
+               const res = await requestAdminInterventionAction(idToken, mId, reason);
+               if (res.success) {
+                  setIntervened(true);
+                  command.alert({
+                     title: "MODERATOR NOTIFIED",
+                     message: "ALPHA-1 has received your transmission. A moderator will review this match shortly.",
+                     variant: 'success'
+                  });
+               } else {
+                  command.alert({
+                     title: "TRANSMISSION FAILED",
+                     message: res.error || "Failed to notify command.",
+                     variant: 'danger'
+                  });
+               }
+            } finally {
+               setIntervening(false);
+            }
          }
-      } finally {
-         setIntervening(false);
-      }
+      });
    };
 
    const renderMissionCard = (m: Match) => {

@@ -104,7 +104,7 @@ export default function TournamentListingPage({ params }: { params: any }) {
                       </div>
                       <div className="flex justify-between items-center">
                          <span className="text-[9px] text-gray-600 font-bold uppercase tracking-widest">Victory Pool</span>
-                         <span className="text-lg font-black text-accent italic tracking-tight">{Math.floor((comp.totalPool || 0) * 0.8).toLocaleString()} CR</span>
+                         <span className="text-lg font-black text-accent italic tracking-tight">{Math.floor((comp.totalPool || 0) * 0.9).toLocaleString()} CR</span>
                       </div>
                    </div>
 
