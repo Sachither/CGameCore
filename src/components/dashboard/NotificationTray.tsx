@@ -97,31 +97,23 @@ export default function NotificationTray() {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
-          <div className="fixed inset-0 md:inset-auto md:absolute md:right-0 md:mt-4 w-full h-[100dvh] md:h-auto md:w-96 bg-[#0a0a0a] border-x md:border border-white/10 md:rounded-sm shadow-[0_20px_80px_rgba(0,0,0,0.8)] z-50 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 md:inset-auto md:absolute md:right-0 md:mt-4 w-full h-full md:h-auto md:w-96 bg-[#0a0a0a] border-x md:border border-white/10 md:rounded-sm shadow-[0_20px_80px_rgba(0,0,0,0.8)] z-50 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200 overscroll-none">
             
             {/* Header */}
-            <div className="p-6 md:p-4 bg-black border-b border-white/10 flex items-center justify-between shrink-0 pt-[env(safe-area-inset-top,24px)] md:pt-4">
+            <div className="p-6 md:p-4 bg-black border-b border-white/10 flex items-center justify-between shrink-0 pt-[env(safe-area-inset-top,32px)] md:pt-4">
               <div className="flex items-center gap-2.5">
                  <Zap className="w-4 h-4 text-accent" />
                  <h3 className="text-[11px] md:text-[10px] font-black uppercase tracking-[0.2em] text-white">Tactical Alerts</h3>
               </div>
               <div className="flex items-center gap-5">
-                 {unreadCount > 0 && (
-                    <button 
-                      onClick={toggleTray}
-                      className="text-[10px] md:text-[9px] font-black text-accent uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1.5"
-                    >
-                      <CheckCheck className="w-3.5 h-3.5" /> <span className="hidden xs:inline">Mark All</span>
-                    </button>
-                 )}
-                 <button onClick={() => setIsOpen(false)} className="text-white bg-white/10 md:bg-transparent md:text-gray-500 hover:text-white p-2 md:p-1 hover:bg-white/5 rounded-full transition-all">
-                   <X className="w-6 h-6 md:w-4 md:h-4" />
+                 <button onClick={() => setIsOpen(false)} className="text-white bg-white/10 md:bg-transparent md:text-gray-500 hover:text-white p-3 md:p-1 hover:bg-white/5 rounded-full transition-all flex items-center justify-center">
+                   <X className="w-7 h-7 md:w-4 md:h-4" />
                  </button>
               </div>
             </div>
 
             {/* List */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar overscroll-contain">
+            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar overscroll-contain bg-[#050505] touch-auto">
               {notifications.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center gap-4 opacity-30 p-12">
                    <div className="bg-white/5 p-4 rounded-full">
@@ -130,18 +122,18 @@ export default function NotificationTray() {
                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-center">Neural Comms Clear</p>
                 </div>
               ) : (
-                <div className="divide-y divide-white/[0.05]">
+                <div className="divide-y divide-white/[0.03]">
                   {[...notifications].sort((a, b) => {
                     const dateA = new Date(a.createdAt).getTime();
                     const dateB = new Date(b.createdAt).getTime();
-                    return dateB - dateA; // Most recent first
+                    return dateB - dateA;
                   }).map((n) => (
                     <div 
                       key={n.id} 
-                      className={`p-5 md:p-4 transition-all relative group ${!n.read ? 'bg-accent-[rgba(0,255,102,0.02)]' : 'bg-transparent'}`}
+                      className={`p-5 md:p-4 transition-all relative group ${!n.read ? 'bg-accent/5' : 'bg-transparent'}`}
                     >
                       {!n.read && (
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-accent shadow-[0_0_15px_rgba(0,255,102,0.6)]" />
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-accent shadow-[0_0_15px_rgba(0,255,102,0.4)]" />
                       )}
                       
                       <div className="flex items-start gap-4">
@@ -189,8 +181,15 @@ export default function NotificationTray() {
             </div>
 
             {/* Footer */}
-            <div className="p-4 bg-black border-t border-white/10 text-center shrink-0">
-               <p className="text-[8px] text-gray-700 font-black uppercase tracking-[0.4em]">Tactical Feed 01 // Secure Connection</p>
+            <div className="p-4 md:p-4 bg-black border-t border-white/10 flex flex-col gap-3 shrink-0 pb-[env(safe-area-inset-bottom,24px)] md:pb-4 z-[60]">
+               <button 
+                 onClick={toggleTray}
+                 className="w-full py-4 md:py-3 bg-accent text-black font-black uppercase tracking-[0.2em] text-[11px] rounded-sm shadow-[0_0_30px_rgba(0,255,102,0.3)] hover:bg-accent-hover transition-all flex items-center justify-center gap-2"
+               >
+                 <X className="w-4 h-4" />
+                 Acknowledge & Close HUD
+               </button>
+               <p className="text-[8px] text-gray-700 font-black uppercase tracking-[0.4em] text-center">Tactical Feed 01 // Secure Connection</p>
             </div>
 
           </div>
