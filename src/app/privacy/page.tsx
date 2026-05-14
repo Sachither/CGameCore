@@ -57,6 +57,13 @@ export default function PrivacyPolicy() {
           </p>
         </section>
 
+        <section>
+          <h2 className="text-xl font-black text-white uppercase tracking-widest mb-4 italic">6. Contact Command Center</h2>
+          <p className="leading-relaxed text-sm">
+            If you have questions regarding this Privacy Policy or your data integrity, reach out to our security team directly at <a href="mailto:support@cgamecore.online" className="text-accent hover:underline">support@cgamecore.online</a>.
+          </p>
+        </section>
+
       </div>
     </div>
   );

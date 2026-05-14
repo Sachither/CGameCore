@@ -62,7 +62,7 @@ export default function QuickPingOverlay() {
   if (!activePing) return null;
 
   return (
-    <div className="fixed top-12 left-1/2 -translate-x-1/2 z-[9999] w-full max-w-sm px-4 animate-in slide-in-from-top-4 duration-500">
+    <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[10000] w-full max-w-sm px-4 animate-in slide-in-from-top-4 duration-500">
       <div className="bg-black/80 backdrop-blur-xl border border-accent/30 rounded-sm shadow-[0_0_50px_rgba(0,255,102,0.2)] overflow-hidden">
         <div className="absolute top-0 left-0 w-1 h-full bg-accent animate-pulse shadow-[0_0_15px_rgba(0,255,102,0.8)]" />
         

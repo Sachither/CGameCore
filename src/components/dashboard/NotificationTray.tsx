@@ -4,7 +4,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { markNotificationReadAction, markAllNotificationsReadAction } from "@/app/actions/notification-actions";
 import { db } from "@/lib/firebase";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
-import { Bell, BellRing, X, Check, Trophy, Wallet, ShieldAlert, Zap, Loader2, CheckCheck } from "lucide-react";
+import { Bell, BellRing, X, Check, Trophy, Wallet, ShieldAlert, Zap, Loader2, CheckCheck, Heart, MessageSquare } from "lucide-react";
 
 export default function NotificationTray() {
   const { user } = useAuth();
@@ -148,10 +148,14 @@ export default function NotificationTray() {
                          <div className={`p-2.5 rounded-[4px] shrink-0 ${
                            n.type === 'MATCH' ? 'bg-accent/10 border border-accent/20 text-accent' :
                            n.type === 'DISPUTE' ? 'bg-red-500/10 border border-red-500/20 text-red-500' :
-                           'bg-blue-500/10 border border-blue-500/20 text-blue-400'
+                           n.type === 'LIKE' ? 'bg-red-500/10 border border-red-500/20 text-red-400' :
+                           n.type === 'SYSTEM' || n.type === 'COMMUNITY' ? 'bg-blue-500/10 border border-blue-500/20 text-blue-400' :
+                           'bg-yellow-500/10 border border-yellow-500/20 text-yellow-400'
                          }`}>
                             {n.type === 'MATCH' ? <Trophy className="w-4 h-4 md:w-3.5 md:h-3.5" /> :
                              n.type === 'DISPUTE' ? <ShieldAlert className="w-4 h-4 md:w-3.5 md:h-3.5" /> :
+                             n.type === 'LIKE' ? <Heart className="w-4 h-4 md:w-3.5 md:h-3.5 fill-current" /> :
+                             n.type === 'SYSTEM' || n.type === 'COMMUNITY' ? <MessageSquare className="w-4 h-4 md:w-3.5 md:h-3.5" /> :
                              <Wallet className="w-4 h-4 md:w-3.5 md:h-3.5" />}
                          </div>
                          

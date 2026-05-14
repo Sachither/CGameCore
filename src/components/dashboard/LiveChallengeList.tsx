@@ -8,9 +8,8 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useRouter } from "next/navigation";
 import { Loader2, Swords, User, ChevronRight, Plus, Search, ShieldCheck, Share2 } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
-import CreateChallengeModal from "./CreateChallengeModal";
 
-export default function LiveChallengeList() {
+export default function LiveChallengeList({ onHostClick }: { onHostClick?: () => void }) {
   const { user, profile } = useAuth();
   const toast = useToast();
   const [challenges, setChallenges] = useState<Match[]>([]);
@@ -18,7 +17,6 @@ export default function LiveChallengeList() {
   const [searchFee, setSearchFee] = useState<string>("");
   const [selectedGame, setSelectedGame] = useState<'ALL' | 'CODM' | 'EFOOTBALL'>('ALL');
   const [loading, setLoading] = useState(true);
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [joiningMatch, setJoiningMatch] = useState<Match | null>(null);
   const [inGameName, setInGameName] = useState("");
   const [joinReferralCode, setJoinReferralCode] = useState("");
@@ -27,8 +25,6 @@ export default function LiveChallengeList() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!user) return;
-
     // Listen for System Config
     const configUnsub = onSnapshot(doc(db, "system", "config"), (docSnap) => {
        if (docSnap.exists()) {
@@ -147,13 +143,13 @@ export default function LiveChallengeList() {
       </div>
         
       {/* Action Row */}
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-4 mb-8">
           <button 
-            onClick={() => setIsCreateOpen(true)}
-            className="ml-auto bg-accent-aware/10 border border-accent/20 hover:border-accent/40 text-accent-aware font-black uppercase tracking-widest px-4 py-2 rounded-sm text-[10px] flex items-center gap-2 transition-all group"
+            onClick={onHostClick}
+            className="ml-auto bg-accent text-black font-black uppercase tracking-[0.2em] px-8 py-4 rounded-sm text-xs flex items-center gap-3 transition-all hover:bg-accent-hover active:scale-95 shadow-[0_0_20px_rgba(0,255,102,0.3)] group"
           >
-            <Plus className="w-3 h-3 group-hover:rotate-90 transition-transform" />
-            Host Match
+            <Plus className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+            Initiate New Deployment
           </button>
       </div>
 
@@ -244,12 +240,30 @@ export default function LiveChallengeList() {
 
                 <div className="flex gap-2">
                   <button 
-                    onClick={() => !isFull && !c.isDummy && setJoiningMatch(c)}
-                    disabled={isFull && c.creatorId !== user?.uid}
-                    className={`flex-1 py-3 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isFull ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : (isPartnerMatch ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-main hover:bg-main-hover text-accent shadow-[0_0_15px_rgba(0,255,102,0.1)]')}`}
+                    onClick={() => {
+                      if (!user) {
+                        router.push(`/register?callback=/dashboard?join=${c.id}`);
+                        return;
+                      }
+                      if (!isFull && !c.isDummy) {
+                        setJoiningMatch(c);
+                      } else {
+                        router.push(`/match/${c.id}`);
+                      }
+                    }}
+                    className={`flex-1 py-3 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+                      !user 
+                        ? 'bg-accent text-black hover:bg-accent-hover' 
+                        : (isFull ? 'bg-white/10 text-white hover:bg-white/20' : (isPartnerMatch ? 'bg-yellow-500 text-black hover:bg-yellow-600' : 'bg-main hover:bg-main-hover text-accent shadow-[0_0_15px_rgba(0,255,102,0.1)]'))
+                    }`}
                   >
-                    {isFull ? (c.creatorId === user?.uid ? "Enter War Room" : (c.isDummy ? "Match In Progress" : "Arena Locked")) : (c.creatorId === user?.uid ? "Enter War Room" : (isPartnerMatch ? "Enlist in Creator Cup" : "Join Combat Duel"))}
-                    {(!isFull || c.creatorId === user?.uid) && <ChevronRight className="w-3 h-3" />}
+                    {!user 
+                      ? (isFull ? "Sign Up to Observe" : "Sign Up / Login to Join")
+                      : isFull 
+                        ? (c.creatorId === user?.uid ? "Enter War Room" : "Observe Mission") 
+                        : (c.creatorId === user?.uid ? "Enter War Room" : (isPartnerMatch ? "Enlist in Creator Cup" : "Join Combat Duel"))
+                    }
+                    <ChevronRight className="w-3 h-3" />
                   </button>
                   <button
                     onClick={(e) => {
@@ -274,12 +288,6 @@ export default function LiveChallengeList() {
         </div>
       )}
 
-      {isCreateOpen && (
-        <CreateChallengeModal 
-          isOpen={isCreateOpen} 
-          onClose={() => setIsCreateOpen(false)} 
-        />
-      )}
 
       {/* JOIN CONFIRMATION MODAL WITH IGN & PARTNER GATING */}
       {joiningMatch && (
@@ -362,10 +370,10 @@ export default function LiveChallengeList() {
                <button onClick={() => setJoiningMatch(null)} className="flex-1 py-3 text-[10px] font-black uppercase text-gray-500 hover:text-white border border-surface-border hover:bg-black rounded-sm">Cancel</button>
                <button 
                  onClick={confirmJoin}
-                 disabled={joinLoading || (joiningMatch.creatorId !== user?.uid && !inGameName.trim())}
+                 disabled={!!(joinLoading || (user && joiningMatch.creatorId !== user?.uid && !inGameName.trim()))}
                  className={`flex-1 py-3 text-[10px] font-black uppercase shadow-lg rounded-sm flex justify-center disabled:opacity-20 ${joiningMatch.isPartnerTournament ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-accent hover:bg-accent-hover text-black'}`}
                >
-                 {joinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Deploy"}
+                 {joinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (!user ? "Sign Up to Deploy" : "Verify & Deploy")}
                </button>
              </div>
           </div>

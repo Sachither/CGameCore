@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { collection, query, where, onSnapshot, orderBy, limit, getDocs, writeBatch, arrayUnion, doc, getDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/auth/AuthProvider';
+import RestrictedDashboardPrompt from '@/components/dashboard/RestrictedDashboardPrompt';
 import { Match } from '@/lib/match-service';
 import { RefreshCw, ShieldAlert, Target, Table as TableIcon } from 'lucide-react';
 import { useCommandModal } from '@/context/CommandModalContext';
@@ -93,6 +94,26 @@ export default function MyMatchesPage() {
       setFetchingSnapshot(null);
     }
   };
+
+  if (!user) {
+    return (
+      <div className="w-full max-w-6xl mx-auto space-y-12 pb-10">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+          <div>
+            <h1 className="text-4xl font-black text-main italic tracking-tighter uppercase mb-2">My <span className="text-accent">Matches</span></h1>
+            <p className="text-xs text-sub uppercase tracking-widest font-bold">Manage your active rooms and track past earnings.</p>
+          </div>
+          <Link
+            href="/login?callback=/dashboard/matches"
+            className="bg-accent hover:bg-accent-hover text-black font-black uppercase tracking-widest px-8 py-4 rounded-sm text-xs transition-all shadow-[0_10px_20px_rgba(0,255,102,0.2)] hover:-translate-y-1 italic"
+          >
+            Enlist Now
+          </Link>
+        </div>
+        <RestrictedDashboardPrompt callback="/dashboard/matches" />
+      </div>
+    );
+  }
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-12">

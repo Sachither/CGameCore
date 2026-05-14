@@ -156,6 +156,81 @@ export async function updateGameTagAction(
 }
 
 /**
+ * SERVER ACTION: Update Platform Nickname (Tactical Handle)
+ * Enforces identity uniqueness and a 30-day realignment cooldown.
+ */
+export async function updateUsernameAction(idToken: string, newUsername: string) {
+  const uid = await getVerifiedUid(idToken);
+  const cleanUsername = newUsername.trim();
+  const lowerNewName = cleanUsername.toLowerCase();
+
+  if (cleanUsername.length < 3 || cleanUsername.length > 20) {
+    return { success: false, error: "Invalid handle length (3-20 characters)." };
+  }
+
+  // Check for special characters (only alphanumeric and underscores allowed for tactical handles)
+  if (!/^[a-zA-Z0-9_]+$/.test(cleanUsername)) {
+    return { success: false, error: "Invalid characters. Use only letters, numbers, and underscores." };
+  }
+
+  try {
+    const userRef = adminDb.collection("users").doc(uid);
+    
+    const result = await adminDb.runTransaction(async (transaction) => {
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) throw new Error("Profile not found.");
+      
+      const userData = userSnap.data()!;
+      const oldUsername = userData.username;
+      const oldUsernameLower = userData.usernameLower || oldUsername?.toLowerCase();
+      
+      // 1. 🛡️ COOLDOWN CHECK: 30-day cycle
+      const lastUpdate = userData.usernameUpdatedAt?.toDate?.() || new Date(0);
+      const daysSinceUpdate = (Date.now() - lastUpdate.getTime()) / (1000 * 60 * 60 * 24);
+      
+      if (daysSinceUpdate < 30 && userData.usernameUpdatedAt) {
+        const remaining = Math.ceil(30 - daysSinceUpdate);
+        throw new Error(`COOLDOWN_ACTIVE: Identity realignment is locked for ${remaining} more days.`);
+      }
+
+      // 2. 🛡️ UNIQUENESS CHECK
+      if (lowerNewName === oldUsernameLower) throw new Error("IDENTICAL_HANDLE: This is already your assigned handle.");
+      
+      const usernameRef = adminDb.collection("usernames").doc(lowerNewName);
+      const uSnap = await transaction.get(usernameRef);
+      
+      if (uSnap.exists) {
+        throw new Error("IDENTITY_TAKEN: This tactical handle is already assigned to another operative.");
+      }
+
+      // 3. ⚔️ EXECUTE IDENTITY REALIGNMENT
+      // Reserve new name
+      transaction.set(usernameRef, { uid });
+      
+      // Free old name
+      if (oldUsernameLower) {
+        transaction.delete(adminDb.collection("usernames").doc(oldUsernameLower));
+      }
+
+      // Update profile
+      transaction.update(userRef, {
+        username: cleanUsername,
+        usernameLower: lowerNewName,
+        usernameUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return { success: true };
+    });
+
+    console.log(`🛡️ [IDENTITY] Operative Realignment: ${uid} changed to ${cleanUsername}`);
+    return result;
+  } catch (error: any) {
+    console.error("[UserAction] updateUsername error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
  * SERVER ACTION: Set User Region
  * Persists the user's country and currency for regional expansion.
  */
@@ -519,6 +594,51 @@ export async function sendWelcomeEmailAction(email: string, username: string) {
     return res;
   } catch (error: any) {
     console.error("[UserAction] sendWelcomeEmail error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: Apply for Partner Status
+ * Eligible for Tier 3 Operatives to enter the creator recruitment pipeline.
+ */
+export async function applyForPartnerAction(idToken: string, data: { channelName: string, channelUrl: string, followerCount: number }) {
+  const uid = await getVerifiedUid(idToken);
+  
+  try {
+    const userRef = adminDb.collection("users").doc(uid);
+    const userSnap = await userRef.get();
+    
+    if (!userSnap.exists) throw new Error("Profile not found.");
+    const profile = userSnap.data()!;
+    
+    if ((profile.tier || 1) < 3) {
+       throw new Error("TACTICAL REQUIREMENT: You must reach Tier 3 status before applying for partnership.");
+    }
+
+    if (profile.partnerStatus === 'PENDING') {
+       throw new Error("APPLICATION_IN_PROGRESS: Your neural clearance is already being processed.");
+    }
+
+    const appRef = adminDb.collection("partner_applications").doc(uid);
+    await appRef.set({
+       uid,
+       username: profile.username,
+       email: profile.email,
+       channelName: data.channelName,
+       channelUrl: data.channelUrl,
+       followerCount: data.followerCount,
+       status: 'PENDING',
+       appliedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    await userRef.update({
+       partnerStatus: 'PENDING'
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[UserAction] applyForPartner error:", error);
     return { success: false, error: error.message };
   }
 }

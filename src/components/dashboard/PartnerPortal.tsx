@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getPartnerStatsAction, createPartnerTournamentAction } from '@/app/actions/user-actions';
+import { getPartnerStatsAction, createPartnerTournamentAction, applyForPartnerAction } from '@/app/actions/user-actions';
 import { useRouter } from 'next/navigation';
 import { Users, TrendingUp, DollarSign, Copy, CheckCircle, ShieldAlert, Swords, Zap, Activity, Share2 } from 'lucide-react';
 
@@ -13,12 +13,16 @@ export default function PartnerPortal() {
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
   const [selectedFee, setSelectedFee] = useState(100);
+  const [customFee, setCustomFee] = useState<string>("");
+  const [isCustomFee, setIsCustomFee] = useState(false);
   const [codmFormat, setCodmFormat] = useState<'BR' | 'FFA'>('BR');
   const [codmPlayers, setCodmPlayers] = useState(20);
   const [codmWeaponClass, setCodmWeaponClass] = useState<'ALL GUNS' | 'SHOTGUN' | 'SNIPER'>('ALL GUNS');
   const [efootballPlayers, setEfootballPlayers] = useState(16);
   const [efootballFormat, setEfootballFormat] = useState<'tournament' | 'league'>('league');
   const [deploymentSuccess, setDeploymentSuccess] = useState<string | null>(null);
+  const [appForm, setAppForm] = useState({ channelName: '', channelUrl: '', followerCount: 0 });
+  const [appLoading, setAppLoading] = useState(false);
   const router = useRouter();
 
   const fetchStats = async () => {
@@ -46,7 +50,9 @@ export default function PartnerPortal() {
       const format = game === 'CODM' ? codmFormat : efootballFormat;
       const players = game === 'CODM' ? codmPlayers : efootballPlayers;
       const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
-      const res = await createPartnerTournamentAction(idToken, game, selectedFee, format, players, codmWeaponClass, isLocal);
+      const feeToUse = isCustomFee ? (Number(customFee) || 0) : selectedFee;
+      
+      const res = await createPartnerTournamentAction(idToken, game, feeToUse, format, players, codmWeaponClass, isLocal);
       if (res.success) {
         setDeploymentSuccess(`LOBBY DEPLOYED: Your ${game} Creator Cup is live!`);
         // Refresh stats to show new match/recruits without full page reload
@@ -59,6 +65,25 @@ export default function PartnerPortal() {
       setCreationError(err.message);
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleApply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+    setAppLoading(true);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await applyForPartnerAction(idToken, appForm);
+      if (res.success) {
+        window.location.reload(); // Refresh to show pending status
+      } else {
+        alert(res.error);
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setAppLoading(false);
     }
   };
 
@@ -117,16 +142,17 @@ export default function PartnerPortal() {
     );
   }
 
-  // 🛡️ ROLE CLEARANCE CHECK
+  // 🛡️ ROLE & TIER CLEARANCE CHECK
   const isPartner = (profile?.role as any) === 'PARTNER' || profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN';
+  const hasClearance = isPartner || (profile?.tier || 1) >= 3;
 
-  if (!isPartner) {
+  if (!hasClearance) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-6 bg-red-500/5 border border-red-500/20 rounded-sm">
         <ShieldAlert className="w-16 h-16 text-red-500 mb-4" />
-        <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Access Denied</h2>
+        <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter mb-2">Clearance Denied</h2>
         <p className="text-xs text-gray-500 font-bold uppercase tracking-widest max-w-md">
-          Neural clearance not found. The Partner Command Center is restricted to verified platform influencers.
+          Neural clearance not found. The Partner Hub is reserved for Tier 3 Operatives and Verified Creators. Reach Tier 3 to apply for partnership.
         </p>
         <button 
           onClick={() => window.location.href = '/dashboard'}
@@ -156,7 +182,80 @@ export default function PartnerPortal() {
     );
   }
 
-  const referralCode = profile?.myReferralCode || "PENDING_DEPLOIMENT";
+  if (!isPartner) {
+    return (
+      <div className="max-w-4xl mx-auto py-12 px-6">
+        <div className="bg-surface border border-surface-border p-12 rounded-sm text-center relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
+             <Zap className="w-32 h-32 text-accent" />
+          </div>
+          
+          <h2 className="text-3xl font-black text-white uppercase italic tracking-tighter mb-6">
+            ASCEND TO <span className="text-accent">PARTNER</span> STATUS
+          </h2>
+          
+          {profile?.partnerStatus === 'PENDING' ? (
+            <div className="bg-accent/10 border border-accent/20 p-8 rounded-sm animate-pulse">
+               <Activity className="w-12 h-12 text-accent mx-auto mb-4" />
+               <h3 className="text-xl font-black text-white uppercase tracking-widest mb-2">NEURAL VERIFICATION IN PROGRESS</h3>
+               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Our command staff is reviewing your tactical footprint. You will be notified once clearance is granted.</p>
+            </div>
+          ) : (
+            <div className="space-y-10">
+               <p className="text-xs text-gray-500 font-bold uppercase tracking-widest leading-relaxed max-w-xl mx-auto">
+                 You have reached Tier 3 status. You are now eligible to apply for our Creator Partnership program to earn 50% commission on all recruit match fees.
+               </p>
+
+               <form onSubmit={handleApply} className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left max-w-2xl mx-auto">
+                  <div className="space-y-2">
+                    <label className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Primary Channel Name</label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="YouTube / Twitch / TikTok"
+                      className="w-full bg-black border border-surface-border p-4 rounded-sm outline-none focus:border-accent text-white font-bold text-xs"
+                      value={appForm.channelName}
+                      onChange={e => setAppForm({...appForm, channelName: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Follower Count</label>
+                    <input 
+                      type="number" 
+                      required
+                      placeholder="Current Audience Size"
+                      className="w-full bg-black border border-surface-border p-4 rounded-sm outline-none focus:border-accent text-white font-bold text-xs"
+                      value={appForm.followerCount || ''}
+                      onChange={e => setAppForm({...appForm, followerCount: Number(e.target.value)})}
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <label className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Channel URL / Proof</label>
+                    <input 
+                      type="url" 
+                      required
+                      placeholder="Link to your primary platform"
+                      className="w-full bg-black border border-surface-border p-4 rounded-sm outline-none focus:border-accent text-white font-bold text-xs"
+                      value={appForm.channelUrl}
+                      onChange={e => setAppForm({...appForm, channelUrl: e.target.value})}
+                    />
+                  </div>
+                  <button 
+                    type="submit"
+                    disabled={appLoading}
+                    className="md:col-span-2 bg-accent text-black font-black uppercase tracking-[0.2em] py-5 rounded-sm text-[11px] hover:scale-[1.02] transition-transform disabled:opacity-50"
+                  >
+                    {appLoading ? 'TRANSMITTING...' : 'SUBMIT PARTNER APPLICATION'}
+                  </button>
+               </form>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const referralCode = profile?.myReferralCode || "PENDING_DEPLOYMENT";
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -239,20 +338,63 @@ export default function PartnerPortal() {
             <Swords className="w-4 h-4 text-accent" />
             <h3 className="text-xs font-black text-white uppercase tracking-widest">Deploy Creator Lobbies</h3>
           </div>
-          <div className="flex items-center gap-3">
-             <span className="text-[9px] text-gray-500 font-bold uppercase">Entry Tier:</span>
-              <select 
-                value={selectedFee}
-                onChange={(e) => setSelectedFee(Number(e.target.value))}
-                className="bg-black border border-surface-border text-accent text-[10px] font-black px-2 py-1 outline-none cursor-pointer hover:border-accent/50 transition-colors"
+          <div className="flex flex-col md:flex-row md:items-center gap-4">
+            <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Strategic Entry Tier:</span>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { val: 0, label: 'FREE', sub: 'PRACTICE' },
+                { val: 100, label: '$1.00', sub: 'ENTRY' },
+                { val: 200, label: '$2.00', sub: 'ENTRY' },
+                { val: 500, label: '$5.00', sub: 'ELITE' },
+                { val: 1000, label: '$10.00', sub: 'PRO' },
+              ].map((tier) => (
+                <button
+                  key={tier.val}
+                  onClick={() => { setSelectedFee(tier.val); setIsCustomFee(false); }}
+                  className={`flex flex-col items-center justify-center min-w-[80px] py-2 px-3 rounded-sm border transition-all ${
+                    !isCustomFee && selectedFee === tier.val 
+                      ? 'bg-accent border-accent text-black shadow-[0_0_15px_rgba(0,255,102,0.2)]' 
+                      : 'bg-black border-surface-border text-gray-500 hover:border-white/20'
+                  }`}
+                >
+                  <span className="text-[11px] font-black italic tracking-tighter leading-none">{tier.label}</span>
+                  <span className="text-[7px] font-bold uppercase tracking-widest opacity-60">{tier.sub}</span>
+                </button>
+              ))}
+              <button
+                onClick={() => setIsCustomFee(true)}
+                className={`flex flex-col items-center justify-center min-w-[80px] py-2 px-3 rounded-sm border transition-all ${
+                  isCustomFee 
+                    ? 'bg-white border-white text-black' 
+                    : 'bg-black border-surface-border text-gray-500 hover:border-white/20'
+                }`}
               >
-                 <option value={0}>Free Practice (0 Coins)</option>
-                 <option value={100}>$1.00 (100 Coins)</option>
-                 <option value={200}>$2.00 (200 Coins)</option>
-                 <option value={500}>$5.00 (500 Coins)</option>
-                 <option value={1000}>$10.00 (1000 Coins)</option>
-              </select>
+                <span className="text-[11px] font-black italic tracking-tighter leading-none">CUSTOM</span>
+                <span className="text-[7px] font-bold uppercase tracking-widest opacity-60">STAKE</span>
+              </button>
+            </div>
           </div>
+
+          {isCustomFee && (
+            <div className="bg-black/40 border border-white/5 p-4 rounded-sm animate-in slide-in-from-top-2 duration-300">
+               <div className="flex items-center gap-4">
+                  <div className="relative flex-1">
+                     <input 
+                       type="number"
+                       placeholder="Enter Custom Credits..."
+                       value={customFee}
+                       onChange={(e) => setCustomFee(e.target.value)}
+                       className="w-full bg-black border border-accent/30 focus:border-accent text-white px-4 py-3 rounded-sm outline-none font-black text-xs"
+                     />
+                     <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-accent opacity-50">CR</div>
+                  </div>
+                  <div className="hidden sm:block text-right">
+                     <p className="text-[10px] text-white font-black italic">~${(Number(customFee || 0)/100).toFixed(2)}</p>
+                     <p className="text-[7px] text-gray-600 font-bold uppercase tracking-widest leading-none">Estimated Value</p>
+                  </div>
+               </div>
+            </div>
+          )}
         </div>
         
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -304,8 +446,11 @@ export default function PartnerPortal() {
                )}
 
                <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs font-black text-accent">
-                     {selectedFee === 0 ? 'FREE PRACTICE' : `$${(selectedFee / 100).toFixed(2)} Entry`}
+                  <div className="text-xs font-black text-accent uppercase">
+                     { (isCustomFee ? (Number(customFee) || 0) : selectedFee) === 0 
+                       ? 'FREE PRACTICE' 
+                       : `$${((isCustomFee ? (Number(customFee) || 0) : selectedFee) / 100).toFixed(2)} Entry`
+                     }
                    </div>
                   <button 
                     disabled={creating}
@@ -349,8 +494,11 @@ export default function PartnerPortal() {
                   </div>
                 </div>
                <div className="flex items-center justify-between gap-4">
-                  <div className="text-xs font-black text-accent">
-                     {selectedFee === 0 ? 'FREE PRACTICE' : `$${(selectedFee / 100).toFixed(2)} Entry`}
+                  <div className="text-xs font-black text-accent uppercase">
+                     { (isCustomFee ? (Number(customFee) || 0) : selectedFee) === 0 
+                       ? 'FREE PRACTICE' 
+                       : `$${((isCustomFee ? (Number(customFee) || 0) : selectedFee) / 100).toFixed(2)} Entry`
+                     }
                    </div>
                   <button 
                     disabled={creating}

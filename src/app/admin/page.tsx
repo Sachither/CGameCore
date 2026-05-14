@@ -4,7 +4,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { getPlatformStatsAction, wipeCombatQueueAction } from "@/app/actions/admin-actions";
 import { useRouter } from "next/navigation";
 import { createPromoEventAction } from "@/app/actions/promo-actions";
-import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink, RefreshCw, Eraser, ShieldAlert, Trophy, Plus, Settings, MessageSquare } from "lucide-react";
+import { Gavel, Users, Swords, Activity, TrendingUp, ShieldCheck, AlertTriangle, Flame, Wallet, PiggyBank, Briefcase, Landmark, ExternalLink, RefreshCw, Eraser, ShieldAlert, Trophy, Plus, Settings, MessageSquare, Zap } from "lucide-react";
 import Link from "next/link";
 import { useCommandModal } from "@/context/CommandModalContext";
 
@@ -26,6 +26,7 @@ interface Stats {
   formatTourney: number;
   formatLeague: number;
   awaitingPayouts: number;
+  pendingPartners: number;
 }
 
 function StatCard({
@@ -206,6 +207,7 @@ export default function AdminOverviewPage() {
           <StatCard label="Total Matches" value={stats.totalMatches} icon={Swords} color="bg-accent" />
           <StatCard label="Active Match" value={stats.activeMatches} icon={Activity} color="bg-yellow-500" />
           <StatCard label="Awaiting Payout" value={stats.awaitingPayouts} icon={Briefcase} color="bg-purple-500" urgent />
+          <StatCard label="Partner Apps" value={stats.pendingPartners} icon={Zap} color="bg-orange-500" urgent />
           <StatCard label="Open Disputes" value={stats.openDisputes} icon={Gavel} color="bg-red-500" urgent />
         </div>
       ) : (
@@ -473,6 +475,26 @@ export default function AdminOverviewPage() {
           <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed mt-2">
             Search users, adjust balances, apply bans & grant admin roles.
           </p>
+        </Link>
+
+        <Link
+          href="/admin/partners"
+          className="bg-[#0a0a0a] border border-orange-500/20 hover:border-orange-500/50 p-6 rounded-sm group transition-all"
+        >
+          <Zap className="w-6 h-6 text-orange-400 mb-4 group-hover:scale-110 transition-transform" />
+          <h3 className="text-white font-black italic uppercase tracking-tighter text-lg mb-1">Partner Hub</h3>
+          <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed mb-4">
+            Review creator applications and approve new tactical partners.
+          </p>
+          <div className="bg-orange-500/10 border border-orange-500/20 py-2 rounded-sm text-center text-[10px] font-black uppercase tracking-widest text-orange-400 group-hover:bg-orange-500/20 transition-all">
+             Review Applications
+          </div>
+          {stats && stats.pendingPartners > 0 && (
+            <div className="mt-4 flex items-center gap-2 text-orange-400">
+              <Activity className="w-3 h-3 animate-pulse" />
+              <span className="text-[9px] font-black uppercase tracking-widest">{stats.pendingPartners} pending review</span>
+            </div>
+          )}
         </Link>
 
         {(profile?.role === "SUPER_ADMIN" || profile?.isSuperAdmin) && (

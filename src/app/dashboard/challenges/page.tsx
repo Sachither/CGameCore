@@ -203,12 +203,30 @@ export default function ChallengesExplorerPage() {
                     </div>
 
                     <button 
-                      onClick={() => !isFull && setJoiningMatch(c)}
-                      disabled={isFull}
-                      className={`w-full py-4 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all ${isFull ? 'bg-gray-800 text-gray-600 cursor-not-allowed opacity-50' : 'bg-accent hover:bg-accent-hover text-black shadow-[0_0_20px_rgba(0,255,102,0.1)]'}`}
+                      onClick={() => {
+                        if (!user) {
+                          router.push(`/register?callback=/dashboard/challenges?join=${c.id}`);
+                          return;
+                        }
+                        if (!isFull) {
+                          setJoiningMatch(c);
+                        } else {
+                          router.push(`/match/${c.id}`);
+                        }
+                      }}
+                      className={`w-full py-4 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all ${
+                        !user 
+                          ? 'bg-accent text-black hover:bg-accent-hover' 
+                          : (isFull ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-accent hover:bg-accent-hover text-black shadow-[0_0_20px_rgba(0,255,102,0.1)]')
+                      }`}
                     >
-                      {isFull ? "Deployment Locked" : "Initiate Combat Link"}
-                      {!isFull && <ChevronRight className="w-4 h-4" />}
+                      {!user 
+                        ? (isFull ? "Sign Up to Observe" : "Sign Up / Login to Join")
+                        : isFull 
+                          ? (c.creatorId === user?.uid ? "Enter War Room" : "Observe Mission") 
+                          : "Initiate Combat Link"
+                      }
+                      <ChevronRight className="w-4 h-4" />
                     </button>
                  </div>
                );
@@ -289,10 +307,10 @@ export default function ChallengesExplorerPage() {
               </button>
               <button
                 onClick={confirmJoin}
-                disabled={joinLoading || !inGameName.trim()}
+                disabled={!!(joinLoading || (user && !inGameName.trim()))}
                 className="flex-1 py-3 text-[10px] font-black uppercase bg-accent hover:bg-accent-hover text-black shadow-lg rounded-sm flex justify-center disabled:opacity-20 transition-all"
               >
-                {joinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify & Deploy"}
+                {joinLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : (!user ? "Sign Up to Deploy" : "Verify & Deploy")}
               </button>
             </div>
           </div>

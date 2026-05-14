@@ -1,8 +1,18 @@
 import Link from 'next/link';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { usePathname } from 'next/navigation';
 
 export default function Footer() {
+  const { user } = useAuth();
+  
+  // Members do not see the footer to maximize their dashboard experience
+  if (user) return null;
+
+  const pathname = usePathname();
+  const isDashboard = pathname?.startsWith('/dashboard');
+
   return (
-    <footer className="bg-surface border-t border-surface-border py-12 mt-20">
+    <footer className={`bg-surface border-t border-surface-border py-12 mt-20 transition-all duration-300 ${isDashboard ? 'md:ml-64 lg:ml-64' : ''}`}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="col-span-1 md:col-span-2">
@@ -16,8 +26,9 @@ export default function Footer() {
           </div>
           
           <div>
-            <h3 className="text-white font-bold uppercase tracking-wider mb-4 text-sm">Legal</h3>
+            <h3 className="text-white font-bold uppercase tracking-wider mb-4 text-sm">Legal & Info</h3>
             <ul className="space-y-2">
+              <li><Link href="/home" className="text-gray-400 hover:text-accent text-sm transition-colors">Home (Info)</Link></li>
               <li><Link href="/terms" className="text-gray-400 hover:text-accent text-sm transition-colors">Terms of Service</Link></li>
               <li><Link href="/privacy" className="text-gray-400 hover:text-accent text-sm transition-colors">Privacy Policy</Link></li>
               <li><Link href="/rules" className="text-gray-400 hover:text-accent text-sm transition-colors">Official Game Rules</Link></li>

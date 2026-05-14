@@ -5,7 +5,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, deleteDoc, updateDoc, increment } from "firebase/firestore";
 import { validate, sanitize } from "@/lib/validation-utils";
-import { updateGameTagAction, cleanupDeletedUserAccountAction } from "@/app/actions/user-actions";
+import { updateGameTagAction, cleanupDeletedUserAccountAction, updateUsernameAction } from "@/app/actions/user-actions";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase";
 import { signOut, deleteUser, updateProfile } from "firebase/auth";
@@ -139,105 +139,31 @@ export default function ProfileSettingsView() {
   };
 
   const handleSaveAll = async () => {
-    if (!user) return;
-    const userErr = validate("USERNAME", username);
-    if (userErr) {
-      toast.error("Validation Error", userErr);
-      setSaveLoading(false);
-      return;
-    }
-
+    if (!user || !profile) return;
+    
     const sanitizedUsername = sanitize(username);
-    const oldUsername = profile?.username?.toLowerCase();
-    const newUsername = sanitizedUsername.toLowerCase();
+    const oldUsername = profile.username;
 
-    // Basic validation
-    if (!sanitizedUsername || sanitizedUsername.trim().length === 0) {
-      toast.error("Invalid Username", "Username cannot be empty.");
+    if (sanitizedUsername === oldUsername) {
+      toast.error("No Change", "Identity already matches existing records.");
       return;
     }
 
-    if (sanitizedUsername.length < 3) {
-      toast.error("Invalid Username", "Username must be at least 3 characters long.");
-      return;
-    }
-
-    console.log(`[Profile] Attempting to change username from "${oldUsername}" to "${newUsername}"`);
+    setSaveLoading(true);
 
     try {
-      setSaveLoading(true);
-
-      // Unique Check if name changed
-      if (oldUsername !== newUsername) {
-        console.log(`[Profile] Username changed, checking availability for: ${newUsername}`);
-        try {
-          console.log(`[Profile] Making API call to /api/identity-check`);
-          const availabilityRes = await fetch(
-            `/api/identity-check?field=username&value=${encodeURIComponent(newUsername)}`
-          );
-          console.log(`[Profile] API response status: ${availabilityRes.status}`);
-          const availabilityData = await availabilityRes.json();
-          console.log(`[Profile] Full availability response:`, availabilityData);
-
-          if (!availabilityData.success) {
-            const errorMsg = availabilityData.error || "Could not verify username availability.";
-            console.error(`[Profile] Availability check failed: ${errorMsg}`);
-            toast.error("System Error", errorMsg);
-            setSaveLoading(false);
-            return;
-          }
-
-          if (!availabilityData.available) {
-            console.log(`[Profile] Username ${newUsername} is NOT available - blocking change`);
-            toast.error("Platform ID Conflict", "This username is already claimed by another operative.");
-            setSaveLoading(false);
-            return;
-          }
-
-          console.log(`[Profile] Username ${newUsername} is available - proceeding`);
-          // Reserve new, delete old
-          try {
-            await setDoc(doc(db, "usernames", newUsername), { uid: user.uid });
-            if (oldUsername) await deleteDoc(doc(db, "usernames", oldUsername));
-            console.log(`[Profile] Successfully reserved username: ${newUsername}`);
-          } catch (firestoreError: any) {
-            console.error(`[Profile] Firestore reservation failed:`, firestoreError);
-            toast.error("Reservation Failed", "Could not reserve the new username. Please try again.");
-            setSaveLoading(false);
-            return;
-          }
-        } catch (apiError: any) {
-          console.error(`[Profile] API call failed:`, apiError);
-          toast.error("System Error", "Could not verify username availability. Please try again.");
-          setSaveLoading(false);
-          return;
-        }
+      const idToken = await user.getIdToken();
+      const res = await updateUsernameAction(idToken, sanitizedUsername);
+      
+      if (res.success) {
+        toast.success("Identity Realignment", "Nickname updated successfully. 30-day cooldown initiated.");
+        await refreshProfile();
       } else {
-        console.log(`[Profile] Username unchanged: ${oldUsername}`);
+        toast.error("Deployment Rejected", (res as any).error || "Update failed.");
       }
-
-      const userRef = doc(db, "users", user.uid);
-      await updateDoc(userRef, {
-        username: sanitizedUsername,
-      });
-
-      // Update Firebase Auth display name
-      try {
-        await updateProfile(user, {
-          displayName: sanitizedUsername
-        });
-        console.log(`[Profile] Updated Firebase Auth display name to: ${sanitizedUsername}`);
-      } catch (authError: any) {
-        console.error(`[Profile] Firebase Auth update failed:`, authError);
-        // Don't fail the whole operation for Auth update failure
-      }
-
-      await refreshProfile();
-      toast.success("Profile Secured", "Account realignment successful.");
-      console.log(`[Profile] Profile update completed successfully`);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast.error("System Error", "Error saving profile.");
+      toast.error("Neural link unstable", err.message || "An unexpected error occurred.");
     } finally {
       setSaveLoading(false);
     }
@@ -347,15 +273,27 @@ export default function ProfileSettingsView() {
            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-sub border-b border-surface-border pb-4 italic">User Identity</h3>
            
            <div className="space-y-6">
-              <div>
-                 <label className="text-[10px] uppercase font-bold text-sub tracking-widest block mb-2 ml-1">Platform Nickname</label>
-                 <input 
-                    type="text" 
-                    value={username} 
-                    onChange={e => setUsername(e.target.value)}
-                    className="w-full bg-surface-hover border border-surface-border focus:border-accent p-4 rounded-sm text-sm text-main outline-none transition-all font-bold"
-                 />
-              </div>
+               <div>
+                  <label className="text-[10px] uppercase font-bold text-sub tracking-widest block mb-2 ml-1 flex justify-between">
+                     Platform Nickname 
+                     {profile?.usernameUpdatedAt && (
+                        <span className="text-yellow-500/60 text-[9px]">30-Day Cooldown Active</span>
+                     )}
+                  </label>
+                  <input 
+                     type="text" 
+                     value={username} 
+                     onChange={e => setUsername(e.target.value)}
+                     disabled={profile?.usernameUpdatedAt && (Date.now() - (profile.usernameUpdatedAt.toDate?.().getTime() || 0)) / (1000*60*60*24) < 30}
+                     placeholder="New Tactical Handle"
+                     className="w-full bg-surface-hover border border-surface-border focus:border-accent p-4 rounded-sm text-sm text-main outline-none transition-all font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                  />
+                  {profile?.usernameUpdatedAt && (Date.now() - (profile.usernameUpdatedAt.toDate?.().getTime() || 0)) / (1000*60*60*24) < 30 && (
+                     <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest mt-2 ml-1">
+                        Deployment Locked. Available in {Math.ceil(30 - (Date.now() - (profile.usernameUpdatedAt.toDate?.().getTime() || 0)) / (1000*60*60*24))} days.
+                     </p>
+                  )}
+               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                  <div className="space-y-2">

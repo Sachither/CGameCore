@@ -941,7 +941,7 @@ export async function searchUserAction(idToken: string, query: string) {
 /**
  * ADMIN: GET PLATFORM OVERVIEW STATS
  */
-export async function getPlatformStatsAction(idToken: string): Promise<{ success: boolean; error?: string; stats: { totalUsers: number; totalMatches: number; openDisputes: number; activeMatches: number; codmMatches: number; efootballMatches: number; financeDeposits: number; financePayouts: number; financeRevenue: number; financeWithdrawals: number; format1v1: number; format5v5: number; formatBR: number; formatFFA: number; formatTourney: number; formatLeague: number; awaitingPayouts: number; } | null; }> {
+export async function getPlatformStatsAction(idToken: string): Promise<{ success: boolean; error?: string; stats: { totalUsers: number; totalMatches: number; openDisputes: number; activeMatches: number; codmMatches: number; efootballMatches: number; financeDeposits: number; financePayouts: number; financeRevenue: number; financeWithdrawals: number; format1v1: number; format5v5: number; formatBR: number; formatFFA: number; formatTourney: number; formatLeague: number; awaitingPayouts: number; pendingPartners: number; } | null; }> {
   const adminUid = await getVerifiedAdminUid(idToken);
 
   // 🔒 [SECURITY] PHASE 4: Rate limit admin stats requests (20 requests/minute per admin)
@@ -958,7 +958,7 @@ export async function getPlatformStatsAction(idToken: string): Promise<{ success
   try {
     const [
       usersSnap, matchesSnap, disputedSnap, activeSnap, codmSnap, efootballSnap, financesSnap,
-      v1Snap, v5Snap, brSnap, ffaSnap, tourneySnap, leagueSnap, resolvingSnap
+      v1Snap, v5Snap, brSnap, ffaSnap, tourneySnap, leagueSnap, resolvingSnap, partnerAppSnap
     ] = await Promise.all([
       adminDb.collection("users").count().get(),
       adminDb.collection("matches").count().get(),
@@ -974,6 +974,7 @@ export async function getPlatformStatsAction(idToken: string): Promise<{ success
       adminDb.collection("matches").where("format", "==", "tournament").count().get(),
       adminDb.collection("matches").where("format", "==", "league").count().get(),
       adminDb.collection("matches").where("status", "==", "RESOLVING").count().get(),
+      adminDb.collection("partner_applications").where("status", "==", "PENDING").count().get(),
     ]);
 
     const finances = financesSnap.exists ? financesSnap.data() : { 
@@ -1000,6 +1001,7 @@ export async function getPlatformStatsAction(idToken: string): Promise<{ success
         formatTourney: tourneySnap.data().count,
         formatLeague: leagueSnap.data().count,
         awaitingPayouts: resolvingSnap.data().count,
+        pendingPartners: partnerAppSnap.data().count,
       },
     };
   } catch (error: any) {
@@ -1864,6 +1866,73 @@ export async function getStaffListAction(idToken: string) {
     return { success: true, staff };
   } catch (error: any) {
     console.error("[AdminAction] getStaffList error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * ADMIN: GET PENDING PARTNER APPLICATIONS
+ */
+export async function getPartnerApplicationsAction(idToken: string) {
+  await getVerifiedAdminUid(idToken);
+  try {
+    const snap = await adminDb.collection("partner_applications")
+      .where("status", "==", "PENDING")
+      .orderBy("appliedAt", "desc")
+      .limit(50)
+      .get();
+    
+    return { success: true, applications: snap.docs.map(doc => sanitizeData({ id: doc.id, ...doc.data() })) };
+  } catch (error: any) {
+    console.error("[AdminAction] getPartnerApplications error:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * ADMIN: APPROVE/REJECT PARTNER APPLICATION
+ */
+export async function approvePartnerApplicationAction(idToken: string, appId: string, approved: boolean, securityPin: string) {
+  const adminUid = await getVerifiedAdminUid(idToken, true);
+  
+  try {
+    const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+    if (!pinVerification.success) throw new Error(pinVerification.error);
+
+    const appRef = adminDb.collection("partner_applications").doc(appId);
+    const appSnap = await appRef.get();
+    if (!appSnap.exists) throw new Error("Application not found.");
+    const appData = appSnap.data()!;
+
+    if (approved) {
+       // Perform the upgrade using existing logic but wrapping it
+       const res = await upgradeToPartnerAction(idToken, appData.uid, undefined, 90, securityPin);
+       if (!res.success) throw new Error(res.error);
+       
+       await appRef.update({ 
+         status: 'APPROVED', 
+         processedAt: admin.firestore.FieldValue.serverTimestamp(),
+         processedBy: adminUid 
+       });
+    } else {
+       await appRef.update({ 
+         status: 'REJECTED', 
+         processedAt: admin.firestore.FieldValue.serverTimestamp(),
+         processedBy: adminUid 
+       });
+       await adminDb.collection("users").doc(appData.uid).update({ partnerStatus: 'REJECTED' });
+       
+       await createNotificationInternal(
+         appData.uid,
+         "Partner Application Update",
+         "Your partner application has been reviewed and declined at this time. Focus on growing your tactical footprint and try again in the future.",
+         "SYSTEM"
+       );
+    }
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[AdminAction] approvePartnerApplication error:", error);
     return { success: false, error: error.message };
   }
 }

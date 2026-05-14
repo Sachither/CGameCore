@@ -81,7 +81,7 @@ export default function ActiveTournamentsTable() {
   };
 
   useEffect(() => {
-    if (!user) return;
+    // We allow data fetching for both guests and members to enable the public dashboard view
 
     // Listen for System Config
     const configUnsub = onSnapshot(doc(db, "system", "config"), (docSnap) => {
@@ -347,7 +347,13 @@ export default function ActiveTournamentsTable() {
             See All Brackets &amp; Standings
           </Link>
           <button 
-            onClick={() => setIsModalOpen(true)}
+            onClick={() => {
+              if (!user) {
+                window.location.href = '/login?callback=/';
+                return;
+              }
+              setIsModalOpen(true);
+            }}
             className="bg-accent hover:bg-accent-hover text-black px-6 py-2.5 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-accent/10"
           >
             Create Competition
@@ -525,6 +531,10 @@ function LeagueCard({ league: t, progress, onJoin, currentUserUid }: { league: L
         ) : (
           <button 
              onClick={() => {
+                if (!currentUserUid) {
+                   window.location.href = '/login?callback=/';
+                   return;
+                }
                 const isFull = (t.playerCount || 0) >= (t.quota || 16);
                 const isAlreadyPlayer = currentUserUid && t.playerIds && t.playerIds.includes(currentUserUid);
                 const isOverseer = currentUserUid === t.creatorId && isPartner;

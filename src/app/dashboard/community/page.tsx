@@ -1,12 +1,18 @@
 import CommunityChat from '@/components/community/CommunityChat';
-import Sidebar from '@/components/dashboard/Sidebar';
+import { getCommunityMessagesAction, getActiveAnnouncementAction } from '@/app/actions/community-actions';
 
 export const metadata = {
   title: 'Community War Room | CGameCore',
   description: 'Connect with fellow operatives, share intel, and dominate the arena.',
 };
 
-export default function CommunityPage() {
+export default async function CommunityPage() {
+  // ⚡ TACTICAL PRE-FETCH: Load initial intel on the server for zero-latency entry
+  const [messagesRes, announcementRes] = await Promise.all([
+    getCommunityMessagesAction('GENERAL'),
+    getActiveAnnouncementAction('GENERAL')
+  ]);
+
   return (
     <div className="flex flex-col space-y-6">
       {/* Dynamic Header */}
@@ -20,8 +26,11 @@ export default function CommunityPage() {
       </div>
 
       {/* Main Chat Container */}
-      <div className="h-[750px] md:h-[850px] w-full">
-        <CommunityChat />
+      <div className="w-full">
+        <CommunityChat 
+          initialMessages={messagesRes.success ? (messagesRes.messages as any) : []} 
+          initialAnnouncement={announcementRes.success ? (announcementRes.announcement as any) : null}
+        />
       </div>
     </div>
   );

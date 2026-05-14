@@ -119,14 +119,7 @@ service cloud.firestore {
     // --- MATCHES (LOBBY & PRIVATE) ---
     match /matches/{matchId} {
       
-      allow read: if isSignedIn() && (
-        resource.data.get('status', 'WAITING') in ['WAITING', 'READY', 'WAITING_FOR_OPPONENT', 'IN_PROGRESS', 'RESOLVING', 'DISPUTED', 'COMPLETED', 'CANCELLED'] || 
-        resource.data.get('circuitId', null) != null || 
-        resource.data.get('leagueId', null) != null ||
-        request.auth.uid in resource.data.get('playerIds', []) ||
-        resource.data.get('creatorId', '') == request.auth.uid ||
-        isStaff() 
-      );
+      allow read: if true;
       
       allow write: if false;
     }
@@ -176,7 +169,7 @@ service cloud.firestore {
     
     // --- QUEUES (Atomic Matchmaking) ---
     match /queues/{queueId} {
-      allow read: if isSignedIn() && !isBanned();
+      allow read: if true;
       allow write: if false; 
     }
 
@@ -194,19 +187,19 @@ service cloud.firestore {
 
     // --- CIRCUITS (Multi-Stage Tournaments) ---
     match /circuits/{circuitId} {
-      allow read: if true; // Publicly visible for tournament browsing
+      allow read: if true; 
       allow write: if false; 
     }
     
     // --- PROMO EVENTS (Campaigns) ---
     match /promo_events/{promoId} {
-      allow read: if true; // Publicly visible for marketing/landing page
-      allow write: if false; // Managed by Server Actions
+      allow read: if true; 
+      allow write: if false; 
     }
 
     // --- LEAGUES (Legacy Tournament Format) ---
     match /leagues/{leagueId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false; 
     }
 
@@ -224,13 +217,13 @@ service cloud.firestore {
 
     // --- GLOBAL STATS ---
     match /stats/{statId} {
-      allow read: if isSignedIn() && !isBanned() && (statId != 'platform_finances' || isAdmin());
+      allow read: if true;
       allow write: if false;
     }
 
     // --- SYSTEM CONFIG ---
     match /system/{docId} {
-      allow read: if isSignedIn();
+      allow read: if true;
       allow write: if false;
     }
 
@@ -299,6 +292,12 @@ service cloud.firestore {
     match /sessions/{sessionId} {
       allow read: if false;
       allow write: if false; // Server-only via Admin SDK
+    }
+
+    // --- HALL OF FAME ---
+    match /hall_of_fame_entries/{entryId} {
+      allow read: if true; // Publicly visible for marketing/landing page
+      allow write: if false; // Managed by Server Actions
     }
   }
 }

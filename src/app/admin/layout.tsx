@@ -15,6 +15,7 @@ import {
   Landmark,
   Swords,
   MessageSquare,
+  Trophy,
 } from "lucide-react";
 
 const navItems = [
@@ -26,6 +27,7 @@ const navItems = [
   { href: "/admin/users", label: "Operators", icon: Users },
   { href: "/admin/messages", label: "Comms Link", icon: MessageSquare },
   { href: "/admin/tickets", label: "Support Tickets", icon: AlertTriangle },
+  { href: "/admin/hall-of-fame", label: "Hall of Fame", icon: Trophy },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

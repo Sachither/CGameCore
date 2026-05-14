@@ -231,6 +231,8 @@ export async function toggleLikeMessageAction(idToken: string, messageId: string
              recipientUid: message.userId,
              senderUid: uid,
              senderName: profile.username || "Operative",
+             title: "❤️ New Tactical Like",
+             message: `${profile.username || "Operative"} liked your transmission: "${message.content?.substring(0, 30)}${message.content?.length > 30 ? '...' : ''}"`,
              type: 'LIKE',
              messageId: messageId,
              messageSnippet: message.content?.substring(0, 50) || "Image/Gif",

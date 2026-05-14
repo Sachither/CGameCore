@@ -4,12 +4,13 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import DepositModal from "@/components/wallet/DepositModal";
 import WithdrawModal from "@/components/wallet/WithdrawModal";
 import SectorChangeModal from "./SectorChangeModal";
-import { Settings, Globe, ShieldCheck } from "lucide-react";
+import { Settings, Globe, ShieldCheck, Lock } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import Link from "next/link";
 
 export default function WalletCard() {
-  const { profile } = useAuth();
+  const { user, profile } = useAuth();
   const [isDepositOpen, setDepositOpen] = useState(false);
   const [isWithdrawOpen, setWithdrawOpen] = useState(false);
   const [isSectorModalOpen, setSectorModalOpen] = useState(false);
@@ -26,6 +27,27 @@ export default function WalletCard() {
 
   return (
     <div className="bg-gradient-to-br from-surface to-[#050505] border border-surface-border rounded-sm p-6 md:p-8 shadow-2xl relative overflow-hidden group">
+      {/* Restricted Access Overlay for Guests */}
+      {!user && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md border border-accent/20">
+          <div className="text-center px-6 max-w-md">
+            <div className="w-16 h-16 bg-accent/10 rounded-full flex items-center justify-center mx-auto mb-6 border border-accent/20 animate-pulse">
+              <Lock className="w-8 h-8 text-accent" />
+            </div>
+            <h3 className="text-main font-black uppercase italic tracking-tighter text-xl mb-4">Identification Required</h3>
+            <p className="text-sub text-[10px] font-bold uppercase tracking-[0.2em] mb-8 leading-relaxed">
+              Enlist to access your tactical financial records, personal match history, and elite rank progression.
+            </p>
+            <Link 
+              href="/register" 
+              className="inline-block bg-accent text-black px-10 py-3 rounded-sm font-black uppercase tracking-widest text-[11px] shadow-[0_0_20px_rgba(0,255,102,0.4)] hover:bg-accent-hover transition-all"
+            >
+              Enlist Now
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Background aesthetic glow */}
       <div className="absolute -right-20 -bottom-20 w-64 h-64 bg-accent/20 blur-[80px] rounded-full pointer-events-none transition-opacity group-hover:opacity-80 opacity-50" />
       

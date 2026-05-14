@@ -54,3 +54,31 @@ export async function getWeeklyEarnersAction() {
     return { success: false, error: error.message };
   }
 }
+
+export async function getGlobalLeaderboardAction(gameFilter: string = 'All-Time') {
+  try {
+    let q = adminDb.collection("users");
+    
+    // Note: We can't easily do complex sorts on server without pre-aggregated stats 
+    // but for now we fetch top 100 by totalWins
+    const snap = await q.orderBy("totalWins", "desc").limit(100).get();
+
+    const users = snap.docs.map((doc, index) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        username: data.username || "Unknown",
+        avatarId: data.avatarId || 0,
+        totalWins: data.totalWins || 0,
+        totalMatches: data.totalMatches || 0,
+        stats: data.stats || {},
+        rank: index + 1
+      };
+    });
+
+    return { success: true, users };
+  } catch (error: any) {
+    console.error("[LeaderboardAction] getGlobalLeaderboard error:", error);
+    return { success: false, error: error.message };
+  }
+}

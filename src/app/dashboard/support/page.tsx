@@ -6,7 +6,9 @@ import {
   createSupportTicketAction, 
   getUserTicketsAction 
 } from '@/app/actions/ticket-actions';
+import { submitContactMessageAction } from '@/app/actions/contact-actions';
 import Link from 'next/link';
+import { Mail, ShieldAlert } from 'lucide-react';
 
 interface Ticket {
   ticketId: string;
@@ -30,6 +32,10 @@ export default function SupportPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Guest Contact State
+  const [guestSubject, setGuestSubject] = useState('General Inquiry');
+  const [guestMessage, setGuestMessage] = useState('');
+
   const categories = [
     { value: 'BUG_REPORT', label: '🐛 Report a Bug' },
     { value: 'MATCH_DISPUTE', label: '⚖️ Match Dispute' },
@@ -49,7 +55,10 @@ export default function SupportPage() {
   // Fetch user's tickets
   useEffect(() => {
     const fetchTickets = async () => {
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       try {
         const token = await user.getIdToken();
@@ -100,11 +109,111 @@ export default function SupportPage() {
     }
   };
 
+  const handleGuestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guestMessage.trim()) {
+      toast.error('Empty Transmission', 'Please provide details before transmitting.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await submitContactMessageAction(guestSubject, guestMessage);
+      if (result.success) {
+        toast.success('Transmission Sent', 'Command Center has received your message.');
+        setGuestMessage('');
+      } else {
+        toast.error('Transmission Failed', result.error || 'Unknown Error');
+      }
+    } catch (error: any) {
+      toast.error('Transmission Failed', error.message || 'Error sending message');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const formatDate = (date: any) => {
     if (!date) return '';
     const d = new Date(date);
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+
+  if (!user) {
+    return (
+      <div className="min-h-screen w-full pt-6 pb-12">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+           <div className="mb-12">
+              <div className="flex items-center gap-4 mb-4">
+                 <div className="w-12 h-12 rounded-lg bg-accent/10 border border-accent/20 flex items-center justify-center">
+                    <Mail className="w-6 h-6 text-accent" />
+                 </div>
+                 <div>
+                    <h1 className="text-3xl md:text-4xl font-black text-main italic tracking-tighter uppercase leading-none">
+                       Command <span className="text-accent">Support</span>
+                    </h1>
+                    <p className="text-[10px] text-sub font-bold uppercase tracking-[0.2em] mt-1 italic">Guest Uplink Channel</p>
+                 </div>
+              </div>
+           </div>
+
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                 <div className="bg-surface border border-surface-border p-8 rounded-sm">
+                    <div className="flex items-center gap-2 mb-4">
+                       <ShieldAlert className="w-4 h-4 text-accent" />
+                       <h3 className="text-sm font-black uppercase text-white italic tracking-widest">Guest Briefing</h3>
+                    </div>
+                    <p className="text-[11px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed mb-6">
+                       You are currently browsing as a guest. While you don't have access to the Private Ticket Hub, you can still transmit messages directly to HQ.
+                    </p>
+                    
+                    <div className="p-4 bg-black border border-surface-border rounded-sm">
+                       <p className="text-[10px] text-accent font-black uppercase tracking-widest mb-1">Response Time</p>
+                       <p className="text-[9px] text-gray-600 font-bold uppercase tracking-widest">Within 24-48 Hours</p>
+                    </div>
+                 </div>
+              </div>
+
+              <div className="bg-surface border border-surface-border p-8 rounded-sm">
+                 <h3 className="text-sm font-black uppercase text-white italic tracking-widest mb-6">Transmit Message</h3>
+                 <form onSubmit={handleGuestSubmit} className="space-y-5">
+                    <div>
+                       <label className="block text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Subject</label>
+                       <select 
+                         value={guestSubject}
+                         onChange={(e) => setGuestSubject(e.target.value)}
+                         className="w-full bg-black border border-surface-border text-white text-xs p-3 rounded-sm focus:border-accent outline-none"
+                       >
+                          <option>General Inquiry</option>
+                          <option>Enlistment Issue</option>
+                          <option>Report Toxicity</option>
+                          <option>Business/Partnership</option>
+                       </select>
+                    </div>
+                    <div>
+                       <label className="block text-[9px] font-bold text-gray-500 uppercase tracking-widest mb-2">Message</label>
+                       <textarea 
+                         rows={5} 
+                         value={guestMessage}
+                         onChange={(e) => setGuestMessage(e.target.value)}
+                         className="w-full bg-black border border-surface-border text-white text-xs p-3 rounded-sm focus:border-accent outline-none resize-none"
+                         placeholder="Detail your request..."
+                       ></textarea>
+                    </div>
+                    <button 
+                      type="submit" 
+                      disabled={isSubmitting || !guestMessage.trim()}
+                      className="w-full bg-accent hover:bg-accent-hover text-black font-black uppercase tracking-widest text-xs py-4 rounded-sm transition-all disabled:opacity-50"
+                    >
+                      {isSubmitting ? 'Transmitting...' : 'Send Transmission'}
+                    </button>
+                 </form>
+              </div>
+           </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen w-full pt-6 pb-12">

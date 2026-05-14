@@ -273,8 +273,6 @@ export default function CombatInterestHub() {
   const [lockdownActive, setLockdownActive] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
-    
     const unsub = onSnapshot(doc(db, "system", "config"), (doc) => {
        if (doc.exists()) {
           setLockdownActive(doc.data().lockdownActive || false);

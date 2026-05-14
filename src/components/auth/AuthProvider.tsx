@@ -46,6 +46,9 @@ export interface UserProfile {
   referredBy?: string;
   myReferralCode?: string;
   partnerExpiresAt?: any;
+  tier?: 1 | 2 | 3;
+  partnerStatus?: 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED';
+  usernameUpdatedAt?: any;
 }
 
 interface AuthContextType {
@@ -212,7 +215,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (now - redirectCooldown.current < 3000) return;
 
     const currentPath = pathname || "/";
-    const isAuthPage = currentPath === '/' || currentPath.startsWith('/login') || currentPath.startsWith('/register');
     const isDashboard = currentPath.startsWith('/dashboard') || currentPath.startsWith('/match') ||
       currentPath.startsWith('/profile') || currentPath.startsWith('/admin');
 
@@ -263,9 +265,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // B: User has a profile (Operative)
       if (isSyncing) setIsSyncing(false);
 
-      // If they are on any auth/landing page (including register), they should be in the dashboard
-      if (isAuthPage) {
-        console.log("[Auth] Operative detected on auth page. Redirecting to Basecamp.");
+      // If they are on any login/register page, they should be in the dashboard
+      const isSignPage = currentPath.startsWith('/login') || currentPath.startsWith('/register');
+      if (isSignPage) {
+        console.log("[Auth] Operative detected on sign-in page. Redirecting to Basecamp.");
         redirectCooldown.current = now;
         router.replace('/dashboard');
         return;

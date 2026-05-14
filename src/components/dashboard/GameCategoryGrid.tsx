@@ -37,6 +37,7 @@ export default function GameCategoryGrid() {
             </h3>
             <div className="flex flex-wrap gap-2 mt-4">
               <span className="bg-black/80 backdrop-blur-sm border border-accent-aware/50 text-[10px] sm:text-xs px-2.5 py-1 uppercase font-black text-accent-aware shadow-[0_0_10px_rgba(0,255,102,0.3)] animate-pulse">Tournament</span>
+              <span className="bg-black/80 backdrop-blur-sm border border-accent/40 text-[10px] sm:text-xs px-2.5 py-1 uppercase font-black text-accent shadow-[0_0_10px_rgba(0,255,102,0.1)]">League</span>
               <span className="bg-black/80 backdrop-blur-sm border border-surface-border text-[10px] sm:text-xs px-2.5 py-1 uppercase font-bold text-gray-300">1v1 Standard</span>
             </div>
           </div>

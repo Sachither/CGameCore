@@ -33,7 +33,7 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
 
     // 2. Dispatch Email
     const { data, error } = await resend.emails.send({
-      from: 'CGame Intelligence <command@mail.cgamecore.online>',
+      from: 'CGame Intelligence <command@cgamecore.online>',
       to: [to],
       replyTo: 'support@cgamecore.online',
       subject: subject,

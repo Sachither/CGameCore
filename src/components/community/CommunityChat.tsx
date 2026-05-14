@@ -76,22 +76,28 @@ interface Announcement {
   game: Channel;
 }
 
-export default function CommunityChat() {
+interface CommunityChatProps {
+  initialMessages?: Message[];
+  initialAnnouncement?: Announcement | null;
+}
+
+export default function CommunityChat({ initialMessages = [], initialAnnouncement = null }: CommunityChatProps) {
   const { user, profile } = useAuth();
   const [activeChannel, setActiveChannel] = useState<Channel>('GENERAL');
-  
-  // Reset initial load when channel changes to force scroll to bottom
-  useEffect(() => {
-    setIsInitialLoad(true);
-  }, [activeChannel]);
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [announcement, setAnnouncement] = useState<Announcement | null>(initialAnnouncement);
   const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(initialMessages.length === 0);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const orderedMessages = [...messages].reverse();
 
   // --- AUTO-CLEAR NOTIFICATIONS ---
   useEffect(() => {
@@ -148,29 +154,22 @@ export default function CommunityChat() {
     setShowEmoji(false);
   };
 
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-
-  // Poll for messages every 5 seconds
+  // Poll for messages every 5 seconds - but only if the tab is focused
   useEffect(() => {
-    fetchMessages();
-    fetchAnnouncement();
+    // Only fetch if not the initial load (which is handled by server props)
+    if (messages.length === 0 || isLoading) {
+      fetchMessages();
+      fetchAnnouncement();
+    }
     
-    const interval = setInterval(fetchMessages, 5000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchMessages();
+        fetchAnnouncement();
+      }
+    }, 5000);
     return () => clearInterval(interval);
   }, [activeChannel]);
-
-  // Scroll to bottom when messages change, but ONLY if near bottom or initial load
-  useEffect(() => {
-    if (scrollRef.current) {
-      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
-      
-      if (isInitialLoad || isNearBottom) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        if (isInitialLoad) setIsInitialLoad(false);
-      }
-    }
-  }, [messages, isInitialLoad]);
 
   const fetchMessages = async () => {
     const res = await getCommunityMessagesAction(activeChannel);
@@ -193,27 +192,54 @@ export default function CommunityChat() {
     if (e) e.preventDefault();
     if (!inputText.trim() || isSending) return;
 
-    if (!user) {
+    if (!user || !profile) {
       setError("REGISTRATION_REQUIRED: Join the Arena to participate.");
       return;
     }
 
+    const content = inputText.trim();
+    setInputText('');
     setIsSending(true);
     setError(null);
     
+    // ⚡ OPTIMISTIC UI: Show the message immediately
+    const tempId = 'temp-' + Date.now();
+    const optimisticMsg: Message = {
+      id: tempId,
+      userId: user.uid,
+      username: profile.username || "Operative",
+      avatarId: profile.avatarId || 0,
+      content: content,
+      game: activeChannel,
+      isGif: false,
+      likes: [],
+      replyToId: replyingTo?.id,
+      replyToUser: replyingTo?.user,
+      replyToContent: replyingTo?.content,
+      createdAt: new Date(),
+      userWins: profile.totalWins || 0
+    };
+
+    setMessages(prev => [optimisticMsg, ...prev]);
+    setReplyingTo(null);
+
     try {
       const idToken = await user.getIdToken();
-      const res = await sendCommunityMessageAction(idToken, inputText, activeChannel, false, replyingTo || undefined);
+      const res = await sendCommunityMessageAction(idToken, content, activeChannel, false, replyingTo || undefined);
       
-      if (res.success) {
-        setInputText('');
-        setReplyingTo(null);
-        fetchMessages(); // Immediate refresh
-      } else {
+      if (!res.success) {
+        // Rollback on failure
+        setMessages(prev => prev.filter(m => m.id !== tempId));
         setError(res.error || "Transmission failed.");
+        setInputText(content); // Restore text
+      } else {
+        // Refresh to get the real ID and timestamp from server
+        fetchMessages();
       }
     } catch (err) {
+      setMessages(prev => prev.filter(m => m.id !== tempId));
       setError("Neural link unstable. Try again.");
+      setInputText(content);
     } finally {
       setIsSending(false);
     }
@@ -221,15 +247,28 @@ export default function CommunityChat() {
 
   const handleLike = async (msgId: string) => {
     if (!user) return;
+    
+    // ⚡ OPTIMISTIC LIKE: Update UI instantly
+    setMessages(prev => prev.map(m => {
+      if (m.id === msgId) {
+        const hasLiked = m.likes.includes(user.uid);
+        return {
+          ...m,
+          likes: hasLiked ? m.likes.filter(id => id !== user.uid) : [...m.likes, user.uid]
+        };
+      }
+      return m;
+    }));
+
     try {
       const idToken = await user.getIdToken();
       const res = await toggleLikeMessageAction(idToken, msgId);
-      if (res.success) {
-        // Optimistic UI or just refresh
+      if (!res.success) {
+        // Rollback or refresh on failure
         fetchMessages();
       }
     } catch (err) {
-      console.error("Like failed");
+      fetchMessages();
     }
   };
 
@@ -268,12 +307,13 @@ export default function CommunityChat() {
   };
 
   const formatTime = (date: Date | string) => {
+    if (!mounted) return '--:--';
     const d = new Date(date);
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
-    <div className="flex flex-col h-full bg-black border border-surface-border rounded-xl overflow-hidden shadow-2xl relative">
+    <div className="flex flex-col relative pb-32">
       
       {/* Custom Confirmation Modal */}
       {confirmModal && confirmModal.isOpen && (
@@ -307,10 +347,10 @@ export default function CommunityChat() {
       )}
       
       {/* Community Header & Channels */}
-      <div className="bg-surface/50 backdrop-blur-md border-b border-surface-border p-4 shrink-0">
-        <div className="flex items-center justify-between mb-4">
+      <div className="w-full border-b border-white/10 px-4 py-4 shrink-0">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-2">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center border border-accent/30 shadow-[0_0_15px_rgba(0,255,102,0.2)]">
+            <div className="w-10 h-10 rounded-full bg-accent/20 flex items-center justify-center border border-accent/30">
               <MessageSquare className="w-5 h-5 text-accent" />
             </div>
             <div>
@@ -321,14 +361,14 @@ export default function CommunityChat() {
 
           <Link 
             href="/dashboard"
-            className="flex items-center gap-2 bg-accent text-black px-4 py-2 rounded-sm transition-all transform hover:scale-105 active:scale-95 shadow-[0_0_15px_rgba(0,255,102,0.3)]"
+            className="inline-flex items-center gap-2 bg-accent text-black px-4 py-2 rounded-sm transition-all hover:bg-accent-hover"
           >
             <Trophy className="w-4 h-4" />
             <span className="text-[10px] font-black uppercase tracking-widest">Host Match</span>
           </Link>
         </div>
 
-        <div className="flex gap-2 p-1 bg-black/40 rounded-sm border border-white/5">
+        <div className="flex gap-2">
           {(['GENERAL', 'CODM', 'EFOOTBALL'] as Channel[]).map((channel) => (
             <button
               key={channel}
@@ -348,7 +388,7 @@ export default function CommunityChat() {
       </div>
 
       {/* Announcement Banner */}
-      {announcement && (
+      {announcement && mounted && (
         <div className="bg-accent/10 border-b border-accent/20 p-3 flex items-center gap-3 animate-in slide-in-from-top duration-500">
           <div className="shrink-0 w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center border border-accent/30">
             <Megaphone className="w-4 h-4 text-accent animate-bounce" />
@@ -362,8 +402,7 @@ export default function CommunityChat() {
 
       {/* Chat Messages Area */}
       <div 
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-[radial-gradient(circle_at_50%_50%,rgba(20,20,20,1)_0%,rgba(0,0,0,1)_100%)]"
+        className="p-6 space-y-4 bg-[radial-gradient(circle_at_50%_50%,rgba(20,20,20,1)_0%,rgba(0,0,0,1)_100%)]"
       >
         {isLoading ? (
           <div className="flex flex-col items-center justify-center h-full space-y-4 opacity-50">
@@ -377,16 +416,18 @@ export default function CommunityChat() {
             <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">Be the first to break the silence</p>
           </div>
         ) : (
-          messages.map((msg, idx) => (
+          orderedMessages.map((msg, idx) => (
             <div key={msg.id} className={`flex flex-col ${msg.userId === user?.uid ? 'items-end' : 'items-start'}`}>
               <div className={`flex items-end gap-2 max-w-[85%] ${msg.userId === user?.uid ? 'flex-row-reverse' : 'flex-row'}`}>
                 {/* Avatar */}
-                <div className="shrink-0 w-8 h-8 rounded-lg bg-surface-hover border border-surface-border overflow-hidden shadow-lg">
-                  <img 
-                    src={`/avatars/av-${msg.avatarId || 0}.webp`} 
-                    alt="avatar" 
-                    className="w-full h-full object-cover"
-                    onError={(e) => (e.currentTarget.src = 'https://api.dicebear.com/7.x/bottts/svg?seed=' + msg.username)}
+                <div className="shrink-0 w-8 h-8 rounded-sm bg-surface-hover border border-surface-border overflow-hidden shadow-lg flex items-center justify-center">
+                  <div 
+                    className="w-[400%] h-[500%]"
+                    style={{
+                      backgroundImage: `url('/avatar_collection.png')`,
+                      backgroundSize: '400% 500%',
+                      backgroundPosition: `${(msg.avatarId || 0) % 4 * 33.33}% ${Math.floor((msg.avatarId || 0) / 4) * 25}%`
+                    }}
                   />
                 </div>
 
@@ -472,7 +513,10 @@ export default function CommunityChat() {
         )}
       </div>
       {/* Input Area */}
-      <div className="p-4 bg-surface/80 border-t border-surface-border shrink-0 relative">
+      <div 
+        className="fixed bottom-0 left-0 right-0 md:left-[var(--sidebar-width)] z-50 flex justify-center p-4 bg-[#090909]/95 border-t border-white/10 backdrop-blur-md shadow-[0_-10px_30px_rgba(0,0,0,0.6)] transition-all duration-300"
+      >
+        <div className="w-full max-w-5xl">
         
         {/* Emoji Picker Popover */}
         {showEmoji && (
@@ -587,6 +631,7 @@ export default function CommunityChat() {
           </div>
         )}
       </div>
+    </div>
 
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar {

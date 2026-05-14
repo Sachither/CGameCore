@@ -6,7 +6,7 @@ import { CollectionReference, collection, query, onSnapshot, orderBy, limit, upd
 import { db } from '@/lib/firebase';
 import { Loader2, RefreshCw, Zap } from 'lucide-react';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { getWeeklyEarnersAction } from '@/app/actions/leaderboard-actions';
+import { getWeeklyEarnersAction, getGlobalLeaderboardAction } from '@/app/actions/leaderboard-actions';
 
 export default function LeaderboardView() {
   const { user, profile } = useAuth();
@@ -110,23 +110,22 @@ export default function LeaderboardView() {
   }, [user, profile]);
 
   useEffect(() => {
-    console.log("[Leaderboard] useEffect triggered - user:", (user as any)?.uid || 'null', "loading:", loading);
-    
-    // We wait for auth to INITIALIZE, but we allow viewing if we want public leaderboards
-    // However, currently rules require isSignedIn(). So we check for user.
-    if (!user) {
-      const authTimeout = setTimeout(() => {
-        if (!user) {
-          console.warn("[Leaderboard] ❌ NO USER AUTHENTICATED after 3s - Leaderboard may be restricted.");
-          setLoading(false);
-        }
-      }, 3000);
-      return () => clearTimeout(authTimeout);
-    }
-
     if (filter === 'Weekly-Earners') return;
 
-    console.log("[Leaderboard] ✅ User authenticated, initiating query:", (user as any).uid);
+    if (!user) {
+      console.log("[Leaderboard] Guest session detected - fetching via secure server uplink...");
+      const fetchGuestLeaderboard = async () => {
+        const res = await getGlobalLeaderboardAction(filter);
+        if (res.success && res.users) {
+          setLeaderboardUsers(res.users);
+        }
+        setLoading(false);
+      };
+      fetchGuestLeaderboard();
+      return;
+    }
+
+    console.log("[Leaderboard] Member session detected - initiating real-time query...");
 
     // Query ALL users and sort by totalWins with default 0 for missing values
     const q = query(

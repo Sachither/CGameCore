@@ -19,6 +19,8 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   
   const [game, setGame] = useState<'CODM' | 'EFOOTBALL'>('CODM');
   const [fee, setFee] = useState<number>(100);
+  const [customFee, setCustomFee] = useState<string>("");
+  const [isCustomFee, setIsCustomFee] = useState(false);
   const [weaponClass, setWeaponClass] = useState<'ALL GUNS' | 'SHOTGUN' | 'SNIPER'>('ALL GUNS');
   const [format, setFormat] = useState<Match['format']>('1v1');
   const [duration, setDuration] = useState<'12m' | '15m'>('15m');
@@ -37,7 +39,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
     const checkExisting = async () => {
       setCheckingExisting(true);
       try {
-        if (profile?.role !== 'PARTNER') {
+        if (profile?.role !== 'PARTNER' && profile?.tier !== 3) {
           const existing = await findActiveMatchByType(game, format, fee);
           setExistingMatchId(existing?.id || null);
         } else {
@@ -74,7 +76,11 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   if (!isOpen) return null;
 
   const handleCreate = async () => {
-    if (!user || !profile) return;
+    if (!user || !profile) {
+      toast.info("Enlistment Required", "You must be an active operative to initiate a deployment. Redirecting to HQ...");
+      router.push('/register?callback=/dashboard');
+      return;
+    }
     
     if (!inGameName.trim()) {
       toast.error("Tactical Error", `Please enter your exact ${game} In-Game Name so opponents can invite you.`);
@@ -100,7 +106,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
         profile.avatarId, 
         game, 
         format, 
-        fee, 
+        isCustomFee ? (Number(customFee) || 0) : fee, 
         sanitizedIGN,
         weaponClass, 
         game === 'EFOOTBALL' ? duration : 'NONE',
@@ -122,7 +128,16 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
     return ['1v1', 'league', 'tournament'] as const;
   };
 
-  const fees = [0, 50, 100];
+  const getAvailableFees = () => {
+    const allFees = [0, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+    const userTier = profile?.tier || 1;
+    
+    if (userTier === 1) return allFees.filter(f => f <= 1000);
+    if (userTier === 2) return allFees.filter(f => f <= 10000);
+    return allFees;
+  };
+
+  const fees = getAvailableFees();
   const weaponClasses = ['ALL GUNS', 'SHOTGUN', 'SNIPER'] as const;
 
   return (
@@ -141,18 +156,34 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
          </div>
 
          <div className="p-8 space-y-8 overflow-y-auto custom-scrollbar">
-            {/* Singleton Alert */}
-            {existingMatchId && (
-              <div className="bg-accent/10 border border-accent/30 p-4 rounded-sm flex items-center gap-4 animate-in slide-in-from-top-4 duration-500">
-                 <div className="bg-accent/20 p-2 rounded-full">
-                    <Flame className="w-4 h-4 text-accent animate-pulse" />
-                 </div>
-                 <div>
-                    <h4 className="text-[10px] font-black uppercase text-accent tracking-widest leading-none mb-1">Tactical Unit Detected</h4>
-                    <p className="text-[9px] text-gray-400 font-bold uppercase leading-tight">An active room already exists for this mission. Singleton protocol requires you to join existing squads first.</p>
-                 </div>
-              </div>
-            )}
+             {/* Singleton Alert */}
+             {existingMatchId && (
+               <div className="bg-accent/10 border border-accent/30 p-4 rounded-sm flex items-center gap-4 animate-in slide-in-from-top-4 duration-500">
+                  <div className="bg-accent/20 p-2 rounded-full">
+                     <Flame className="w-4 h-4 text-accent animate-pulse" />
+                  </div>
+                  <div>
+                     <h4 className="text-[10px] font-black uppercase text-accent tracking-widest leading-none mb-1">Tactical Unit Detected</h4>
+                     <p className="text-[9px] text-gray-400 font-bold uppercase leading-tight">An active room already exists for this mission. Singleton protocol requires you to join existing squads first.</p>
+                  </div>
+               </div>
+             )}
+
+             {/* IN-GAME NAME CAPTURE - MOVED TO TOP */}
+             <div className="space-y-3 bg-black/40 p-4 border border-surface-border rounded-sm">
+                <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em] block">In-Game Neural Link (Mandatory)</label>
+                <input
+                  type="text"
+                  placeholder={`Enter your exact ${game} username...`}
+                  value={inGameName}
+                  onChange={(e) => setInGameName(e.target.value)}
+                  className="w-full bg-black border border-accent/20 focus:border-accent text-white py-4 px-4 rounded-sm outline-none font-bold placeholder-gray-800 transition-colors text-sm"
+                  required
+                />
+                <p className="text-[7px] text-gray-600 font-bold uppercase tracking-widest leading-relaxed">
+                  Required for opponent synchronization. Rejections occur for mismatched data.
+                </p>
+             </div>
 
             {/* Game Selection */}
             <div className="space-y-4">
@@ -191,7 +222,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                         else setMaxPlayers(2);
                       }}
                      className={`py-4 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all border 
-                       ${f === 'alcatraz' ? 'bg-black border-surface-border text-gray-800 opacity-50 cursor-not-allowed blur-[1px]' : 
+                       ${f === 'alcatraz' ? 'bg-black border-surface-border text-gray-800 opacity-50 cursor-not-allowed' : 
                        (format === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600 hover:border-accent/20')}`}
                    >
                      {f === 'league' ? 'LEAGUE (ROBIN)' : f.toUpperCase()}
@@ -259,18 +290,59 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
 
             {/* Fee Selection */}
             <div className="space-y-4">
-               <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Challenge Stake (Credits)</label>
+               <div className="flex justify-between items-end">
+                  <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Challenge Stake (Credits)</label>
+                  <span className="text-[8px] text-accent font-black uppercase tracking-widest border border-accent/20 px-1.5 py-0.5 rounded-sm">Tier {profile?.tier || 1} Limits Active</span>
+               </div>
                <div className="grid grid-cols-3 gap-3">
                   {fees.map(f => (
                     <button 
                       key={f}
-                      onClick={() => setFee(f)}
-                      className={`py-5 rounded-sm text-base font-black transition-all border ${fee === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600'}`}
+                      onClick={() => { setFee(f); setIsCustomFee(false); }}
+                      className={`py-4 rounded-sm text-sm font-black transition-all border flex flex-col items-center justify-center gap-0.5 ${!isCustomFee && fee === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600 hover:border-accent/40'}`}
                     >
-                      {f === 0 ? "FREE" : f} {f !== 0 && <span className="text-[10px] ml-1 opacity-60">CR</span>}
+                      <span>{f === 0 ? "FREE" : f} {f !== 0 && <span className="text-[9px] opacity-60">CR</span>}</span>
+                      {f !== 0 && <span className="text-[8px] opacity-40 italic">~${(f/100).toFixed(0)}</span>}
                     </button>
                   ))}
+                  {(profile?.tier || 1) >= 2 && (
+                    <button 
+                      onClick={() => setIsCustomFee(true)}
+                      className={`py-4 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all border ${isCustomFee ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600'}`}
+                    >
+                       Custom Amt
+                    </button>
+                  )}
+                  {(profile?.tier || 1) < 2 && (
+                    <button 
+                      onClick={() => toast.info("Ascend Rank Required", "Custom stake deployment is locked to Tier 2+ Operatives.")}
+                      className="py-4 rounded-sm bg-black border border-surface-border border-dashed text-gray-800 flex flex-col items-center justify-center grayscale"
+                    >
+                       <span className="text-[9px] font-black uppercase tracking-widest">Locked</span>
+                       <span className="text-[7px] font-bold uppercase">Ascend to T2</span>
+                    </button>
+                  )}
                </div>
+
+               {isCustomFee && (
+                  <div className="animate-in slide-in-from-top-2 duration-300">
+                    <div className="relative">
+                      <input 
+                        type="number"
+                        placeholder="Enter custom credits..."
+                        value={customFee}
+                        onChange={(e) => setCustomFee(e.target.value)}
+                        className="w-full bg-black border border-accent/50 focus:border-accent text-white px-4 py-4 rounded-sm outline-none font-bold text-sm"
+                      />
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-accent uppercase">
+                        Credits
+                      </div>
+                    </div>
+                    <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mt-2">
+                       Max Limit: {profile?.tier === 2 ? '10,000 CR ($100)' : 'Unlimited'}
+                    </p>
+                  </div>
+               )}
             </div>
 
             <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
@@ -332,29 +404,38 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                </div>
             </div>
 
-            {/* IN-GAME NAME CAPTURE */}
-            <div className="space-y-3">
-               <label className="text-[9px] text-accent font-black uppercase tracking-[0.2em] block">Your In-Game Name (Mandatory)</label>
-               <input
-                 type="text"
-                 placeholder={`Enter your exact ${game} username...`}
-                 value={inGameName}
-                 onChange={(e) => setInGameName(e.target.value)}
-                 className="w-full bg-black border border-surface-border focus:border-accent text-white py-4 px-4 rounded-sm outline-none font-bold placeholder-gray-700 transition-colors"
-                 required
-               />
-               <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed mt-2">
-                 This exact name will be copied by your opponent to send you a friend request. If we cannot match your screenshot victory to this text, it will be instantly rejected.
-               </p>
-            </div>
-
             <button 
               onClick={handleCreate}
-              disabled={loading || checkingExisting || (profile?.balanceCoins || 0) < fee || !inGameName.trim()}
-              className={`w-full font-black uppercase tracking-[0.2em] py-5 rounded-sm text-[11px] shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 disabled:opacity-20 ${existingMatchId ? 'bg-white text-black hover:bg-accent' : 'bg-accent text-black hover:bg-accent-hover'}`}
+              disabled={(() => {
+                if (loading || checkingExisting) return true;
+                if (!inGameName.trim()) return true;
+                if (isCustomFee && !customFee.trim()) return true;
+                const currentStake = isCustomFee ? (Number(customFee) || 0) : fee;
+                if (currentStake > 0 && currentStake > (profile?.balanceCoins || 0)) return true;
+                const userTier = Number(profile?.tier || 1);
+                if (profile?.role !== 'PARTNER' && userTier < 3) {
+                  if (userTier === 1 && currentStake > 1000) return true;
+                  if (userTier === 2 && currentStake > 10000) return true;
+                }
+                return false;
+              })()}
+              className={`w-full font-black uppercase tracking-[0.2em] py-5 rounded-sm text-[11px] shadow-lg transition-all active:scale-95 flex items-center justify-center gap-3 ${
+                (() => {
+                  const currentStake = isCustomFee ? (Number(customFee) || 0) : fee;
+                  const isAffordable = currentStake === 0 || currentStake <= (profile?.balanceCoins || 0);
+                  if (!inGameName.trim() || !isAffordable) return 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-50';
+                  return existingMatchId ? 'bg-white text-black hover:bg-accent' : 'bg-accent text-black hover:bg-accent-hover';
+                })()
+              }`}
             >
               {loading || checkingExisting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
+              ) : !user ? (
+                "Sign Up to Deploy"
+              ) : !inGameName.trim() ? (
+                "Link Neural ID (Enter IGN)"
+              ) : (isCustomFee ? (Number(customFee) || 0) : fee) > (profile?.balanceCoins || 0) ? (
+                "Insufficient Balance"
               ) : existingMatchId ? (
                 <><Flame className="w-4 h-4" /> Join Active Squad</>
               ) : (
