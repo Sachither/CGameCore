@@ -156,11 +156,14 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
 
   // Poll for messages every 5 seconds - but only if the tab is focused
   useEffect(() => {
-    // Only fetch if not the initial load (which is handled by server props)
-    if (messages.length === 0 || isLoading) {
-      fetchMessages();
-      fetchAnnouncement();
-    }
+    // 🛡️ RESET STATE ON CHANNEL SWITCH
+    setIsLoading(true);
+    setMessages([]);
+    setAnnouncement(null);
+
+    // Initial fetch for the new channel
+    fetchMessages();
+    fetchAnnouncement();
     
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible') {

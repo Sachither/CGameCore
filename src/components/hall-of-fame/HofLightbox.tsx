@@ -24,6 +24,19 @@ export default function HofLightbox({ entries, initialIndex, isOpen, onClose }: 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isIntroOpen, setIsIntroOpen] = useState(false);
   const touchStartX = useRef<number | null>(null);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+
+  useEffect(() => {
+     if (isOpen) {
+        const dismissed = localStorage.getItem('cgame_hof_swipe_hint');
+        if (!dismissed) setShowSwipeHint(true);
+     }
+  }, [isOpen]);
+
+  const dismissHint = () => {
+     localStorage.setItem('cgame_hof_swipe_hint', 'true');
+     setShowSwipeHint(false);
+  };
 
   useEffect(() => {
     setIndex(initialIndex);
@@ -145,6 +158,44 @@ export default function HofLightbox({ entries, initialIndex, isOpen, onClose }: 
                <span className="text-[8px] text-sub uppercase font-bold tracking-widest mt-1">VOTES</span>
             </div>
          </div>
+
+      {/* Swipe Instruction Overlay (Universal First-Time Guidance) */}
+      {showSwipeHint && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
+           <div className="bg-[#050505] border border-accent/30 p-10 rounded-sm text-center relative max-w-xs shadow-[0_0_100px_rgba(0,0,0,0.9)] scale-in-center">
+              <button 
+                onClick={dismissHint}
+                className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors"
+              >
+                 <X className="w-6 h-6" />
+              </button>
+              
+              <div className="flex items-center justify-center gap-10 mb-6">
+                 <div className="flex flex-col items-center gap-3 animate-bounce">
+                    <ChevronLeft className="w-10 h-10 text-accent" />
+                    <span className="text-[9px] font-black text-accent uppercase tracking-[0.2em]">Prev</span>
+                 </div>
+                 <div className="w-px h-16 bg-white/10" />
+                 <div className="flex flex-col items-center gap-3 animate-bounce">
+                    <ChevronRight className="w-10 h-10 text-accent" />
+                    <span className="text-[9px] font-black text-accent uppercase tracking-[0.2em]">Next</span>
+                 </div>
+              </div>
+
+              <h3 className="text-sm font-black text-white uppercase tracking-[0.3em] italic mb-2">Navigation Protocol</h3>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest leading-relaxed mb-8">
+                 Swipe left or right (or use arrows) to cycle through the operational footage.
+              </p>
+              
+              <button 
+                onClick={dismissHint}
+                className="w-full py-4 bg-accent text-black text-[11px] font-black uppercase tracking-[0.3em] rounded-sm shadow-[0_0_30px_rgba(0,255,102,0.2)] hover:bg-accent-hover transition-all"
+              >
+                 Understood
+              </button>
+           </div>
+        </div>
+      )}
 
          <button 
             onClick={handleNext}
