@@ -54,12 +54,12 @@ export default function BasecampView() {
         <div className="mb-10">
            <button 
              onClick={() => setIsCreateOpen(true)}
-             className="w-full bg-accent text-black font-black uppercase tracking-[0.3em] py-7 rounded-sm text-sm sm:text-base transition-all hover:bg-accent-hover active:scale-95 shadow-[0_0_40px_rgba(0,255,102,0.5)] flex items-center justify-center gap-4 group border-2 border-white/10"
+             className="w-full bg-accent text-black font-black uppercase tracking-[0.15em] sm:tracking-[0.3em] py-5 sm:py-7 rounded-sm text-xs sm:text-base transition-all hover:bg-accent-hover active:scale-95 shadow-[0_0_40px_rgba(0,255,102,0.5)] flex items-center justify-center gap-3 sm:gap-4 group border-2 border-white/10"
            >
-              <div className="w-10 h-10 rounded-full bg-black/10 flex items-center justify-center group-hover:rotate-90 transition-transform border border-black/20">
-                 <span className="text-2xl">+</span>
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-black/10 flex items-center justify-center group-hover:rotate-90 transition-transform border border-black/20 shrink-0">
+                 <span className="text-xl sm:text-2xl">+</span>
               </div>
-              Host a Match & Win Credits
+              <span className="truncate">Host a Match & Win Credits</span>
            </button>
            <p className="text-[9px] text-gray-600 font-bold uppercase tracking-[0.4em] text-center mt-3 animate-pulse">Standardized Tactical Deployment Enabled</p>
         </div>

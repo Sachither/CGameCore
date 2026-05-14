@@ -100,22 +100,22 @@ export default function NotificationTray() {
           <div className="fixed inset-0 md:inset-auto md:absolute md:right-0 md:mt-4 w-full h-[100dvh] md:h-auto md:w-96 bg-[#0a0a0a] border-x md:border border-white/10 md:rounded-sm shadow-[0_20px_80px_rgba(0,0,0,0.8)] z-50 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
             
             {/* Header */}
-            <div className="p-5 md:p-4 bg-black border-b border-white/10 flex items-center justify-between shrink-0">
+            <div className="p-6 md:p-4 bg-black border-b border-white/10 flex items-center justify-between shrink-0 pt-[env(safe-area-inset-top,24px)] md:pt-4">
               <div className="flex items-center gap-2.5">
                  <Zap className="w-4 h-4 text-accent" />
                  <h3 className="text-[11px] md:text-[10px] font-black uppercase tracking-[0.2em] text-white">Tactical Alerts</h3>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-5">
                  {unreadCount > 0 && (
                     <button 
                       onClick={toggleTray}
-                      className="text-[9px] font-black text-accent uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1.5"
+                      className="text-[10px] md:text-[9px] font-black text-accent uppercase tracking-widest hover:text-white transition-colors flex items-center gap-1.5"
                     >
-                      <CheckCheck className="w-3 h-3" /> Mark All
+                      <CheckCheck className="w-3.5 h-3.5" /> <span className="hidden xs:inline">Mark All</span>
                     </button>
                  )}
-                 <button onClick={() => setIsOpen(false)} className="text-gray-500 hover:text-white p-1 hover:bg-white/5 rounded-full transition-all">
-                   <X className="w-5 h-5 md:w-4 md:h-4" />
+                 <button onClick={() => setIsOpen(false)} className="text-white bg-white/10 md:bg-transparent md:text-gray-500 hover:text-white p-2 md:p-1 hover:bg-white/5 rounded-full transition-all">
+                   <X className="w-6 h-6 md:w-4 md:h-4" />
                  </button>
               </div>
             </div>
