@@ -9,6 +9,7 @@ import { usePushNotifications } from "@/hooks/usePushNotifications";
 import SystemBanner from "./SystemBanner";
 import CommunityIntelOverlay from "../notifications/CommunityIntelOverlay";
 import QuickPingOverlay from "../notifications/QuickPingOverlay";
+import { Menu } from "lucide-react";
 
 export default function ClientDashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
@@ -68,6 +69,17 @@ export default function ClientDashboardLayout({ children }: { children: React.Re
           className="fixed inset-0 bg-black/80 z-30 md:hidden"
           onClick={() => setMobileOpen(false)}
         />
+      )}
+
+      {/* Floating Mobile Sidebar Toggle */}
+      {!mobileOpen && (
+        <button 
+          onClick={() => setMobileOpen(true)}
+          className="md:hidden fixed bottom-24 left-6 z-[100] w-12 h-12 rounded-full bg-accent text-black flex items-center justify-center shadow-[0_0_20px_rgba(0,255,102,0.4)] border border-accent/20 hover:scale-105 active:scale-95 transition-all"
+          aria-label="Open Mobile Menu"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
       )}
 
       {/* Main Content Area */}

@@ -23,7 +23,7 @@ export async function markAllNotificationsReadAction(idToken: string) {
     const batch = adminDb.batch();
     
     const snap = await adminDb.collection("users").doc(uid).collection("notifications")
-      .where("isRead", "==", false)
+      .where("read", "==", false)
       .get();
       
     snap.docs.forEach(doc => {
@@ -54,7 +54,7 @@ export async function markAllNotificationsAsReadAction(tokenOrUid: string) {
 
     const batch = adminDb.batch();
     const snap = await adminDb.collection("users").doc(uid).collection("notifications")
-      .where("isRead", "==", false)
+      .where("read", "==", false)
       .get();
       
     snap.docs.forEach(doc => {

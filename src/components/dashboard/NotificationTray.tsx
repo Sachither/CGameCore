@@ -97,7 +97,7 @@ export default function NotificationTray() {
       {isOpen && (
         <>
           <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
-          <div className="fixed top-16 bottom-0 left-0 right-0 md:top-auto md:bottom-auto md:left-auto md:absolute md:right-0 md:mt-4 w-full md:h-auto md:w-96 bg-[#0a0a0a] border-x md:border border-white/10 md:rounded-sm shadow-[0_20px_80px_rgba(0,0,0,0.8)] z-50 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200 overscroll-none">
+          <div className="fixed top-24 bottom-0 left-0 right-0 md:top-auto md:bottom-auto md:left-auto md:absolute md:right-0 md:mt-4 w-full md:h-auto md:w-96 bg-[#0a0a0a] border-x md:border border-white/10 md:rounded-sm shadow-[0_20px_80px_rgba(0,0,0,0.8)] z-50 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200 overscroll-none">
             
             {/* Header */}
             <div className="p-6 md:p-4 bg-black border-b border-white/10 flex items-center justify-between shrink-0 pt-[env(safe-area-inset-top,32px)] md:pt-4">
