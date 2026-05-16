@@ -30,7 +30,7 @@ export default function WalletPage() {
         <DepositRecoveryHeartbeat />
         <div className="mb-8">
           <h1 className="text-3xl md:text-4xl font-black text-main italic tracking-tighter uppercase">
-            My <span className="text-accent-aware">Wal~let</span>
+            My <span className="text-accent-aware">Wallet</span>
           </h1>
         </div>
 
