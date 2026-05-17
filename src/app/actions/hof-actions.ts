@@ -3,6 +3,7 @@
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { HofCategory, getHofWeekKey, getHofPhase } from "@/lib/hof-service";
+import { deleteR2FileByUrl } from "@/lib/r2";
 
 /**
  * Submits a new Hall of Fame entry
@@ -189,11 +190,20 @@ export async function adminCrownWinnerAction(idToken: string, weekKey: string) {
     });
 
     // STEP 3: DELETE ALL LOSERS FROM THIS WEEK
+    const r2DeletionPromises: Promise<void>[] = [];
+    
     allEntriesSnap.docs.forEach(doc => {
       if (!newWinnerIds.has(doc.id)) {
+        const data = doc.data();
+        if (data?.videoUrl) {
+          r2DeletionPromises.push(deleteR2FileByUrl(data.videoUrl));
+        }
         finalBatch.delete(doc.ref);
       }
     });
+
+    // Execute physical R2 deletions in parallel
+    await Promise.allSettled(r2DeletionPromises);
 
     await finalBatch.commit();
     return { success: true };
@@ -216,7 +226,17 @@ export async function adminDeleteHofEntryAction(idToken: string, entryId: string
       return { success: false, error: "Unauthorized access." };
     }
 
-    await adminDb.collection("hall_of_fame_entries").doc(entryId).delete();
+    const entryRef = adminDb.collection("hall_of_fame_entries").doc(entryId);
+    const entrySnap = await entryRef.get();
+    
+    if (entrySnap.exists) {
+      const data = entrySnap.data();
+      if (data?.videoUrl) {
+        await deleteR2FileByUrl(data.videoUrl);
+      }
+    }
+
+    await entryRef.delete();
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to delete entry." };
@@ -240,6 +260,11 @@ export async function deleteMyHofEntryAction(idToken: string, entryId: string) {
 
     if (entrySnap.data()?.uid !== uid) {
       return { success: false, error: "Unauthorized access." };
+    }
+
+    const data = entrySnap.data();
+    if (data?.videoUrl) {
+      await deleteR2FileByUrl(data.videoUrl);
     }
 
     await entryRef.delete();
