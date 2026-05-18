@@ -66,54 +66,55 @@ export default function PWAInstallPrompt() {
     }
   };
 
-  // Don't show if already installed or no prompt available
+  // Early return if not needed
   if (isInstalled || !showPrompt) {
-    // Show iOS install instructions if on iOS
-    if (isIOS && !isInstalled) {
-      return (
-        <div className="fixed bottom-4 left-4 right-4 md:bottom-6 md:left-6 md:right-6 lg:w-96 lg:left-auto z-[85] bg-surface border border-accent/30 rounded-sm p-4 shadow-[0_0_30px_rgba(0,255,102,0.1)] animate-in slide-in-from-bottom-4">
-          <div className="flex items-start gap-3">
-            <div className="p-2 rounded-full bg-accent/10 shrink-0">
-              <Download className="w-5 h-5 text-accent" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-white mb-2">Install CGame</h3>
-              <p className="text-[9px] text-gray-400 font-bold leading-relaxed mb-4">
-                Tap <span className="text-white font-black">Share</span>, then add to Home Screen for offline access and launcher icon.
-              </p>
-              <label className="flex items-start gap-2 mb-4 cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={dontAskAgain}
-                  onChange={(e) => setDontAskAgain(e.target.checked)}
-                  className="mt-1 w-4 h-4 accent-accent cursor-pointer"
-                />
-                <span className="text-[8px] text-gray-400 hover:text-gray-300 font-bold">Don't ask me again</span>
-              </label>
-              <div className="flex gap-2">
-                <button 
-                  onClick={handleDismiss}
-                  className="min-h-10 px-4 py-2 bg-accent hover:bg-accent/90 active:bg-accent text-black font-black text-[8px] uppercase tracking-widest rounded-sm transition-colors duration-200 flex items-center justify-center"
-                >
-                  Got It
-                </button>
-              </div>
-            </div>
-            <button 
-              onClick={handleDismiss}
-              className="min-w-10 min-h-10 flex items-center justify-center text-gray-600 hover:text-white hover:bg-white/5 active:bg-white/10 transition-colors duration-200 rounded-sm shrink-0"
-              aria-label="Close install prompt"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-      );
-    }
-    
     return null;
   }
 
+  // Render iOS-specific manual instructions
+  if (isIOS) {
+    return (
+      <div className="fixed bottom-4 left-4 right-4 md:bottom-6 md:left-6 md:right-6 lg:w-96 lg:left-auto z-[85] bg-surface border border-accent/30 rounded-sm p-4 shadow-[0_0_30px_rgba(0,255,102,0.1)] animate-in slide-in-from-bottom-4">
+        <div className="flex items-start gap-3">
+          <div className="p-2 rounded-full bg-accent/10 shrink-0">
+            <Download className="w-5 h-5 text-accent" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-white mb-2">Install CGame App</h3>
+            <p className="text-[9px] text-gray-400 font-bold leading-relaxed mb-4">
+              Tap <span className="text-white font-black">Share</span>, then add to Home Screen for offline access and launcher icon.
+            </p>
+            <label className="flex items-start gap-2 mb-4 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={dontAskAgain}
+                onChange={(e) => setDontAskAgain(e.target.checked)}
+                className="mt-1 w-4 h-4 accent-accent cursor-pointer"
+              />
+              <span className="text-[8px] text-gray-400 hover:text-gray-300 font-bold">Don't ask me again</span>
+            </label>
+            <div className="flex gap-2">
+              <button 
+                onClick={handleDismiss}
+                className="min-h-10 px-4 py-2 bg-accent hover:bg-accent/90 active:bg-accent text-black font-black text-[8px] uppercase tracking-widest rounded-sm transition-colors duration-200 flex items-center justify-center"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+          <button 
+            onClick={handleDismiss}
+            className="min-w-10 min-h-10 flex items-center justify-center text-gray-600 hover:text-white hover:bg-white/5 active:bg-white/10 transition-colors duration-200 rounded-sm shrink-0"
+            aria-label="Close install prompt"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Web/Android prompt
   return (
     <div className="fixed bottom-4 left-4 right-4 md:bottom-6 md:left-6 md:right-6 lg:w-96 lg:left-auto z-[85] bg-surface border border-accent/30 rounded-sm p-4 shadow-[0_0_30px_rgba(0,255,102,0.1)] animate-in slide-in-from-bottom-4">
       <div className="flex items-start gap-3">

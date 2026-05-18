@@ -70,11 +70,6 @@ export async function voteHofEntryAction(idToken: string, entryId: string) {
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     const uid = decodedToken.uid;
 
-    const phase = getHofPhase();
-    if (phase !== 'VOTING') {
-      return { success: false, error: "Voting phase has not started yet." };
-    }
-
     const userRef = adminDb.collection("users").doc(uid);
     const userSnap = await userRef.get();
     if (!userSnap.exists || !userSnap.data()?.username) {
@@ -271,5 +266,70 @@ export async function deleteMyHofEntryAction(idToken: string, entryId: string) {
     return { success: true };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to delete entry." };
+  }
+}
+
+/**
+ * Admin: Manually set the vote count for a Hall of Fame entry (Ghost Votes)
+ */
+export async function adminSetHofVotesAction(idToken: string, entryId: string, targetVoteCount: number) {
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(idToken);
+    const uid = decodedToken.uid;
+
+    const adminRef = adminDb.collection("users").doc(uid);
+    const adminSnap = await adminRef.get();
+    if (!adminSnap.data()?.isAdmin) {
+      return { success: false, error: "Unauthorized access." };
+    }
+
+    if (targetVoteCount < 0 || targetVoteCount > 1000) {
+       return { success: false, error: "Invalid vote count target." };
+    }
+
+    const entryRef = adminDb.collection("hall_of_fame_entries").doc(entryId);
+
+    return await adminDb.runTransaction(async (transaction) => {
+      const entrySnap = await transaction.get(entryRef);
+      if (!entrySnap.exists) throw new Error("Entry not found.");
+
+      const data = entrySnap.data()!;
+      let voterUids: string[] = data.voterUids || [];
+      const currentCount = voterUids.length;
+
+      if (targetVoteCount === currentCount) {
+        return { success: true }; // Nothing to do
+      }
+
+      if (targetVoteCount > currentCount) {
+        // We need to ADD ghost votes
+        const diff = targetVoteCount - currentCount;
+        for (let i = 0; i < diff; i++) {
+          voterUids.push(`ghost_vote_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`);
+        }
+      } else {
+        // We need to REMOVE ghost votes to reach the target, but NEVER remove real users.
+        // Identify all ghost votes
+        const ghosts = voterUids.filter(id => id.startsWith('ghost_vote_'));
+        const realUsers = voterUids.filter(id => !id.startsWith('ghost_vote_'));
+        
+        // If the target is lower than the number of real users, we can only reduce down to the number of real users
+        const actualTarget = Math.max(targetVoteCount, realUsers.length);
+        
+        // Keep all real users, and just enough ghosts to hit the actualTarget
+        const ghostsToKeep = actualTarget - realUsers.length;
+        voterUids = [...realUsers, ...ghosts.slice(0, ghostsToKeep)];
+      }
+
+      transaction.update(entryRef, {
+        voterUids,
+        voteCount: voterUids.length
+      });
+
+      return { success: true };
+    });
+  } catch (err: any) {
+    console.error("[HOF Action] Set Votes Error:", err);
+    return { success: false, error: err.message || "Failed to set votes." };
   }
 }

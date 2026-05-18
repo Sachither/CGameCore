@@ -31,9 +31,9 @@ export default function HofSubmissionModal({ isOpen, onClose }: HofSubmissionMod
     const selectedFile = e.target.files?.[0];
     if (!selectedFile) return;
 
-    // 30MB Limit Check (Tactical Balance for $0 Budget)
-    if (selectedFile.size > 30 * 1024 * 1024) {
-      toast.error("DATA BOMB DETECTED", "File exceeds 30MB. Please trim your clip or record at 720p for deployment.");
+    // 50MB Limit Check
+    if (selectedFile.size > 50 * 1024 * 1024) {
+      toast.error("DATA BOMB DETECTED", "File exceeds 50MB. Please trim your clip or record at 720p for deployment.");
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -138,7 +138,7 @@ export default function HofSubmissionModal({ isOpen, onClose }: HofSubmissionMod
               <p className="text-[10px] text-accent font-black uppercase tracking-widest italic">Tactical Briefing</p>
             </div>
             <p className="text-[11px] text-gray-400 font-medium leading-relaxed pl-6">
-              Max size: <span className="text-white font-bold">30MB</span>. If your recording is too large, trim it to under 45 seconds or record at <span className="text-white font-bold">720p</span> for a successful deployment.
+              Max size: <span className="text-white font-bold">50MB</span>. If your recording is too large, trim it to under 45 seconds or record at <span className="text-white font-bold">720p</span> for a successful deployment.
             </p>
           </div>
 

@@ -86,11 +86,6 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
     }
     if (processingId) return;
     
-    if (phase !== 'VOTING') {
-      toast.error("PHASE RESTRICTED", "Voting is only open from Wednesday to Sunday.");
-      return;
-    }
-
     setProcessingId(entryId);
     try {
       const idToken = await auth.currentUser?.getIdToken();

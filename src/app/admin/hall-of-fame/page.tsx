@@ -5,7 +5,7 @@ import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestor
 import { db } from '@/lib/firebase';
 import { HofEntry, HofCategory, getPrevWeekKey, getHofWeekKey, getHofCategoryTitle } from '@/lib/hof-service';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { adminCrownWinnerAction, adminDeleteHofEntryAction } from '@/app/actions/hof-actions';
+import { adminCrownWinnerAction, adminDeleteHofEntryAction, adminSetHofVotesAction } from '@/app/actions/hof-actions';
 import { useToast } from '@/context/ToastContext';
 import { Trophy, Crown, Trash2, Zap, AlertTriangle, Play, Pause, ShieldAlert, BarChart3, Filter, Clock } from 'lucide-react';
 import { auth } from '@/lib/firebase';
@@ -79,6 +79,32 @@ export default function AdminHofPage() {
         toast.success("TERMINATED", "Entry has been removed from the archives.");
       } else {
         toast.error("FAILURE", "Could not delete entry.");
+      }
+    } catch (err: any) {
+      toast.error("ERROR", err.message);
+    }
+  };
+
+  const handleSetVotes = async (entryId: string, currentVotes: number) => {
+    const input = window.prompt("Enter new vote count (0-1000). Real user votes will be preserved, dummy votes will be added/removed:", currentVotes.toString());
+    if (input === null) return;
+    
+    const targetVoteCount = parseInt(input);
+    if (isNaN(targetVoteCount) || targetVoteCount < 0 || targetVoteCount > 1000) {
+      toast.error("INVALID INPUT", "Please enter a valid number between 0 and 1000.");
+      return;
+    }
+
+    if (targetVoteCount === currentVotes) return;
+
+    try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("Sync error.");
+      const res = await adminSetHofVotesAction(idToken, entryId, targetVoteCount);
+      if (res.success) {
+        toast.success("VOTES UPDATED", `Entry vote count set to ${targetVoteCount}.`);
+      } else {
+        toast.error("FAILURE", (res as any).error || "Could not update votes.");
       }
     } catch (err: any) {
       toast.error("ERROR", err.message);
@@ -230,13 +256,17 @@ export default function AdminHofPage() {
 
                              {/* Info */}
                              <div className="p-4 bg-black/40">
-                                <div className="flex items-center justify-between mb-1">
-                                   <span className="text-[11px] font-black text-main uppercase italic truncate max-w-[100px]">{entry.username}</span>
-                                   <div className="flex items-center gap-1 text-accent">
-                                      <Zap className="w-3 h-3 fill-current" />
-                                      <span className="text-[11px] font-mono font-black">{entry.voteCount}</span>
-                                   </div>
-                                </div>
+                                 <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[11px] font-black text-main uppercase italic truncate max-w-[100px]">{entry.username}</span>
+                                    <button 
+                                      onClick={() => handleSetVotes(entry.id!, entry.voteCount)}
+                                      className="flex items-center gap-1 text-accent hover:bg-accent/20 px-2 py-0.5 rounded transition-colors"
+                                      title="Modify Votes"
+                                    >
+                                       <Zap className="w-3 h-3 fill-current" />
+                                       <span className="text-[11px] font-mono font-black">{entry.voteCount}</span>
+                                    </button>
+                                 </div>
                              </div>
                           </div>
                        ))}
