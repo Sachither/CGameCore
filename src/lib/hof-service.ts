@@ -38,15 +38,11 @@ export function getHofCategoryTitle(cat: HofCategory): string {
 
 /**
  * Gets the current week identifier for the Hall of Fame
+ * Uses ISO 8601 week date: Week starts Monday, changes only on Monday midnight
  */
 export function getHofWeekKey(): string {
   const d = new Date();
-  const year = d.getFullYear();
-  // Simple week calculation
-  const oneJan = new Date(year, 0, 1);
-  const numberOfDays = Math.floor((d.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
-  const weekNum = Math.ceil((d.getDay() + 1 + numberOfDays) / 7);
-  return `${year}-W${weekNum}`;
+  return getIsoWeekKey(d);
 }
 
 /**
@@ -55,11 +51,28 @@ export function getHofWeekKey(): string {
 export function getPrevWeekKey(): string {
   const d = new Date();
   d.setDate(d.getDate() - 7);
-  const year = d.getFullYear();
-  const oneJan = new Date(year, 0, 1);
-  const numberOfDays = Math.floor((d.getTime() - oneJan.getTime()) / (24 * 60 * 60 * 1000));
-  const weekNum = Math.ceil((d.getDay() + 1 + numberOfDays) / 7);
-  return `${year}-W${weekNum}`;
+  return getIsoWeekKey(d);
+}
+
+/**
+ * Helper: Convert date to ISO 8601 week format (YYYY-Www)
+ * Week 1 is the first week with a Thursday in it
+ * Week starts Monday (day 1), ends Sunday (day 7)
+ */
+function getIsoWeekKey(date: Date): string {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7; // 1=Monday, 7=Sunday
+  d.setUTCDate(d.getUTCDate() - dayNum + 1); // Move to Monday of that week
+  
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const yearStartDay = yearStart.getUTCDay() || 7;
+  yearStart.setUTCDate(yearStart.getUTCDate() - yearStartDay + 1);
+  
+  const weekMs = (d.getTime() - yearStart.getTime()) / (7 * 24 * 60 * 60 * 1000);
+  const weekNum = Math.floor(weekMs) + 1;
+  const year = d.getUTCFullYear();
+  
+  return `${year}-W${String(weekNum).padStart(2, '0')}`;
 }
 
 /**
