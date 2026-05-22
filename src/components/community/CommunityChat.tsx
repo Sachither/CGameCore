@@ -398,7 +398,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
           </div>
           <div className="flex-1 overflow-hidden">
             <p className="text-[10px] font-black text-accent uppercase tracking-widest mb-0.5">HQ BROADCAST</p>
-            <p className="text-xs text-white/90 font-bold truncate">{announcement.content}</p>
+            <p className="text-xs text-white/90 font-bold break-words whitespace-pre-wrap leading-relaxed">{announcement.content}</p>
           </div>
         </div>
       )}
