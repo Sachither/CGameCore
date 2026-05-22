@@ -28,6 +28,9 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
   
   const clickTimer = useRef<NodeJS.Timeout | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingEntriesRef = useRef<HofEntry[] | null>(null);
+  const pendingWinnersRef = useRef<HofEntry[] | null>(null);
   
   const phase = getHofPhase();
   const weekKey = getHofWeekKey();
@@ -39,6 +42,25 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
       setLoading(false);
       return;
     }
+
+    const flushUpdates = () => {
+      if (pendingEntriesRef.current !== null) {
+        setEntries(pendingEntriesRef.current);
+        pendingEntriesRef.current = null;
+      }
+      if (pendingWinnersRef.current !== null) {
+        setWinners(pendingWinnersRef.current);
+        pendingWinnersRef.current = null;
+      }
+      setLoading(false);
+    };
+
+    const scheduleFlush = () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = setTimeout(flushUpdates, 500);
+    };
 
     const activeConstraints: any[] = [
       where("weekKey", "==", weekKey),
@@ -56,8 +78,8 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
     );
 
     const unsubActive = onSnapshot(activeQuery, (snap) => {
-      setEntries(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
-      setLoading(false);
+      pendingEntriesRef.current = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
+      scheduleFlush();
     });
 
     let unsubWinners = () => {};
@@ -67,13 +89,17 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
         where("status", "==", "WINNER")
       );
       unsubWinners = onSnapshot(winnersQ, (snap) => {
-        setWinners(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
+        pendingWinnersRef.current = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
+        scheduleFlush();
       });
     } else {
       setWinners([]);
     }
 
     return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
       unsubActive();
       unsubWinners();
     };

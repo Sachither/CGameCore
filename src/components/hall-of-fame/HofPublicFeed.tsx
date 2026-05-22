@@ -26,11 +26,33 @@ export default function HofPublicFeed() {
   
   const clickTimer = useRef<NodeJS.Timeout | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingEntriesRef = useRef<HofEntry[] | null>(null);
+  const pendingWinnersRef = useRef<HofEntry[] | null>(null);
   
   const weekKey = getHofWeekKey();
   const lastWeekKey = getPrevWeekKey();
 
   useEffect(() => {
+    const flushUpdates = () => {
+      if (pendingEntriesRef.current !== null) {
+        setEntries(pendingEntriesRef.current);
+        pendingEntriesRef.current = null;
+      }
+      if (pendingWinnersRef.current !== null) {
+        setWinners(pendingWinnersRef.current);
+        pendingWinnersRef.current = null;
+      }
+      setLoading(false);
+    };
+
+    const scheduleFlush = () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      debounceTimerRef.current = setTimeout(flushUpdates, 500);
+    };
+
     const q = query(
       collection(db, "hall_of_fame_entries"),
       where("weekKey", "==", weekKey),
@@ -44,15 +66,19 @@ export default function HofPublicFeed() {
     );
 
     const unsubActive = onSnapshot(q, (snap) => {
-      setEntries(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
-      setLoading(false);
+      pendingEntriesRef.current = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
+      scheduleFlush();
     });
 
     const unsubWinners = onSnapshot(winnersQ, (snap) => {
-      setWinners(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
+      pendingWinnersRef.current = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
+      scheduleFlush();
     });
 
     return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
       unsubActive();
       unsubWinners();
     };
