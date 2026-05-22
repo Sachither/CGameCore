@@ -111,6 +111,30 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       };
    }, [id, router]);
 
+   // Show the standings/tables button for league/tournament contexts.
+   // Also allow promo events if they are eFootball promos (admin-created promos).
+   const isPromoEfootball = Boolean(
+      match && (match as any)?.isPromo && String(match.game).toLowerCase() === 'efootball'
+   );
+
+   const targetId = match ? (
+      (match as any).circuitId ||
+      (match as any).leagueId ||
+      (isPromoEfootball ? (match as any).promoId : null) ||
+      lastKnownCircuitId
+   ) : null;
+
+   const isLeagueOrTournament = Boolean(
+      match && (
+         match.format === 'league' ||
+         match.format === 'tournament' ||
+         (match as any)?.circuitId ||
+         (match as any)?.leagueId
+      )
+   );
+
+   const isStandingsVisible = Boolean(match && (isLeagueOrTournament || isPromoEfootball));
+
    // --- NATIVE NAVIGATION FIX ---
    // Automatically acknowledge the match if the user leaves the page via native browser back buttons or gestures.
    // This guarantees MatchReadyDispatcher won't trap them in a loop when returning to the dashboard.
@@ -186,9 +210,9 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
    }
 
    return (
-      <div className="w-full min-h-screen bg-background flex flex-col items-center">
+      <div className="w-full min-h-screen bg-background flex flex-col items-center pt-20">
 
-         <div className="w-full bg-surface border-b border-surface-border py-4 px-6 flex items-center justify-between sticky top-0 z-50">
+         <div className="w-full bg-surface border-b border-surface-border py-4 px-6 flex items-center justify-between sticky top-20 z-50">
             <button
                onClick={() => setIsLeaveModalOpen(true)}
                className="text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm font-bold uppercase tracking-widest p-2 -ml-2 rounded-sm hover:bg-surface-hover"
@@ -199,10 +223,9 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                Leave Combat
             </button>
 
-            <div className="flex items-center gap-6">
-               {(match?.format === 'league' || match?.format === 'tournament' || (match as any)?.circuitId || (match as any)?.leagueId) && (
+               <div className="flex items-center gap-6">
+               {isStandingsVisible && (
                    (() => {
-                      const targetId = (match as any).circuitId || (match as any).leagueId;
                       if (!targetId) return (
                          <button 
                             onClick={() => showInfoToast("Awaiting Tournament Generation", "Brackets will be spawned instantly once all players join and the host deploys.")}
@@ -211,22 +234,39 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                             </svg>
-                            View Group Stages & Tables
+                            View Standings & Tables
                          </button>
                       );
 
                       return (
-                         <a 
-                            href={`/dashboard/tournaments/view/${targetId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex text-[10px] font-black uppercase text-accent hover:text-white transition-colors tracking-widest items-center gap-2 underline decoration-accent/30 underline-offset-4"
-                         >
-                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                            View Group Stages & Tables
-                         </a>
+                         <>
+                            {/* Mobile: compact icon-only button for league/tournament contexts (not promos) */}
+                            {isLeagueOrTournament && (
+                               <a
+                                  href={`/dashboard/tournaments/view/${targetId}`}
+                                  aria-label="View Standings"
+                                  className="md:hidden flex items-center justify-center w-9 h-9 bg-transparent text-accent hover:text-white rounded-sm border border-transparent hover:border-surface-border"
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                               >
+                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                  </svg>
+                               </a>
+                            )}
+
+                            <a 
+                               href={`/dashboard/tournaments/view/${targetId}`}
+                               target="_blank"
+                               rel="noopener noreferrer"
+                               className={`${isLeagueOrTournament ? 'hidden md:flex' : 'flex'} text-[10px] font-black uppercase text-accent hover:text-white transition-colors tracking-widest items-center gap-2 underline decoration-accent/30 underline-offset-4`}
+                            >
+                               <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                               </svg>
+                               View Standings & Tables
+                            </a>
+                         </>
                       );
                    })()
                 )}
@@ -309,6 +349,22 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                      </p>
                   </div>
                </div>
+
+               {isStandingsVisible && targetId && (
+                  <div className="w-full md:w-auto mt-4 md:mt-0 flex justify-start md:justify-end z-10">
+                     <a
+                        href={`/dashboard/tournaments/view/${targetId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-[10px] font-black uppercase text-accent hover:text-white transition-colors tracking-widest underline decoration-accent/30 underline-offset-4 border border-accent/10 bg-black/20 px-4 py-2 rounded-sm"
+                     >
+                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        View Standings & Tables
+                     </a>
+                  </div>
+               )}
             </div>
 
             <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6 items-stretch h-full">

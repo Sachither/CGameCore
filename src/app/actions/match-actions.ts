@@ -89,7 +89,7 @@ export async function dispatchMatchResolutionNotifications(matchId: string, stat
                  title = "🏆 TOURNAMENT CHAMPION";
                  body = `HQ Verified: You are the OVERALL WINNER of the ${gameLabel} Tournament! ${finalReward > 0 ? `${finalReward} CR credited.` : 'Glory secured.'}`;
               } else {
-                 body += reward > 0 ? `${reward} CR credited.` : 'Tournament advancement confirmed.';
+                 body += reward > 0 ? `${reward} CR credited.` : `Tournament advancement confirmed.`;
               }
 
               await createNotificationInternal(pid, title, body, "MATCH");

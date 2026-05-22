@@ -1,6 +1,7 @@
 import admin from "firebase-admin";
 import { adminDb } from "@/lib/firebase-admin";
 import { pushMatchNotification, pushGlobalCommand } from "./progression";
+import { createNotificationInternal } from "@/lib/notifications";
 import { sendTacticalEmail } from "@/lib/mail";
 import { getPromoStartedEmailTemplate } from "@/lib/mail-templates";
 
@@ -410,7 +411,19 @@ async function distributePromoPrizes(
       prizeCR: coinPrize
     });
   }
-
   await pushGlobalCommand(transaction, circuitRef.id, `🏆 TOURNAMENT COMPLETE! ${circuit.players[winnerUid]?.username.toUpperCase() || 'AGENT'} IS THE PROMO RUSH CHAMPION!`);
+
+  // Fire a direct in-app + push notification notifying the winner of credited coins
+  // Note: Non-transactional side-effect; execute without awaiting to avoid blocking the transaction
+  try {
+    createNotificationInternal(
+      winnerUid,
+      "🏆 Victory Confirmed",
+      `HQ Verified: You won the PROMO RUSH Tournament! ${coinPrize.toLocaleString()} CR credited.`,
+      "FINANCE"
+    ).catch(err => console.warn("[PromoEngine] Failed to send winner notification:", err));
+  } catch (e) {
+    console.warn("[PromoEngine] Notification dispatch error:", e);
+  }
 }
 

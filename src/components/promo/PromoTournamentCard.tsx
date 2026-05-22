@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { getActivePromoAction, joinPromoEventAction } from '@/app/actions/promo-actions';
 import { getEffectiveRateAction } from '@/app/actions/rate-actions';
@@ -9,6 +10,7 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 
 export default function PromoTournamentCard() {
+  const router = useRouter();
   const { user, profile } = useAuth();
   const [promos, setPromos] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -28,8 +30,6 @@ export default function PromoTournamentCard() {
   };
 
   useEffect(() => {
-    if (!user) return;
-    
     fetchInitialData();
 
     // 📡 REAL-TIME SMART LISTENER
@@ -56,11 +56,16 @@ export default function PromoTournamentCard() {
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, []);
 
   const handleJoin = async () => {
+    if (!user) {
+      router.push('/login?callback=/dashboard');
+      return;
+    }
+
     const promo = promos[currentIndex];
-    if (!user || !promo) return;
+    if (!promo) return;
     setJoining(true);
     setMessage(null);
     try {
@@ -235,26 +240,43 @@ export default function PromoTournamentCard() {
 
                 {!isJoined ? (
                   <div className="flex flex-col gap-3">
-                    {needsTag && (
-                      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
-                        <label className="text-[10px] text-accent font-black uppercase tracking-widest mb-1 block">Enter your {promo.game} In-Game Name</label>
-                        <input 
-                          type="text"
-                          value={pendingInGameName}
-                          onChange={(e) => setPendingInGameName(e.target.value)}
-                          placeholder="e.g. Ghost#1234"
-                          className="w-full bg-black border border-white/20 p-3 rounded-sm text-sm text-white focus:border-accent focus:outline-none placeholder:text-gray-600 transition-colors"
-                        />
-                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1 italic">Required so opponents can add you.</p>
-                      </div>
+                    {!user ? (
+                      <>
+                        <div className="p-4 bg-white/5 border border-white/10 rounded-sm text-sm text-gray-300 font-black uppercase tracking-widest text-center">
+                          Login or sign up to enlist in this promo event.
+                        </div>
+                        <button
+                          onClick={() => router.push('/login?callback=/dashboard')}
+                          className="w-full bg-accent hover:bg-accent-aware text-black py-5 rounded-sm text-sm font-black uppercase tracking-widest italic flex items-center justify-center gap-3 leading-none transition-all transform active:scale-95 shadow-[0_0_20px_rgba(0,255,102,0.2)]"
+                        >
+                          <Trophy className="w-5 h-5" />
+                          <span>Login / Register to Enlist</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        {needsTag && (
+                          <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                            <label className="text-[10px] text-accent font-black uppercase tracking-widest mb-1 block">Enter your {promo.game} In-Game Name</label>
+                            <input 
+                              type="text"
+                              value={pendingInGameName}
+                              onChange={(e) => setPendingInGameName(e.target.value)}
+                              placeholder="e.g. Ghost#1234"
+                              className="w-full bg-black border border-white/20 p-3 rounded-sm text-sm text-white focus:border-accent focus:outline-none placeholder:text-gray-600 transition-colors"
+                            />
+                            <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1 italic">Required so opponents can add you.</p>
+                          </div>
+                        )}
+                        <button 
+                          disabled={isJoinDisabled}
+                          onClick={handleJoin}
+                          className="w-full bg-accent hover:bg-accent-aware text-black py-5 rounded-sm text-sm font-black uppercase tracking-widest italic flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-[0_0_20px_rgba(0,255,102,0.2)] disabled:opacity-50 disabled:grayscale"
+                        >
+                          {joining ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trophy className="w-5 h-5" /> Confirm Entry</>}
+                        </button>
+                      </>
                     )}
-                    <button 
-                      disabled={isJoinDisabled}
-                      onClick={handleJoin}
-                      className="w-full bg-accent hover:bg-accent-aware text-black py-5 rounded-sm text-sm font-black uppercase tracking-widest italic flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-[0_0_20px_rgba(0,255,102,0.2)] disabled:opacity-50 disabled:grayscale"
-                    >
-                      {joining ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trophy className="w-5 h-5" /> Confirm Entry</>}
-                    </button>
                   </div>
                 ) : (
                   <div className="w-full bg-white/5 border border-white/10 text-gray-400 py-5 rounded-sm text-sm font-black uppercase tracking-widest italic flex items-center justify-center gap-3">
