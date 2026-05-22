@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { collection, query, where, onSnapshot, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { HofEntry, getPrevWeekKey } from '@/lib/hof-service';
@@ -11,6 +11,8 @@ export default function HofHeroCarousel() {
   const [winners, setWinners] = useState<HofEntry[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
+  const updateTimer = useRef<NodeJS.Timeout | null>(null);
+  const pendingWinners = useRef<HofEntry[] | null>(null);
   const prevWeekKey = getPrevWeekKey();
 
   useEffect(() => {
@@ -23,10 +25,22 @@ export default function HofHeroCarousel() {
 
     const unsub = onSnapshot(q, (snap) => {
       const docs = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
-      setWinners(docs);
+      pendingWinners.current = docs;
+
+      // Debounce updates (500ms throttle)
+      if (updateTimer.current) clearTimeout(updateTimer.current);
+      updateTimer.current = setTimeout(() => {
+        if (pendingWinners.current) {
+          setWinners(pendingWinners.current);
+        }
+        updateTimer.current = null;
+      }, 500);
     });
 
-    return () => unsub();
+    return () => {
+      unsub();
+      if (updateTimer.current) clearTimeout(updateTimer.current);
+    };
   }, [prevWeekKey]);
 
   useEffect(() => {
