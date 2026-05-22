@@ -392,11 +392,11 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
 
       {/* Announcement Banner */}
       {announcement && mounted && (
-        <div className="bg-accent/10 border-b border-accent/20 p-3 flex items-center gap-3 animate-in slide-in-from-top duration-500">
+        <div className="bg-accent/10 border-b border-accent/20 p-3 flex flex-col sm:flex-row items-start sm:items-center gap-3 animate-in slide-in-from-top duration-500">
           <div className="shrink-0 w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center border border-accent/30">
             <Megaphone className="w-4 h-4 text-accent animate-bounce" />
           </div>
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 min-w-0 overflow-hidden">
             <p className="text-[10px] font-black text-accent uppercase tracking-widest mb-0.5">HQ BROADCAST</p>
             <p className="text-xs text-white/90 font-bold break-words whitespace-pre-wrap leading-relaxed">{announcement.content}</p>
           </div>
