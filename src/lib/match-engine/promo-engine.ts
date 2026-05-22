@@ -1,6 +1,8 @@
 import admin from "firebase-admin";
 import { adminDb } from "@/lib/firebase-admin";
 import { pushMatchNotification, pushGlobalCommand } from "./progression";
+import { sendTacticalEmail } from "@/lib/mail";
+import { getPromoStartedEmailTemplate } from "@/lib/mail-templates";
 
 /**
  * UTILITY: Create Ghost Player Object (for finals when opponent doesn't advance)
@@ -22,6 +24,8 @@ function createGhostPlayer(uid: string, team: 'alpha' | 'bravo') {
  */
 export async function spurnPromoTournamentInternal(promoId: string) {
   const promoRef = adminDb.collection("promo_events").doc(promoId);
+  let participantsToSendEmailTo: string[] = [];
+  let promoTitleForEmail = "";
   
   try {
     await adminDb.runTransaction(async (transaction) => {
@@ -34,6 +38,9 @@ export async function spurnPromoTournamentInternal(promoId: string) {
       const participants = promo.participants;
       const participantData = promo.participantData;
       const game = promo.game;
+
+      participantsToSendEmailTo = participants || [];
+      promoTitleForEmail = promo.customTitle || `PROMO RUSH: ${game}`;
 
       if (game === 'EFOOTBALL') {
         // --- 128-Player (or Power-of-2) Knockout Spawning ---
@@ -151,6 +158,43 @@ export async function spurnPromoTournamentInternal(promoId: string) {
     });
 
     console.log(`[PromoEngine] Spurn successful for Promo ${promoId}`);
+
+    // --- FIRE EMAIL BLAST (NON-BLOCKING) ---
+    if (participantsToSendEmailTo.length > 0) {
+      // Run asynchronously so we don't block the caller (or UI)
+      (async () => {
+        console.log(`[PromoEngine] Firing tactical deployment emails to ${participantsToSendEmailTo.length} operatives...`);
+        let sentCount = 0;
+        let failCount = 0;
+        
+        for (const uid of participantsToSendEmailTo) {
+          try {
+            const userSnap = await adminDb.collection("users").doc(uid).get();
+            const userEmail = userSnap.data()?.email;
+            
+            if (userEmail) {
+              const html = getPromoStartedEmailTemplate(promoTitleForEmail);
+              const res = await sendTacticalEmail(userEmail, `CGame: Tournament Started`, html);
+              if (res.success) {
+                sentCount++;
+              } else {
+                failCount++;
+                if (res.error === "Daily limit exceeded" || res.error?.name === 'rate_limit_exceeded') {
+                  console.warn(`[PromoEngine] Stopping email blast: Rate limit hit. Sent: ${sentCount}`);
+                  break; // Stop looping to gracefully handle limit
+                }
+              }
+            } else {
+              failCount++; // No email on file
+            }
+          } catch (e) {
+            failCount++;
+          }
+        }
+        console.log(`[PromoEngine] Email Blast Complete. Sent: ${sentCount}, Failed/Skipped: ${failCount}`);
+      })();
+    }
+
   } catch (error) {
     console.error(`[PromoEngine] Critical Spurn Failure for Promo ${promoId}:`, error);
   }

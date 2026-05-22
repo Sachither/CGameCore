@@ -2,7 +2,7 @@
 // [TACTICAL INTEGRITY CHECK: 1.1] Force Segment Refresh
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { createPromoEventAction, deletePromoEventAction } from "@/app/actions/promo-actions";
+import { createPromoEventAction, deletePromoEventAction, adminForceStartPromoAction } from "@/app/actions/promo-actions";
 import { getEffectiveRateAction } from "@/app/actions/rate-actions";
 import { Trophy, Plus, RefreshCw, RefreshCcw, Flame, Users, Zap, ShieldCheck, Trash2 } from "lucide-react";
 import { db } from "@/lib/firebase";
@@ -24,7 +24,8 @@ function PromoDeploymentCenter() {
     prizeNGN: 50000,
     entryFeeCoins: 0,
     zeroBalanceEntry: false,
-    customTitle: ""
+    customTitle: "",
+    scheduledStartTime: ""
   });
 
   useEffect(() => {
@@ -53,7 +54,8 @@ function PromoDeploymentCenter() {
         formData.prizeNGN,
         formData.entryFeeCoins,
         formData.zeroBalanceEntry,
-        formData.customTitle
+        formData.customTitle,
+        formData.scheduledStartTime
       );
       if (res.success) {
         toast.success("PROMO DEPLOYED", `Successfully launched ${formData.game} operations for ${formData.limit} players.`);
@@ -211,6 +213,22 @@ function PromoDeploymentCenter() {
             </div>
           </div>
 
+          {/* Scheduled Start Time */}
+          <div className="flex flex-col md:col-span-2">
+            <div className="h-6 flex items-center mb-2">
+              <label className="text-[10px] font-black text-accent uppercase tracking-widest px-1 italic">Scheduled Start (Optional)</label>
+            </div>
+            <input
+              type="datetime-local"
+              value={formData.scheduledStartTime}
+              onChange={(e) => setFormData({ ...formData, scheduledStartTime: e.target.value })}
+              className="w-full bg-black border border-white/10 p-4 rounded-sm text-xs font-bold text-white outline-none focus:border-accent"
+            />
+            <div className="h-6 flex items-center">
+              <p className="text-[8px] text-gray-500 font-bold uppercase italic px-1 leading-none">If set, promo will NOT auto-start when full</p>
+            </div>
+          </div>
+
           {/* Deploy Button */}
           <div className="flex flex-col">
             <div className="h-6 mb-2 hidden md:block" /> {/* Vertical Offset Matcher */}
@@ -240,6 +258,7 @@ function PromoDeploymentCenter() {
 
 export default function AdminPromoPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [events, setEvents] = useState<any[]>([]);
   const [selectedWinnerPromo, setSelectedWinnerPromo] = useState<any>(null);
 
@@ -287,6 +306,7 @@ export default function AdminPromoPage() {
                   </h4>
                   <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest italic">
                     Limit: {e.participantLimit} Participants · Fee: {e.entryFeeCoins || 0} Coins · Created: {e.createdAt?.toDate?.()?.toLocaleString() || "Syncing..."}
+                    {e.scheduledStartTime && ` · SCHEDULED: ${new Date(e.scheduledStartTime).toLocaleString()}`}
                   </p>
                 </div>
               </div>
@@ -310,6 +330,26 @@ export default function AdminPromoPage() {
                     className="px-4 py-2 bg-accent/10 hover:bg-accent/20 border border-accent/30 text-accent rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors flex items-center gap-2"
                   >
                     <Trophy className="w-3 h-3" /> Winner Card
+                  </button>
+                )}
+                {e.status === 'OPEN' && e.scheduledStartTime && (
+                  <button 
+                    onClick={async () => {
+                      if (!window.confirm("FORCE START: Are you sure you want to generate the tournament brackets now?")) return;
+                      try {
+                        const idToken = await user?.getIdToken();
+                        if (idToken) {
+                          const res = await adminForceStartPromoAction(idToken, e.id);
+                          if (res.success) toast.success("PROMO STARTED", "Tournament generated and operative notifications sent.");
+                          else toast.error("FAILED TO START", res.error);
+                        }
+                      } catch (err) {
+                        toast.error("ERROR", "Uplink failure.");
+                      }
+                    }}
+                    className="px-4 py-2 bg-accent text-black hover:bg-accent-aware rounded-sm text-[10px] font-black uppercase tracking-widest transition-colors flex items-center gap-2"
+                  >
+                    <Flame className="w-3 h-3" /> Force Start
                   </button>
                 )}
                 <DeletePromoButton promo={e} />

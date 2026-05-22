@@ -456,7 +456,7 @@ export async function setUserRoleAction(
         const email = userSnap.data()!.email;
         await sendTacticalEmail(
           email,
-          "Contract Terminated",
+          "Partner Status Update",
           getPartnerRevokedEmailTemplate(username)
         ).catch(e => console.error("Failed to send partner revoke email", e));
       }
@@ -556,7 +556,7 @@ export async function upgradeToPartnerAction(
     if (userData.email) {
       await sendTacticalEmail(
         userData.email,
-        "Tactical Partner Clearance Granted",
+        "Partner Account Upgraded",
         getPartnerUpgradeEmailTemplate(username, displayDuration, referralCode)
       ).catch(e => console.error("Failed to send partner induction email", e));
     }
@@ -1172,7 +1172,7 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         const displayAmountUSD = (amountCoins / 100).toFixed(2);
         const amountStr = `$${displayAmountUSD} (${currency})`;
         const emailHtml = getExtractionEmailTemplate(wData.username, amountStr, wData.bankName || "Digital Extraction");
-        sendTacticalEmail(wData.email, "EXTRACTION COMPLETE: Funds Dispatched", emailHtml).catch(e => {
+        sendTacticalEmail(wData.email, "Withdrawal Processed", emailHtml).catch(e => {
           console.error("Failed to send extraction email:", e);
         });
       }

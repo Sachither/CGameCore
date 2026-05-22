@@ -590,7 +590,7 @@ export async function createPartnerTournamentAction(
 export async function sendWelcomeEmailAction(email: string, username: string) {
   try {
     const html = getWelcomeEmailTemplate(username);
-    const res = await sendTacticalEmail(email, "OPERATIVE ENLISTED: Welcome to the Arena", html);
+    const res = await sendTacticalEmail(email, "Welcome to CGame", html);
     return res;
   } catch (error: any) {
     console.error("[UserAction] sendWelcomeEmail error:", error);

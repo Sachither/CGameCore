@@ -9,13 +9,14 @@ import { db } from '@/lib/firebase';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 
 export default function PromoTournamentCard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [promos, setPromos] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [rate, setRate] = useState(1500);
   const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
   const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null);
+  const [pendingInGameName, setPendingInGameName] = useState("");
 
   const fetchInitialData = async () => {
     try {
@@ -64,7 +65,11 @@ export default function PromoTournamentCard() {
     setMessage(null);
     try {
       const idToken = await user.getIdToken();
-      const res = await joinPromoEventAction(idToken, promo.id);
+      const tagField = promo.game === 'CODM' ? 'codTag' : 'efootballTag';
+      const hasInGameName = Boolean(profile?.[tagField as keyof typeof profile]);
+      const finalTag = hasInGameName ? undefined : pendingInGameName;
+
+      const res = await joinPromoEventAction(idToken, promo.id, finalTag);
       if (res.success) {
         setMessage({ text: "YOU ARE IN! Awaiting combat deployment once slots are filled.", type: 'success' });
         // The real-time listener will update the counts automatically
@@ -83,6 +88,11 @@ export default function PromoTournamentCard() {
   const promo = promos[currentIndex];
   const isJoined = promo.participants?.includes(user?.uid);
   const progress = (promo.participants?.length / promo.participantLimit) * 100;
+  
+  const tagField = promo.game === 'CODM' ? 'codTag' : 'efootballTag';
+  const hasInGameName = Boolean(profile?.[tagField as keyof typeof profile]);
+  const needsTag = !isJoined && !hasInGameName;
+  const isJoinDisabled = joining || promo.participants?.length >= promo.participantLimit || (needsTag && pendingInGameName.trim().length < 2);
 
   return (
     <div className="w-full mb-10 relative">
@@ -127,7 +137,7 @@ export default function PromoTournamentCard() {
                 )}
              </div>
 
-             <h2 className="text-4xl md:text-6xl font-black text-white italic uppercase tracking-tighter mb-4 leading-none">
+             <h2 className="text-4xl md:text-6xl font-black text-white italic uppercase tracking-tighter mb-2 leading-none">
                 {promo.customTitle ? (
                   <>
                     {promo.customTitle.split(' ')[0]} <span className="text-accent-aware">{promo.customTitle.substring(promo.customTitle.indexOf(' ') + 1)}</span>
@@ -138,6 +148,14 @@ export default function PromoTournamentCard() {
                   </>
                 )}
              </h2>
+             
+             {promo.scheduledStartTime && (
+                <div className="inline-flex bg-yellow-500/10 border border-yellow-500/20 px-4 py-1.5 rounded-sm gap-2 items-center mb-4">
+                   <span className="text-xs font-black text-yellow-500 uppercase tracking-widest">
+                     SCHEDULED TO START: {new Date(promo.scheduledStartTime).toLocaleString()}
+                   </span>
+                </div>
+             )}
              
              <p className="max-w-xl text-[11px] md:text-xs text-gray-400 font-bold uppercase tracking-widest leading-relaxed mb-8">
                 Join the ultimate {promo.game} tournament {promo.entryFeeCoins > 0 ? `for just ${promo.entryFeeCoins} Coins` : <span className="text-white underline italic">for FREE</span>}. 
@@ -216,13 +234,28 @@ export default function PromoTournamentCard() {
                 )}
 
                 {!isJoined ? (
-                  <button 
-                    disabled={joining || promo.participants?.length >= promo.participantLimit}
-                    onClick={handleJoin}
-                    className="w-full bg-accent hover:bg-accent-aware text-black py-5 rounded-sm text-sm font-black uppercase tracking-widest italic flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-[0_0_20px_rgba(0,255,102,0.2)] disabled:opacity-50 disabled:grayscale"
-                  >
-                    {joining ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trophy className="w-5 h-5" /> Confirm Entry</>}
-                  </button>
+                  <div className="flex flex-col gap-3">
+                    {needsTag && (
+                      <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                        <label className="text-[10px] text-accent font-black uppercase tracking-widest mb-1 block">Enter your {promo.game} In-Game Name</label>
+                        <input 
+                          type="text"
+                          value={pendingInGameName}
+                          onChange={(e) => setPendingInGameName(e.target.value)}
+                          placeholder="e.g. Ghost#1234"
+                          className="w-full bg-black border border-white/20 p-3 rounded-sm text-sm text-white focus:border-accent focus:outline-none placeholder:text-gray-600 transition-colors"
+                        />
+                        <p className="text-[9px] text-gray-500 font-bold uppercase tracking-widest mt-1 italic">Required so opponents can add you.</p>
+                      </div>
+                    )}
+                    <button 
+                      disabled={isJoinDisabled}
+                      onClick={handleJoin}
+                      className="w-full bg-accent hover:bg-accent-aware text-black py-5 rounded-sm text-sm font-black uppercase tracking-widest italic flex items-center justify-center gap-3 transition-all transform active:scale-95 shadow-[0_0_20px_rgba(0,255,102,0.2)] disabled:opacity-50 disabled:grayscale"
+                    >
+                      {joining ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Trophy className="w-5 h-5" /> Confirm Entry</>}
+                    </button>
+                  </div>
                 ) : (
                   <div className="w-full bg-white/5 border border-white/10 text-gray-400 py-5 rounded-sm text-sm font-black uppercase tracking-widest italic flex items-center justify-center gap-3">
                     <ShieldCheck className="w-5 h-5" /> Enlisted

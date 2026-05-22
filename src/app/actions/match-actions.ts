@@ -3,7 +3,7 @@
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { Match, MatchPlayer, Circuit, CircuitTie } from "@/lib/match-schema";
-import { getSummonEmailTemplate, getMatchStartEmailTemplate, getPingEmailTemplate } from "@/lib/mail-templates";
+import { getSummonEmailTemplate, getMatchStartEmailTemplate, getPingEmailTemplate, getAdminDisputeAlertEmailTemplate } from "@/lib/mail-templates";
 import { sendTacticalEmail } from "@/lib/mail";
 import { getVerifiedUid, getVerifiedIdentity, getVerifiedAdminUid } from "@/lib/server-utils";
 import { sanitize } from "@/lib/validation-utils";
@@ -78,12 +78,21 @@ export async function dispatchMatchResolutionNotifications(matchId: string, stat
 
         for (const pid of Object.keys(closedData.players)) {
            if (pid === finalChampion) {
-              await createNotificationInternal(
-                 pid,
-                 "🏆 Victory Confirmed",
-                 `HQ Verified: You won the ${gameLabel} match! ${reward > 0 ? `${reward} CR credited.` : 'Tournament advancement confirmed.'}`,
-                 "MATCH"
-              );
+              let title = "🏆 Victory Confirmed";
+              let body = `HQ Verified: You won the ${gameLabel} match! `;
+              
+              const isFinal = closedData.round === 'FINAL';
+              const isPromoOrCircuit = !!closedData.circuitId || !!closedData.isPromo;
+
+              if (isFinal && isPromoOrCircuit) {
+                 const finalReward = ((closedData as any).prizeUSD || 0) * 100;
+                 title = "🏆 TOURNAMENT CHAMPION";
+                 body = `HQ Verified: You are the OVERALL WINNER of the ${gameLabel} Tournament! ${finalReward > 0 ? `${finalReward} CR credited.` : 'Glory secured.'}`;
+              } else {
+                 body += reward > 0 ? `${reward} CR credited.` : 'Tournament advancement confirmed.';
+              }
+
+              await createNotificationInternal(pid, title, body, "MATCH");
            } else {
               await createNotificationInternal(
                  pid,
@@ -641,7 +650,7 @@ export async function joinMatchAction(
 
                  const html = getMatchStartEmailTemplate("Operative", matchId, matchData.game);
                  await Promise.all(emails.map(email => 
-                    sendTacticalEmail(email, `DEPLOYMENT IMMINENT: ${matchData.game} Match Ready`, html)
+                    sendTacticalEmail(email, `Your Match is Ready`, html)
                  ));
               } catch (e) {
                  console.error("[MatchAction] Global notification failure:", e);
@@ -1686,7 +1695,7 @@ export async function pingOpponentAction(idToken: string, matchId: string) {
 
     if (result.success && result.opponentEmail) {
        const html = getPingEmailTemplate(result.opponentUsername, profile.username, matchId);
-       sendTacticalEmail(result.opponentEmail, `TACTICAL ALERT: ${profile.username} is waiting`, html).catch(e => console.error("Ping Email Error:", e));
+       sendTacticalEmail(result.opponentEmail, `Your opponent is waiting`, html).catch(e => console.error("Ping Email Error:", e));
     }
 
     return result;
@@ -1731,6 +1740,12 @@ export async function setMatchDisputedAction(idToken: string, matchId: string, r
 
       return { success: true };
     });
+
+    // Send alert to admin support email
+    if (result.success) {
+      const emailHtml = getAdminDisputeAlertEmailTemplate(matchId, reason, uid);
+      sendTacticalEmail("support@cgamecore.online", `ACTION REQUIRED: Match Dispute #${matchId.slice(-6)}`, emailHtml).catch(e => console.error("Dispute Email Error:", e));
+    }
 
     return result;
   } catch (error: any) {
@@ -1786,7 +1801,7 @@ export async function summonPartnerAction(idToken: string, matchId: string) {
     // 4. Dispatch Critical Email Alert
     if (partnerData?.email) {
       const emailHtml = getSummonEmailTemplate(partnerData.username, matchId);
-      await sendTacticalEmail(partnerData.email, "CRITICAL ALERT: Command Center Summons", emailHtml);
+      await sendTacticalEmail(partnerData.email, "Review Required: Match Dispute", emailHtml);
     }
 
     return { success: true };

@@ -24,6 +24,7 @@ export interface PromoEvent {
   entryFeeCoins?: number; // New: Optional entry fee
   zeroBalanceEntry?: boolean; // New: Allows entry with < 100 coins
   customTitle?: string; // New: Custom card title
+  scheduledStartTime?: string; // New: ISO string for when the promo is scheduled to start
 }
 
 /**
@@ -37,7 +38,8 @@ export async function createPromoEventAction(
   prizeNGN: number,
   entryFeeCoins: number = 0,
   zeroBalanceEntry: boolean = false,
-  customTitle: string = ""
+  customTitle: string = "",
+  scheduledStartTime: string = ""
 ) {
   const adminUid = await getVerifiedAdminUid(idToken, true);
   
@@ -55,6 +57,7 @@ export async function createPromoEventAction(
     entryFeeCoins,
     zeroBalanceEntry,
     customTitle: finalTitle,
+    scheduledStartTime,
     status: 'OPEN',
     participants: [],
     participantData: {},
@@ -80,7 +83,7 @@ export async function createPromoEventAction(
 /**
  * USER ACTION: Join an active Promo Event
  */
-export async function joinPromoEventAction(idToken: string, promoId: string) {
+export async function joinPromoEventAction(idToken: string, promoId: string, inGameName?: string) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
   const promoRef = adminDb.collection("promo_events").doc(promoId);
   const userRef = adminDb.collection("users").doc(uid);
@@ -126,8 +129,17 @@ export async function joinPromoEventAction(idToken: string, promoId: string) {
       }
 
       // 3. Update Promo & User Balance
+      const tagField = promo.game === 'CODM' ? 'codTag' : 'efootballTag';
+      const finalInGameName = inGameName || user[tagField] || "Unknown";
+
+      // If they provided a new tag, save it permanently
+      if (inGameName && user[tagField] !== inGameName) {
+         transaction.update(userRef, { [tagField]: inGameName });
+      }
+
       const participantInfo = {
         username: profile.username || "Unknown",
+        inGameName: finalInGameName,
         avatarId: profile.avatarId || 1,
         joinedAt: new Date().toISOString()
       };
@@ -157,12 +169,14 @@ export async function joinPromoEventAction(idToken: string, promoId: string) {
       return { 
         full: (promo.participants.length + 1) >= promo.participantLimit,
         game: promo.game,
-        limit: promo.participantLimit
+        limit: promo.participantLimit,
+        scheduledStartTime: promo.scheduledStartTime
       };
     });
 
     // 4. Automation Signal (The Spurn)
-    if (result.full) {
+    // If it's a scheduled tournament, NEVER auto-spurn, even if full.
+    if (result.full && !result.scheduledStartTime) {
       // Trigger internal engine to spawn the matches
       await spurnPromoTournamentInternal(promoId);
     }
@@ -296,3 +310,46 @@ export async function deletePromoEventAction(idToken: string, promoId: string, s
     return { success: false, error: error.message };
   }
 }
+
+/**
+ * ADMIN ACTION: Manually force start a Promo Tournament (Spurn)
+ */
+export async function adminForceStartPromoAction(idToken: string, promoId: string) {
+  const adminUid = await getVerifiedAdminUid(idToken, true);
+  
+  try {
+    const promoRef = adminDb.collection("promo_events").doc(promoId);
+    const promoSnap = await promoRef.get();
+    
+    if (!promoSnap.exists) {
+       return { success: false, error: "Promo not found." };
+    }
+    
+    const promo = promoSnap.data() as PromoEvent;
+    
+    if (promo.status !== 'OPEN') {
+       return { success: false, error: "Promo is already active or closed." };
+    }
+    
+    if (!promo.participants || promo.participants.length < 2) {
+       return { success: false, error: "Cannot start a tournament with fewer than 2 participants." };
+    }
+    
+    await spurnPromoTournamentInternal(promoId);
+    
+    // Audit Log
+    await adminDb.collection("admin_audit_log").doc().set({
+      action: "FORCE_START_PROMO",
+      adminUid,
+      promoId,
+      participantCount: promo.participants.length,
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[PromoAction] Force Start Error:", error);
+    return { success: false, error: error.message };
+  }
+}
+

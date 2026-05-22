@@ -46,6 +46,32 @@ export async function resolveTechnicalWin(
       }
    }
 
+   // [FIX] Calculate victory reward for 1v1 matches
+   let victoryReward = 0;
+   if (!matchData.circuitId) {
+      const { getSystemConfig } = await import("@/lib/system-config-server");
+      const config = await getSystemConfig();
+      const actualPlayers = matchData.playerIds?.length || 2;
+      const totalStake = matchData.challengeFee * actualPlayers;
+      const platformRake = Math.floor(totalStake * config.matchFeePercentage);
+      victoryReward = totalStake - platformRake;
+
+      // Payout 1v1 Winner immediately
+      transaction.update(adminDb.collection("users").doc(winnerUid), { 
+         balanceCoins: admin.firestore.FieldValue.increment(victoryReward) 
+      });
+      transaction.set(adminDb.collection("transactions").doc(), {
+         uid: winnerUid, 
+         type: "CREDIT", 
+         category: "MATCH_PRIZE",
+         description: `TECHNICAL WIN: ${matchData.game} ${matchData.format}`,
+         amount: victoryReward, 
+         status: "COMPLETED",
+         matchId: matchRef.id,
+         createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+   }
+
    // 1. Close Match — track ghost opponent score safely
    const matchUpdate: any = {
       status: 'CLOSED',
@@ -54,7 +80,7 @@ export async function resolveTechnicalWin(
       resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
       disputeReason: isGhostOpponent ? 'GHOST_OPPONENT_AUTO_WIN' : 'OPPONENT_NO_SHOW',
       [`players.${winnerUid}.scoreFor`]: 2,
-      rewardAmount: matchData.prizeUSD || 0,
+      rewardAmount: victoryReward,
       isPromo: !!matchData.isPromo,
    };
    if (opponentId && !isGhostOpponent) {

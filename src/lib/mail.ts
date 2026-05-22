@@ -17,6 +17,11 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
       return { success: false, error: "API Key Missing" };
     }
 
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`[MailSystem] DEV MODE: Skipped sending actual email to ${to}. Subject: ${subject}`);
+      return { success: true, testMode: true };
+    }
+
     // 1. Check Daily Limit in Firestore
     const today = new Date().toISOString().split('T')[0];
     const statsRef = adminDb.collection("stats").doc("mail_usage");
