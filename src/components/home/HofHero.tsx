@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
@@ -11,8 +11,6 @@ import { Trophy, Play, Swords, ArrowRight, Zap } from 'lucide-react';
 export default function HofHero() {
   const [winner, setWinner] = useState<HofEntry | null>(null);
   const [contenders, setContenders] = useState<HofEntry[]>([]);
-  const updateTimer = useRef<NodeJS.Timeout | null>(null);
-  const pendingUpdate = useRef<{ winner?: HofEntry | null, contenders?: HofEntry[] }>({});
   const weekKey = getHofWeekKey();
 
   useEffect(() => {
@@ -26,19 +24,8 @@ export default function HofHero() {
 
     const unsubWinner = onSnapshot(qWinner, (snap) => {
       if (!snap.empty) {
-        pendingUpdate.current.winner = { id: snap.docs[0].id, ...snap.docs[0].data() } as HofEntry;
-      } else {
-        pendingUpdate.current.winner = null;
+        setWinner({ id: snap.docs[0].id, ...snap.docs[0].data() } as HofEntry);
       }
-
-      // Debounce updates (500ms throttle)
-      if (updateTimer.current) clearTimeout(updateTimer.current);
-      updateTimer.current = setTimeout(() => {
-        if (pendingUpdate.current.winner !== undefined) {
-          setWinner(pendingUpdate.current.winner);
-        }
-        updateTimer.current = null;
-      }, 500);
     });
 
     // 2. Fetch top contenders for the current week
@@ -51,23 +38,12 @@ export default function HofHero() {
     );
 
     const unsubContenders = onSnapshot(qContenders, (snap) => {
-      const newContenders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
-      pendingUpdate.current.contenders = newContenders;
-
-      // Debounce updates (500ms throttle)
-      if (updateTimer.current) clearTimeout(updateTimer.current);
-      updateTimer.current = setTimeout(() => {
-        if (pendingUpdate.current.contenders) {
-          setContenders(pendingUpdate.current.contenders);
-        }
-        updateTimer.current = null;
-      }, 500);
+      setContenders(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
     });
 
     return () => {
       unsubWinner();
       unsubContenders();
-      if (updateTimer.current) clearTimeout(updateTimer.current);
     };
   }, [weekKey]);
 

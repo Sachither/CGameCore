@@ -26,8 +26,6 @@ export default function HofPublicFeed() {
   
   const clickTimer = useRef<NodeJS.Timeout | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
-  const updateTimer = useRef<NodeJS.Timeout | null>(null);
-  const pendingUpdate = useRef<{ entries?: HofEntry[], winners?: HofEntry[] }>({});
   
   const weekKey = getHofWeekKey();
   const lastWeekKey = getPrevWeekKey();
@@ -46,38 +44,17 @@ export default function HofPublicFeed() {
     );
 
     const unsubActive = onSnapshot(q, (snap) => {
-      const newEntries = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
-      pendingUpdate.current.entries = newEntries;
+      setEntries(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
       setLoading(false);
-
-      // Debounce updates to prevent constant re-renders (500ms throttle)
-      if (updateTimer.current) clearTimeout(updateTimer.current);
-      updateTimer.current = setTimeout(() => {
-        if (pendingUpdate.current.entries) {
-          setEntries(pendingUpdate.current.entries);
-        }
-        updateTimer.current = null;
-      }, 500);
     });
 
     const unsubWinners = onSnapshot(winnersQ, (snap) => {
-      const newWinners = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
-      pendingUpdate.current.winners = newWinners;
-
-      // Debounce updates (500ms throttle)
-      if (updateTimer.current) clearTimeout(updateTimer.current);
-      updateTimer.current = setTimeout(() => {
-        if (pendingUpdate.current.winners) {
-          setWinners(pendingUpdate.current.winners);
-        }
-        updateTimer.current = null;
-      }, 500);
+      setWinners(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
     });
 
     return () => {
       unsubActive();
       unsubWinners();
-      if (updateTimer.current) clearTimeout(updateTimer.current);
     };
   }, [weekKey, lastWeekKey]);
 

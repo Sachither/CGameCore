@@ -28,8 +28,6 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
   
   const clickTimer = useRef<NodeJS.Timeout | null>(null);
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
-  const updateTimer = useRef<NodeJS.Timeout | null>(null);
-  const pendingUpdate = useRef<{ entries?: HofEntry[], winners?: HofEntry[] }>({});
   
   const phase = getHofPhase();
   const weekKey = getHofWeekKey();
@@ -58,18 +56,8 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
     );
 
     const unsubActive = onSnapshot(activeQuery, (snap) => {
-      const newEntries = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
-      pendingUpdate.current.entries = newEntries;
+      setEntries(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
       setLoading(false);
-
-      // Debounce updates to prevent constant re-renders (500ms throttle)
-      if (updateTimer.current) clearTimeout(updateTimer.current);
-      updateTimer.current = setTimeout(() => {
-        if (pendingUpdate.current.entries) {
-          setEntries(pendingUpdate.current.entries);
-        }
-        updateTimer.current = null;
-      }, 500);
     });
 
     let unsubWinners = () => {};
@@ -79,17 +67,7 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
         where("status", "==", "WINNER")
       );
       unsubWinners = onSnapshot(winnersQ, (snap) => {
-        const newWinners = snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry));
-        pendingUpdate.current.winners = newWinners;
-
-        // Debounce updates (500ms throttle)
-        if (updateTimer.current) clearTimeout(updateTimer.current);
-        updateTimer.current = setTimeout(() => {
-          if (pendingUpdate.current.winners) {
-            setWinners(pendingUpdate.current.winners);
-          }
-          updateTimer.current = null;
-        }, 500);
+        setWinners(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as HofEntry)));
       });
     } else {
       setWinners([]);
@@ -98,7 +76,6 @@ export default function HofVotingGrid({ userRestricted = false }: HofVotingGridP
     return () => {
       unsubActive();
       unsubWinners();
-      if (updateTimer.current) clearTimeout(updateTimer.current);
     };
   }, [weekKey, userRestricted, user]);
 
