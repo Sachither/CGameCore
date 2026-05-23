@@ -3,6 +3,16 @@ import { adminDb } from './firebase-admin';
 import admin from 'firebase-admin';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+const DEFAULT_MAIL_FROM = 'CGame Intelligence <command@mail.cgamecore.online>';
+const DEFAULT_REPLY_TO = 'support@cgamecore.online';
+const DEFAULT_MAIL_HEADERS = {
+  'List-Unsubscribe': '<https://cgamecore.online/unsubscribe>',
+};
+
+function isValidEmailAddress(email: string) {
+  return typeof email === 'string' &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
 
 /**
  * CORE COMMAND: Send Tactical Email
@@ -36,15 +46,21 @@ export async function sendTacticalEmail(to: string, subject: string, html: strin
 
     console.log(`[MailSystem] Attempting to send tactical email to ${to}...`);
 
+    const recipient = String(to || '').trim();
+    if (!isValidEmailAddress(recipient)) {
+      console.error(`[MailSystem] Invalid recipient email: ${to}`);
+      return { success: false, error: 'Invalid recipient email' };
+    }
+
     // 2. Dispatch Email
     const { data, error } = await resend.emails.send({
-      from: 'CGame Intelligence <command@cgamecore.online>',
-      to: [to],
-      replyTo: 'support@cgamecore.online',
+      from: DEFAULT_MAIL_FROM,
+      to: [recipient],
+      replyTo: DEFAULT_REPLY_TO,
       subject: subject,
       html: html,
       headers: {
-        'List-Unsubscribe': '<https://cgamecore.online/unsubscribe>',
+        ...DEFAULT_MAIL_HEADERS,
         'X-Entity-Ref-ID': Math.random().toString(36).substring(2, 12)
       },
       tags: [
