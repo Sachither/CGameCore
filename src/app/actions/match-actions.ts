@@ -1329,7 +1329,7 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
          if (readyPlayers.length === 1) {
             // Start 30-minute extraction timer for the non-ready player
             if (!matchData.readyDeadline) {
-               updates.readyDeadline = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+               updates.readyDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
             }
          } else {
             // Both unready - clear deadline
