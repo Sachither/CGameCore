@@ -59,7 +59,7 @@ export async function spurnPromoTournamentInternal(promoId: string) {
         }
         const matchCount = Math.floor(matchupPlayers.length / 2);
         
-        const expiresAt = new Date(Date.now() + 120 * 60 * 1000); 
+        const expiresAt = new Date(Date.now() + 4 * 3600 * 1000); 
 
         for (let i = 0; i < matchCount; i++) {
           const p1Uid = matchupPlayers[i * 2];
@@ -306,7 +306,7 @@ async function spawnNextPromoRound(
   
   const nextMatchCount = Math.floor(matchupPlayers.length / 2);
   
-  const expiresAt = new Date(Date.now() + 120 * 60 * 1000); // Standard 2 Hour Window
+  const expiresAt = new Date(Date.now() + 4 * 3600 * 1000); // Standard 4 Hour Window
 
   for (let i = 0; i < nextMatchCount; i++) {
     const p1Uid = matchupPlayers[i * 2];

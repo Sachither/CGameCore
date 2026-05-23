@@ -182,7 +182,7 @@ export async function handleLeagueAdvancement(
       const currentRound = (circuit as any).currentRound || 1;
       const nextRound = currentRound + 1;
       const nextRoundMatchIds = (circuit as any).roundSchedule?.[nextRound] || [];
-      const nextExpiry = new Date(Date.now() + 2 * 3600 * 1000); 
+      const nextExpiry = new Date(Date.now() + 4 * 3600 * 1000); 
       for (const mid of nextRoundMatchIds) {
          transaction.update(adminDb.collection("matches").doc(mid), { 
             status: 'WAITING',
@@ -252,7 +252,7 @@ async function spawnQuarterFinals(
       pairs.push([shuffled[i], shuffled[i + 1]]);
    }
 
-   const expiresAt = new Date(Date.now() + 3 * 3600 * 1000); // 3 hours
+   const expiresAt = new Date(Date.now() + 4 * 3600 * 1000); // 4 hours
 
    for (const [p1, p2] of pairs) {
       const mRef = adminDb.collection("matches").doc();
@@ -270,12 +270,12 @@ async function spawnQuarterFinals(
       });
 
       // Notify both players
-      pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'QF', '3 Hours');
-      pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'QF', '3 Hours');
+      pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'QF', '4 Hours');
+      pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'QF', '4 Hours');
    }
 
    transaction.update(circuitRef, { status: 'KNOCKOUT_Q' });
-   await pushGlobalCommand(transaction, circuitRef.id, `QUARTER FINALS BEGIN! 4 RANDOM MATCHES SEEDED — 3 HOUR DEADLINE.`);
+   await pushGlobalCommand(transaction, circuitRef.id, `QUARTER FINALS BEGIN! 4 RANDOM MATCHES SEEDED — 4 HOUR DEADLINE.`);
 }
 
 /**
@@ -307,7 +307,7 @@ async function spawnSemiFinals(
       pairs.push([matchupPlayers[i], matchupPlayers[i + 1]]);
    }
 
-   const expiresAt = new Date(Date.now() + 3 * 3600 * 1000); // 3 hours
+   const expiresAt = new Date(Date.now() + 4 * 3600 * 1000); // 4 hours
 
    for (const [p1, p2] of pairs) {
       const mRef = adminDb.collection("matches").doc();
@@ -325,8 +325,8 @@ async function spawnSemiFinals(
       });
 
       // Notify both players
-      pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'SF', '3 Hours');
-      pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'SF', '3 Hours');
+         pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'SF', '4 Hours');
+         pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'SF', '4 Hours');
    }
 
    // Store bye player for finals
@@ -339,7 +339,7 @@ async function spawnSemiFinals(
       transaction.update(circuitRef, { status: 'KNOCKOUT_S' });
    }
    
-   await pushGlobalCommand(transaction, circuitRef.id, `SEMI FINALS BEGIN!${byePlayer ? ` ${circuit.players[byePlayer]?.username?.toUpperCase()} ADVANCES WITH BYE.` : ''} ${pairs.length} MATCHES SEEDED — 3 HOUR DEADLINE.`);
+   await pushGlobalCommand(transaction, circuitRef.id, `SEMI FINALS BEGIN!${byePlayer ? ` ${circuit.players[byePlayer]?.username?.toUpperCase()} ADVANCES WITH BYE.` : ''} ${pairs.length} MATCHES SEEDED — 4 HOUR DEADLINE.`);
 }
 
 /**
@@ -359,7 +359,7 @@ async function spawnFinal(
    if (finalPlayers.length < 2) return;
 
    const [p1, p2] = finalPlayers.slice(0, 2);
-   const expiresAt = new Date(Date.now() + 3 * 3600 * 1000); // 3 hours
+   const expiresAt = new Date(Date.now() + 4 * 3600 * 1000); // 4 hours
 
    const mRef = adminDb.collection("matches").doc();
    transaction.set(mRef, {
@@ -375,12 +375,12 @@ async function spawnFinal(
       createdAt: admin.firestore.FieldValue.serverTimestamp()
    });
    
-   pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'FINAL', '3 Hours');
-   pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'FINAL', '3 Hours');
+   pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'FINAL', '4 Hours');
+   pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'FINAL', '4 Hours');
 
    transaction.update(circuitRef, { status: 'KNOCKOUT_F' });
    const byeNotice = (byePlayer && p2 === byePlayer) ? ' (BYE ADVANCE)' : '';
-   await pushGlobalCommand(transaction, circuitRef.id, `GRAND FINAL! ${circuit.players[p1]?.username?.toUpperCase()} vs ${circuit.players[p2]?.username?.toUpperCase()}${byeNotice} — 3 HOUR DEADLINE.`);
+   await pushGlobalCommand(transaction, circuitRef.id, `GRAND FINAL! ${circuit.players[p1]?.username?.toUpperCase()} vs ${circuit.players[p2]?.username?.toUpperCase()}${byeNotice} — 4 HOUR DEADLINE.`);
 }
 
 

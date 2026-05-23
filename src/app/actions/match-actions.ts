@@ -471,7 +471,7 @@ export async function createMatchAction(
         duration: duration || 'NONE',
         roomName: roomName || null,
         roomPassword: roomPassword || null,
-        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 3 * 3600 * 1000)),
+        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 4 * 3600 * 1000)),
         isRanked: challengeFee > 0,
         isProtected: !!roomPassword,
         isPartnerTournament: userData.role === 'PARTNER',
@@ -1329,7 +1329,7 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
          if (readyPlayers.length === 1) {
             // Start 30-minute extraction timer for the non-ready player
             if (!matchData.readyDeadline) {
-               updates.readyDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+               updates.readyDeadline = new Date(Date.now() + 90 * 60 * 1000).toISOString();
             }
          } else {
             // Both unready - clear deadline
