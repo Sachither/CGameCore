@@ -28,6 +28,10 @@ function normalizeRole(value: any): string {
   return String(value).toUpperCase();
 }
 
+const legacyRoleCache = new Map<string, { expiresAt: number; context: VerifiedAdminContext }>();
+const identityCache = new Map<string, { expiresAt: number; profile: any }>();
+const CACHE_TTL_MS = 30 * 1000; // 30 seconds of local caching per server instance
+
 async function getRoleFromToken(idToken: string): Promise<VerifiedAdminContext> {
   const decodedToken = await adminAuth.verifyIdToken(idToken);
   const roleClaim = normalizeRole(decodedToken.role);
@@ -46,6 +50,12 @@ async function getRoleFromToken(idToken: string): Promise<VerifiedAdminContext> 
 }
 
 async function getLegacyRoleFromProfile(uid: string): Promise<VerifiedAdminContext> {
+  const now = Date.now();
+  const cached = legacyRoleCache.get(uid);
+  if (cached && cached.expiresAt > now) {
+    return cached.context;
+  }
+
   const userSnap = await adminDb.collection("users").doc(uid).get();
   if (!userSnap.exists) {
     throw new Error("NOT_FOUND: User profile does not exist.");
@@ -55,7 +65,7 @@ async function getLegacyRoleFromProfile(uid: string): Promise<VerifiedAdminConte
   const role = normalizeRole(data.role || (data.isAdmin ? "ADMIN" : "USER"));
   const isSuperAdminBoolean = data.isSuperAdmin === true;
 
-  return {
+  const context = {
     uid,
     role: isSuperAdminBoolean ? "SUPER_ADMIN" : role,
     isAdmin: role === "ADMIN" || role === "SUPER_ADMIN" || isSuperAdminBoolean,
@@ -63,6 +73,9 @@ async function getLegacyRoleFromProfile(uid: string): Promise<VerifiedAdminConte
     isSuperAdmin: role === "SUPER_ADMIN" || isSuperAdminBoolean,
     source: "legacy"
   };
+
+  legacyRoleCache.set(uid, { expiresAt: now + CACHE_TTL_MS, context });
+  return context;
 }
 
 /**
@@ -71,15 +84,25 @@ async function getLegacyRoleFromProfile(uid: string): Promise<VerifiedAdminConte
  */
 export async function getVerifiedIdentity(idToken?: string) {
   const uid = await getVerifiedUid(idToken);
+  const now = Date.now();
+  const cached = identityCache.get(uid);
+
+  if (cached && cached.expiresAt > now) {
+    return { uid, profile: cached.profile };
+  }
+
   const userSnap = await adminDb.collection("users").doc(uid).get();
   
   if (!userSnap.exists) {
     throw new Error("NOT_FOUND: User profile does not exist.");
   }
 
+  const profile = userSnap.data()!;
+  identityCache.set(uid, { expiresAt: now + CACHE_TTL_MS, profile });
+
   return {
     uid,
-    profile: userSnap.data()!
+    profile
   };
 }
 

@@ -12,7 +12,8 @@ import { createNotificationInternal } from "@/lib/notifications";
 import { 
    handleKnockoutAdvancement,
    handleLeagueAdvancement,
-   distributeCircuitPrizes
+   distributeCircuitPrizes,
+   pushMatchNotification
 } from "@/lib/match-engine/progression";
 import { 
    initializeCircuit 
@@ -1330,6 +1331,19 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
             // Start 30-minute extraction timer for the non-ready player
             if (!matchData.readyDeadline) {
                updates.readyDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+               const nonReadyPlayer = playersList.find(p => !p.ready);
+               const readyPlayer = playersList.find(p => p.ready);
+               if (nonReadyPlayer && readyPlayer) {
+                  pushMatchNotification(
+                     transaction,
+                     nonReadyPlayer.uid,
+                     readyPlayer.uid,
+                     readyPlayer.username || 'Opponent',
+                     matchId,
+                     'Readiness Alert',
+                     '30 Minutes'
+                  );
+               }
             }
          } else {
             // Both unready - clear deadline

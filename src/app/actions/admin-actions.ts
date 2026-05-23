@@ -17,6 +17,30 @@ import { createNotificationInternal } from "@/lib/notifications";
 import { isCryptoWithdrawalNetwork } from "@/lib/withdrawal-fees";
 import { verifyAdminSecurityPin, setAdminSecurityPin } from "@/lib/admin-security";
 
+let platformStatsCache: {
+  expiresAt: number;
+  stats: {
+    totalUsers: number;
+    totalMatches: number;
+    openDisputes: number;
+    activeMatches: number;
+    codmMatches: number;
+    efootballMatches: number;
+    financeDeposits: number;
+    financePayouts: number;
+    financeRevenue: number;
+    financeWithdrawals: number;
+    format1v1: number;
+    format5v5: number;
+    formatBR: number;
+    formatFFA: number;
+    formatTourney: number;
+    formatLeague: number;
+    awaitingPayouts: number;
+    pendingPartners: number;
+  };
+} | null = null;
+
 // 🔒 [SECURITY] M-007 FIX: Test mode watermark - fail-safe check
 // Production deployments MUST have NODE_ENV = 'production'
 // We also double-check the server-side environment for the domain.
@@ -955,6 +979,12 @@ export async function getPlatformStatsAction(idToken: string): Promise<{ success
       stats: null
     };
   }
+
+  const now = Date.now();
+  if (platformStatsCache && platformStatsCache.expiresAt > now) {
+    return { success: true, stats: platformStatsCache.stats };
+  }
+
   try {
     const [
       usersSnap, matchesSnap, disputedSnap, activeSnap, codmSnap, efootballSnap, financesSnap,
@@ -981,28 +1011,32 @@ export async function getPlatformStatsAction(idToken: string): Promise<{ success
       totalDeposits: 0, totalPayouts: 0, totalPlatformCut: 0, totalWithdrawals: 0 
     };
 
+    const stats = {
+      totalUsers: usersSnap.data().count,
+      totalMatches: matchesSnap.data().count,
+      openDisputes: disputedSnap.data().count,
+      activeMatches: activeSnap.data().count,
+      codmMatches: codmSnap.data().count,
+      efootballMatches: efootballSnap.data().count,
+      financeDeposits: finances?.totalDeposits || 0,
+      financePayouts: finances?.totalPayouts || 0,
+      financeRevenue: finances?.totalPlatformCut || 0,
+      financeWithdrawals: finances?.totalWithdrawals || 0,
+      format1v1: v1Snap.data().count,
+      format5v5: v5Snap.data().count,
+      formatBR: brSnap.data().count,
+      formatFFA: ffaSnap.data().count,
+      formatTourney: tourneySnap.data().count,
+      formatLeague: leagueSnap.data().count,
+      awaitingPayouts: resolvingSnap.data().count,
+      pendingPartners: partnerAppSnap.data().count,
+    };
+
+    platformStatsCache = { expiresAt: now + 30 * 1000, stats };
+
     return {
       success: true,
-      stats: {
-        totalUsers: usersSnap.data().count,
-        totalMatches: matchesSnap.data().count,
-        openDisputes: disputedSnap.data().count,
-        activeMatches: activeSnap.data().count,
-        codmMatches: codmSnap.data().count,
-        efootballMatches: efootballSnap.data().count,
-        financeDeposits: finances?.totalDeposits || 0,
-        financePayouts: finances?.totalPayouts || 0,
-        financeRevenue: finances?.totalPlatformCut || 0,
-        financeWithdrawals: finances?.totalWithdrawals || 0,
-        format1v1: v1Snap.data().count,
-        format5v5: v5Snap.data().count,
-        formatBR: brSnap.data().count,
-        formatFFA: ffaSnap.data().count,
-        formatTourney: tourneySnap.data().count,
-        formatLeague: leagueSnap.data().count,
-        awaitingPayouts: resolvingSnap.data().count,
-        pendingPartners: partnerAppSnap.data().count,
-      },
+      stats,
     };
   } catch (error: any) {
     return { success: false, error: error.message, stats: null };

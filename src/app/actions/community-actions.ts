@@ -26,15 +26,25 @@ export async function getCommunityMessagesAction(game: 'CODM' | 'EFOOTBALL' | 'G
     const userTiers: Record<string, number> = {};
 
     if (uniqueUserIds.length > 0) {
-      // Firestore getAll limit is 1000, so we are safe with 100 messages
-      const userRefs = uniqueUserIds.map(uid => adminDb.collection("users").doc(uid!));
-      const userSnaps = await adminDb.getAll(...userRefs);
-      
-      userSnaps.forEach(snap => {
-        if (snap.exists) {
-          userTiers[snap.id] = snap.data()?.totalWins || 0;
+      const MAX_TIER_LOOKUPS = 20; // keep Firestore pressure low during high traffic
+      const tierUserIds = uniqueUserIds.slice(0, MAX_TIER_LOOKUPS);
+
+      try {
+        const userRefs = tierUserIds.map(uid => adminDb.collection("users").doc(uid!));
+        const userSnaps = await adminDb.getAll(...userRefs);
+
+        userSnaps.forEach(snap => {
+          if (snap.exists) {
+            userTiers[snap.id] = snap.data()?.totalWins || 0;
+          }
+        });
+      } catch (fetchError: any) {
+        if (fetchError?.code === 8 || String(fetchError?.message).includes("Quota exceeded")) {
+          console.warn("[CommunityAction] Firestore quota exceeded while loading user tiers. Continuing without user tiers.", fetchError?.message);
+        } else {
+          throw fetchError;
         }
-      });
+      }
     }
 
     const messagesWithTiers = result.map(m => {
