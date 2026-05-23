@@ -178,7 +178,12 @@ export async function joinPromoEventAction(idToken: string, promoId: string, inG
     // If it's a scheduled tournament, NEVER auto-spurn, even if full.
     if (result.full && !result.scheduledStartTime) {
       // Trigger internal engine to spawn the matches
-      await spurnPromoTournamentInternal(promoId);
+      try {
+        await spurnPromoTournamentInternal(promoId);
+      } catch (startError: any) {
+        console.error(`[PromoAction] Tournament startup failed:`, startError);
+        throw startError;
+      }
     }
 
     return { success: true };

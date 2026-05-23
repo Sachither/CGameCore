@@ -198,6 +198,7 @@ export async function spurnPromoTournamentInternal(promoId: string) {
 
   } catch (error) {
     console.error(`[PromoEngine] Critical Spurn Failure for Promo ${promoId}:`, error);
+    throw new Error(`Tournament startup failed for promo ${promoId}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -311,14 +312,22 @@ async function spawnNextPromoRound(
     const p1Uid = matchupPlayers[i * 2];
     const p2Uid = matchupPlayers[i * 2 + 1];
     
+    // Validate player data exists (defensive check)
+    const p1Data = circuit.players?.[p1Uid] || (nextRoundName === 'FINAL' ? createGhostPlayer(p1Uid, 'alpha') : null);
+    const p2Data = circuit.players?.[p2Uid] || (nextRoundName === 'FINAL' ? createGhostPlayer(p2Uid, 'bravo') : null);
+    if (!p1Data || !p2Data) {
+      console.error(`[Promo] CRITICAL: Missing player data in ${nextRoundName}. p1: ${p1Uid} (${!!p1Data}), p2: ${p2Uid} (${!!p2Data})`);
+      throw new Error(`Player data missing in round ${nextRoundName}: cannot spawn match`);
+    }
+    
     const mRef = adminDb.collection("matches").doc();
     transaction.set(mRef, {
       game: circuit.game, format: 'tournament', challengeFee: 0, status: 'WAITING',
       circuitId: circuitRef.id, round: nextRoundName, playerIds: [p1Uid, p2Uid],
       expiresAt, hostUid: p1Uid, isPromo: true,
       players: {
-        [p1Uid]: { ...(circuit.players?.[p1Uid] || (nextRoundName === 'FINAL' ? createGhostPlayer(p1Uid, 'alpha') : null)), ready: false, team: 'alpha' },
-        [p2Uid]: { ...(circuit.players?.[p2Uid] || (nextRoundName === 'FINAL' ? createGhostPlayer(p2Uid, 'bravo') : null)), ready: false, team: 'bravo' }
+        [p1Uid]: { ...p1Data, ready: false, team: 'alpha' },
+        [p2Uid]: { ...p2Data, ready: false, team: 'bravo' }
       },
       creatorId: operatorUid, createdAt: admin.firestore.FieldValue.serverTimestamp(),
       promoId: circuit.promoId,
