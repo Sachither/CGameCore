@@ -92,10 +92,15 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const activeChannelRef = useRef<Channel>(activeChannel);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    activeChannelRef.current = activeChannel;
+  }, [activeChannel]);
 
   const orderedMessages = [...messages].reverse();
 
@@ -129,6 +134,16 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
   ];
 
   const [replyingTo, setReplyingTo] = useState<{ id: string; user: string; content: string } | null>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  const scrollToMessage = (messageId: string) => {
+    const ref = messageRefs.current[messageId];
+    if (ref) {
+      ref.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      ref.classList.add('ring-2', 'ring-accent', 'ring-offset-2', 'ring-offset-black');
+      window.setTimeout(() => ref.classList.remove('ring-2', 'ring-accent', 'ring-offset-2', 'ring-offset-black'), 1800);
+    }
+  };
 
   const handleSendGif = async (url: string) => {
     if (!user || isSending) return;
@@ -156,9 +171,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
 
   // Poll for messages every 5 seconds - but only if the tab is focused
   useEffect(() => {
-    // 🛡️ RESET STATE ON CHANNEL SWITCH
     setIsLoading(true);
-    setMessages([]);
     setAnnouncement(null);
 
     // Initial fetch for the new channel
@@ -175,15 +188,21 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
   }, [activeChannel]);
 
   const fetchMessages = async () => {
-    const res = await getCommunityMessagesAction(activeChannel);
+    const channelAtRequest = activeChannel;
+    const res = await getCommunityMessagesAction(channelAtRequest);
+    if (activeChannelRef.current !== channelAtRequest) return;
+
     if (res.success && res.messages) {
       setMessages(res.messages as any);
-      setIsLoading(false);
     }
+    setIsLoading(false);
   };
 
   const fetchAnnouncement = async () => {
-    const res = await getActiveAnnouncementAction(activeChannel);
+    const channelAtRequest = activeChannel;
+    const res = await getActiveAnnouncementAction(channelAtRequest);
+    if (activeChannelRef.current !== channelAtRequest) return;
+
     if (res.success && res.announcement) {
       setAnnouncement(res.announcement as any);
     } else {
@@ -407,7 +426,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
       <div 
         className="p-6 space-y-4 bg-[radial-gradient(circle_at_50%_50%,rgba(20,20,20,1)_0%,rgba(0,0,0,1)_100%)]"
       >
-        {isLoading ? (
+        {isLoading && messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full space-y-4 opacity-50">
             <Zap className="w-8 h-8 text-accent animate-pulse" />
             <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-gray-500">Establishing Uplink...</p>
@@ -420,7 +439,17 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
           </div>
         ) : (
           orderedMessages.map((msg, idx) => (
-            <div key={msg.id} className={`flex flex-col ${msg.userId === user?.uid ? 'items-end' : 'items-start'}`}>
+            <div
+              key={msg.id}
+              ref={(el) => {
+                if (el) {
+                  messageRefs.current[msg.id] = el;
+                } else {
+                  delete messageRefs.current[msg.id];
+                }
+              }}
+              className={`flex flex-col ${msg.userId === user?.uid ? 'items-end' : 'items-start'}`}
+            >
               <div className={`flex items-end gap-2 max-w-[85%] ${msg.userId === user?.uid ? 'flex-row-reverse' : 'flex-row'}`}>
                 {/* Avatar */}
                 <div className="shrink-0 w-8 h-8 rounded-sm bg-surface-hover border border-surface-border overflow-hidden shadow-lg flex items-center justify-center">
@@ -456,7 +485,11 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
 
                   {/* Quoted Message */}
                   {msg.replyToId && (
-                    <div className={`mb-1 p-2 rounded-lg border-l-2 border-accent/50 bg-white/5 text-[10px] max-w-xs truncate ${msg.userId === user?.uid ? 'mr-1' : 'ml-1'}`}>
+                    <div
+                      onClick={() => scrollToMessage(msg.replyToId!)}
+                      title="Go to original message"
+                      className={`mb-1 p-2 rounded-lg border-l-2 border-accent/50 bg-white/5 text-[10px] max-w-xs truncate ${msg.userId === user?.uid ? 'mr-1' : 'ml-1'} cursor-pointer hover:bg-white/10 transition-colors`}
+                    >
                       <p className="text-accent font-black uppercase tracking-tighter mb-0.5">@{msg.replyToUser}</p>
                       <p className="text-gray-400 italic truncate">{msg.replyToContent}</p>
                     </div>
