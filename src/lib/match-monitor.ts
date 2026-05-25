@@ -77,7 +77,7 @@ export async function sweepExpiredMatches(limit = 100) {
           }
         });
         // Post-process notifications
-        const { dispatchMatchResolutionNotifications } = await import('@/lib/match-engine/progression');
+        const { dispatchMatchResolutionNotifications } = await import('@/app/actions/match-actions');
         await dispatchMatchResolutionNotifications(matchId, 'RESOLVED');
         processed++;
       } catch (err) {
