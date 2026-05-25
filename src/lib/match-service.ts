@@ -34,6 +34,7 @@ import {
   registerChallengeInterestAction,
   unregisterChallengeInterestAction,
   setReadyStatusAction,
+  keepWaitingAction,
   respondToHostRoleAction,
   updateRoomCodeAction
 } from "@/app/actions/match-actions";
@@ -154,6 +155,11 @@ export const setReadyStatus = async (idToken: string, matchId: string, ready: bo
   const result = await setReadyStatusAction(idToken, matchId, ready);
   if (!result.success) throw new Error(result.error);
   return (result as any).allReady;
+};
+
+export const keepWaiting = async (idToken: string, matchId: string) => {
+  const result = await keepWaitingAction(idToken, matchId);
+  if (!result.success) throw new Error(result.error);
 };
 
 /**

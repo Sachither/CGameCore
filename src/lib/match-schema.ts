@@ -52,6 +52,7 @@ export interface Match {
   group?: 'A' | 'B' | 'C' | 'D' | 'NONE' | string;
   expiresAt?: any;     
   readyDeadline?: string | null;
+  readyDeadlineDisabled?: boolean;
   leg?: 1 | 2 | 3 | 'NONE'; 
   adminAlert?: boolean;
   adminAlertAt?: any;

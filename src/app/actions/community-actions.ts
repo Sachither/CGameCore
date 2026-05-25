@@ -362,10 +362,14 @@ export async function adminPurgeMessagesAction(idToken: string, daysAgo: number)
 export async function adminDeleteMessageAction(idToken: string, messageId: string) {
   try {
     await getVerifiedAdminUid(idToken);
+    const existing = await db.query.messages.findFirst({ where: eq(messages.id, messageId) });
+    if (!existing) {
+      return { success: false, error: "Message not found or already deleted." };
+    }
     await db.delete(messages).where(eq(messages.id, messageId));
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: false, error: error.message || "Delete failed." };
   }
 }
 

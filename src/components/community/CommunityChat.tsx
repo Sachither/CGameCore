@@ -301,12 +301,26 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
       message: "Are you sure you want to permanently erase this operational intelligence from the war room?",
       variant: 'danger',
       onConfirm: async () => {
-        const idToken = await user?.getIdToken();
-        if (idToken) {
+        setIsSending(true);
+        try {
+          const idToken = await user?.getIdToken();
+          if (!idToken) {
+            setError("Unauthorized: Admin credentials required.");
+            return;
+          }
           const res = await adminDeleteMessageAction(idToken, msgId);
-          if (res.success) fetchMessages();
+          if (res.success) {
+            setMessages(prev => prev.filter(m => m.id !== msgId));
+            await fetchMessages();
+          } else {
+            setError(res.error || "Delete failed.");
+          }
+        } catch (err: any) {
+          setError(err?.message || "Delete failed.");
+        } finally {
+          setIsSending(false);
+          setConfirmModal(null);
         }
-        setConfirmModal(null);
       }
     });
   };
@@ -339,7 +353,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
       
       {/* Custom Confirmation Modal */}
       {confirmModal && confirmModal.isOpen && (
-        <div className="absolute inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
            <div className="bg-[#0a0a0a] border border-white/10 w-full max-w-xs p-6 rounded-sm shadow-2xl scale-in-center">
               <div className="flex items-center gap-3 mb-4">
                  <div className={`p-2 rounded-sm ${confirmModal.variant === 'danger' ? 'bg-red-500/10 text-red-500' : 'bg-yellow-500/10 text-yellow-500'}`}>
@@ -352,12 +366,14 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
               </p>
               <div className="flex gap-2">
                  <button 
+                   type="button"
                    onClick={() => setConfirmModal(null)}
                    className="flex-1 py-2 text-[9px] font-black uppercase tracking-widest text-gray-500 hover:text-white transition-colors"
                  >
                    Abstain
                  </button>
                  <button 
+                   type="button"
                    onClick={confirmModal.onConfirm}
                    className={`flex-1 py-2 text-[9px] font-black uppercase tracking-widest rounded-sm transition-all ${confirmModal.variant === 'danger' ? 'bg-red-500 text-white shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'bg-yellow-500 text-black shadow-[0_0_15px_rgba(234,179,8,0.4)]'}`}
                  >
@@ -393,6 +409,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
         <div className="flex gap-2">
           {(['GENERAL', 'CODM', 'EFOOTBALL'] as Channel[]).map((channel) => (
             <button
+              type="button"
               key={channel}
               onClick={() => setActiveChannel(channel)}
               className={`flex-1 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all ${
@@ -473,6 +490,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
                     <div className="flex items-center gap-1 opacity-0 group-hover/msg:opacity-100 transition-opacity">
                       {msg.userId !== user?.uid && user && (
                         <button 
+                          type="button"
                           onClick={() => handleReport(msg.id)}
                           className="p-1 text-gray-700 hover:text-yellow-500 transition-colors"
                           title="Report Violation"
@@ -509,6 +527,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
                     {/* Like/Reply Toolbar (Floating) */}
                     <div className={`absolute -bottom-5 flex items-center gap-2 z-10 ${msg.userId === user?.uid ? 'right-0' : 'left-0'}`}>
                        <button 
+                         type="button"
                          onClick={() => handleLike(msg.id)}
                          className={`flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-black uppercase transition-all hover:scale-110 active:scale-95 ${
                            msg.likes?.includes(user?.uid || '')
@@ -521,6 +540,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
                        </button>
 
                        <button 
+                         type="button"
                          onClick={() => setReplyingTo({ id: msg.id, user: msg.username, content: msg.isGif ? '[Visual Intel]' : msg.content })}
                          className="flex items-center gap-1 px-2 py-0.5 rounded-full border border-white/10 bg-black text-gray-500 text-[9px] font-black uppercase hover:text-accent hover:border-accent/50 transition-all hover:scale-110 active:scale-95"
                        >
@@ -532,6 +552,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
                     {/* Admin Delete Button */}
                     {(profile?.role === 'ADMIN' || profile?.role === 'SUPER_ADMIN' || profile?.isAdmin) && (
                       <button 
+                        type="button"
                         onClick={() => handleDelete(msg.id)}
                         className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/bubble:opacity-100 transition-opacity shadow-lg z-10 hover:scale-110"
                       >
@@ -559,6 +580,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
           <div className="absolute bottom-full right-4 mb-2 p-3 bg-[#0a0a0a] border border-white/10 rounded-sm shadow-2xl grid grid-cols-4 gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200 z-50">
              {emojis.map(e => (
                <button 
+                 type="button"
                  key={e} 
                  onClick={() => addEmoji(e)}
                  className="w-10 h-10 flex items-center justify-center text-xl hover:bg-white/5 rounded-sm transition-colors"
@@ -576,6 +598,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
              <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto custom-scrollbar">
                 {curatedGifs.map((gif, i) => (
                   <button 
+                    type="button"
                     key={i} 
                     onClick={() => handleSendGif(gif.url)}
                     className="relative aspect-video bg-white/5 rounded-sm overflow-hidden group"
@@ -598,6 +621,7 @@ export default function CommunityChat({ initialMessages = [], initialAnnouncemen
                <p className="text-[10px] text-gray-400 truncate italic">{replyingTo.content}</p>
             </div>
             <button 
+              type="button"
               onClick={() => setReplyingTo(null)}
               className="p-1 hover:bg-white/5 rounded-full transition-colors"
             >

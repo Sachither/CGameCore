@@ -65,7 +65,7 @@ async function getLegacyRoleFromProfile(uid: string): Promise<VerifiedAdminConte
   const role = normalizeRole(data.role || (data.isAdmin ? "ADMIN" : "USER"));
   const isSuperAdminBoolean = data.isSuperAdmin === true;
 
-  const context = {
+  const context: VerifiedAdminContext = {
     uid,
     role: isSuperAdminBoolean ? "SUPER_ADMIN" : role,
     isAdmin: role === "ADMIN" || role === "SUPER_ADMIN" || isSuperAdminBoolean,

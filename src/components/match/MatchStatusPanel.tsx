@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from 'react';
-import { Match, setReadyStatus, respondToHostRole, executeMatchClosure, updateRoomCode } from "@/lib/match-service";
+import { Match, setReadyStatus, keepWaiting, respondToHostRole, executeMatchClosure, updateRoomCode } from "@/lib/match-service";
 import { adminResolveMatchAction, pingOpponentAction } from "@/app/actions/match-actions";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { 
@@ -647,30 +647,54 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                        const claimCount = allPlayers.filter(p => (p as any).claim).length;
                        const myReady = (me as any)?.ready;
 
+                       const hasReadyDeadline = !!(match as any).readyDeadline;
                        if (myReady && readyCount === 1) {
                           return (
-                             <button
-                               disabled={loading}
-                               onClick={async () => {
-                                  if (!match.id || !user) return;
-                                  setLoading(true);
-                                  try {
-                                     const { claimTechnicalWinAction } = await import("@/app/actions/match-actions");
-                                     const idToken = await user.getIdToken();
-                                     const res = await claimTechnicalWinAction(idToken, match.id);
-                                     if (res.success) {
-                                        toast.success("VICTORY SECURED", "Opponent forfeited by no-show.");
-                                        setTimeout(() => { window.location.href = "/dashboard"; }, 1000);
-                                     } else {
-                                        toast.error("Error", (res as any).error);
-                                     }
-                                  } catch (e: any) { toast.error("Error", e.message); }
-                                  finally { setLoading(false); }
-                               }}
-                               className="w-full bg-accent text-black p-3 text-[10px] font-black uppercase tracking-widest hover:-translate-y-0.5 transition-transform"
-                             >
-                                Claim Technical Win (No-Show)
-                             </button>
+                             <div className="space-y-3">
+                               <button
+                                 disabled={loading}
+                                 onClick={async () => {
+                                    if (!match.id || !user) return;
+                                    setLoading(true);
+                                    try {
+                                       const { claimTechnicalWinAction } = await import("@/app/actions/match-actions");
+                                       const idToken = await user.getIdToken();
+                                       const res = await claimTechnicalWinAction(idToken, match.id);
+                                       if (res.success) {
+                                          toast.success("VICTORY SECURED", "Opponent forfeited by no-show.");
+                                          setTimeout(() => { window.location.href = "/dashboard"; }, 1000);
+                                       } else {
+                                          toast.error("Error", (res as any).error);
+                                       }
+                                    } catch (e: any) { toast.error("Error", e.message); }
+                                    finally { setLoading(false); }
+                                 }}
+                                 className="w-full bg-accent text-black p-3 text-[10px] font-black uppercase tracking-widest hover:-translate-y-0.5 transition-transform"
+                               >
+                                  Claim Technical Win (No-Show)
+                               </button>
+                               {hasReadyDeadline && (
+                                 <button
+                                   disabled={loading}
+                                   onClick={async () => {
+                                      if (!match.id || !user) return;
+                                      setLoading(true);
+                                      try {
+                                         const idToken = await user.getIdToken();
+                                         await keepWaiting(idToken, match.id);
+                                         toast.success("Grace granted", "Room will continue until normal expiry.");
+                                      } catch (e: any) {
+                                         toast.error("Error", e.message || "Failed to continue waiting.");
+                                      } finally {
+                                         setLoading(false);
+                                      }
+                                   }}
+                                   className="w-full bg-black border border-accent text-accent p-3 text-[10px] font-black uppercase tracking-widest hover:bg-accent/5 transition-transform"
+                                 >
+                                    Keep Waiting for Opponent
+                                 </button>
+                               )}
+                             </div>
                           );
                        } else if (readyCount === 0 || (readyCount === allPlayers.length && claimCount === 0)) {
                           return (

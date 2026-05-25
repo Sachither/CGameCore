@@ -59,7 +59,7 @@ export async function spurnPromoTournamentInternal(promoId: string) {
         }
         const matchCount = Math.floor(matchupPlayers.length / 2);
         
-        const expiresAt = new Date(Date.now() + 4 * 3600 * 1000); 
+        const expiresAt = new Date(Date.now() + 24 * 3600 * 1000); 
 
         for (let i = 0; i < matchCount; i++) {
           const p1Uid = matchupPlayers[i * 2];
@@ -91,8 +91,8 @@ export async function spurnPromoTournamentInternal(promoId: string) {
           });
 
           // HQ Notifications
-          pushMatchNotification(transaction, p1Uid, p2Uid, p2.username, mRef.id, 'PROMO R1', "2 Hours");
-          pushMatchNotification(transaction, p2Uid, p1Uid, p1.username, mRef.id, 'PROMO R1', "2 Hours");
+          pushMatchNotification(transaction, p1Uid, p2Uid, p2.username, mRef.id, 'PROMO R1', "24 Hours");
+          pushMatchNotification(transaction, p2Uid, p1Uid, p1.username, mRef.id, 'PROMO R1', "24 Hours");
         }
 
         // Initialize Circuit record
@@ -306,7 +306,7 @@ async function spawnNextPromoRound(
   
   const nextMatchCount = Math.floor(matchupPlayers.length / 2);
   
-  const expiresAt = new Date(Date.now() + 4 * 3600 * 1000); // Standard 4 Hour Window
+  const expiresAt = new Date(Date.now() + 24 * 3600 * 1000); // Standard 24 Hour Window
 
   for (let i = 0; i < nextMatchCount; i++) {
     const p1Uid = matchupPlayers[i * 2];
@@ -336,8 +336,8 @@ async function spawnNextPromoRound(
     });
 
     if (p1Uid !== 'system' && p2Uid !== 'system') {
-      pushMatchNotification(transaction, p1Uid, p2Uid, circuit.players?.[p2Uid]?.username || 'Opponent', mRef.id, nextRoundName, '2 Hours');
-      pushMatchNotification(transaction, p2Uid, p1Uid, circuit.players?.[p1Uid]?.username || 'Opponent', mRef.id, nextRoundName, '2 Hours');
+      pushMatchNotification(transaction, p1Uid, p2Uid, circuit.players?.[p2Uid]?.username || 'Opponent', mRef.id, nextRoundName, '24 Hours');
+      pushMatchNotification(transaction, p2Uid, p1Uid, circuit.players?.[p1Uid]?.username || 'Opponent', mRef.id, nextRoundName, '24 Hours');
     }
   }
 

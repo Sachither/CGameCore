@@ -3,6 +3,9 @@ import React, { useEffect, useState, useCallback } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   getAllActiveMatchesAction,
+  getExpiredMatchesAction,
+  adminRunExpiredMatchSweepAction,
+  adminResolveExpiredMatchAction,
   adminForceCloseMatchAction,
   adminDeleteMatchAction,
   adminDeleteCircuitByIdAction,
@@ -13,6 +16,7 @@ import {
   RefreshCw,
   Swords,
   ShieldAlert,
+  Shield,
   Trash2,
   XCircle,
   ChevronDown,
@@ -37,6 +41,7 @@ type ActiveMatch = {
   playerIds: string[];
   players: Record<string, any>;
   createdAt?: string;
+  expiresAt?: string;
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -52,11 +57,13 @@ function MatchRow({
   match,
   onForceClose,
   onDelete,
+  onResolveExpired,
   loading,
 }: {
   match: ActiveMatch;
   onForceClose: (id: string) => void;
   onDelete: (id: string, withCircuit: boolean) => void;
+  onResolveExpired?: (id: string) => void;
   loading: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -64,6 +71,8 @@ function MatchRow({
   const playerNames = Object.values(match.players)
     .map((p: any) => p.username || p.uid?.slice(0, 8))
     .join(" vs ");
+
+  const isExpired = match.expiresAt ? new Date(match.expiresAt).getTime() <= Date.now() : false;
 
   return (
     <div className="bg-[#0a0a0a] border border-white/5 rounded-sm overflow-hidden hover:border-white/10 transition-all">
@@ -155,10 +164,29 @@ function MatchRow({
             {match.circuitId && <span>Circuit: {match.circuitId.slice(0, 16)}…</span>}
             {match.leagueId && <span>League: {match.leagueId.slice(0, 16)}…</span>}
             {match.createdAt && <span>Created: {new Date(match.createdAt).toLocaleString()}</span>}
+            {match.expiresAt && <span>Expires: {new Date(match.expiresAt).toLocaleString()}</span>}
+            {isExpired && <span className="text-[8px] uppercase font-black text-red-400">EXPIRED</span>}
           </div>
 
           {/* Action Buttons */}
           <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-white/5">
+            {/* Run expiry resolution */}
+            {isExpired && onResolveExpired && (
+              <button
+                id={`resolve-expired-${match.id}`}
+                onClick={() => onResolveExpired(match.id)}
+                disabled={!!loading}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 border border-blue-500/20 text-blue-400 hover:bg-blue-500/20 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+              >
+                {loading === match.id ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Shield className="w-3 h-3" />
+                )}
+                Resolve Expired
+              </button>
+            )}
+
             {/* Force close */}
             <button
               id={`force-close-${match.id}`}
@@ -224,6 +252,8 @@ export default function AdminMatchesPage() {
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [filterType, setFilterType] = useState("ALL");
   const [manualNukeId, setManualNukeId] = useState("");
+  const [viewMode, setViewMode] = useState<'active' | 'expired'>('active');
+  const [sweepLoading, setSweepLoading] = useState(false);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -236,7 +266,9 @@ export default function AdminMatchesPage() {
     setError(null);
     try {
       const idToken = await user.getIdToken();
-      const res = await getAllActiveMatchesAction(idToken);
+      const res = viewMode === 'expired'
+        ? await getExpiredMatchesAction(idToken)
+        : await getAllActiveMatchesAction(idToken);
       if (res.success) {
         setMatches((res.matches as ActiveMatch[]) || []);
       } else {
@@ -247,7 +279,7 @@ export default function AdminMatchesPage() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, viewMode]);
 
   useEffect(() => {
     fetchMatches();
@@ -292,6 +324,58 @@ export default function AdminMatchesPage() {
           showToast((res as any).error || "Failed.", false);
         }
         setActionLoading(null);
+      }
+    });
+  };
+
+  const handleRunExpiredSweep = async () => {
+    if (!user) return;
+    command.confirm({
+      title: "RUN EXPIRED MATCH SWEEP",
+      message: "Execute the expired match sweep now? This will apply extraction rules to expired matches in the database.",
+      variant: 'warning',
+      onConfirm: async () => {
+        setSweepLoading(true);
+        try {
+          const idToken = await user.getIdToken();
+          const res = await adminRunExpiredMatchSweepAction(idToken, 200);
+          if (res.success) {
+            showToast(`Sweep completed. ${res.result?.processed || 0} matches processed.`, true);
+            await fetchMatches();
+          } else {
+            showToast(res.error || "Sweep failed.", false);
+          }
+        } catch (err: any) {
+          showToast(err.message || "Sweep failed.", false);
+        } finally {
+          setSweepLoading(false);
+        }
+      }
+    });
+  };
+
+  const handleResolveExpired = async (matchId: string) => {
+    if (!user) return;
+    command.confirm({
+      title: "RESOLVE EXPIRED MATCH",
+      message: `Apply automatic expiry resolution to match #${matchId.slice(-8).toUpperCase()}?`,
+      variant: 'warning',
+      onConfirm: async () => {
+        setActionLoading(matchId);
+        try {
+          const idToken = await user.getIdToken();
+          const res = await adminResolveExpiredMatchAction(idToken, matchId);
+          if (res.success) {
+            showToast("Expired match resolved.", true);
+            await fetchMatches();
+          } else {
+            showToast(res.error || "Failed to resolve.", false);
+          }
+        } catch (err: any) {
+          showToast(err.message || "Failed to resolve.", false);
+        } finally {
+          setActionLoading(null);
+        }
       }
     });
   };
@@ -360,18 +444,37 @@ export default function AdminMatchesPage() {
             Match Control Panel
           </h1>
           <p className="text-[10px] text-gray-600 font-bold uppercase tracking-widest mt-1">
-            {matches.length} active mission(s) detected across all sectors
+            {matches.length} mission(s) in view
           </p>
         </div>
-        <button
-          id="refresh-matches"
-          onClick={fetchMatches}
-          disabled={loading}
-          className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/10 hover:border-white/20 text-white rounded-sm text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
-        >
-          <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
-          Refresh Feed
-        </button>
+        <div className="flex flex-wrap gap-3 items-center">
+          <button
+            id="view-mode-toggle"
+            onClick={() => setViewMode(prev => prev === 'active' ? 'expired' : 'active')}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-3 bg-white/5 border border-white/10 hover:border-white/20 text-white rounded-sm text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+          >
+            {viewMode === 'active' ? 'Show Expired Matches' : 'Show Active Matches'}
+          </button>
+          <button
+            id="run-expired-sweep"
+            onClick={handleRunExpiredSweep}
+            disabled={loading || sweepLoading}
+            className="flex items-center gap-2 px-4 py-3 bg-accent/10 border border-accent/20 hover:border-accent/30 text-accent rounded-sm text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+          >
+            {sweepLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+            Sweep Expired Now
+          </button>
+          <button
+            id="refresh-matches"
+            onClick={fetchMatches}
+            disabled={loading}
+            className="flex items-center gap-2 px-5 py-3 bg-white/5 border border-white/10 hover:border-white/20 text-white rounded-sm text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+          >
+            <RefreshCw className={`w-3 h-3 ${loading ? "animate-spin" : ""}`} />
+            Refresh Feed
+          </button>
+        </div>
       </div>
 
       {/* Toast */}
@@ -505,6 +608,7 @@ export default function AdminMatchesPage() {
                     match={m}
                     onForceClose={handleForceClose}
                     onDelete={handleDelete}
+                    onResolveExpired={handleResolveExpired}
                     loading={actionLoading}
                   />
                 ))}
@@ -532,6 +636,7 @@ export default function AdminMatchesPage() {
               match={m}
               onForceClose={handleForceClose}
               onDelete={handleDelete}
+              onResolveExpired={handleResolveExpired}
               loading={actionLoading}
             />
           ))}

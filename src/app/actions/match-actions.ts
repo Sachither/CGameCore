@@ -472,7 +472,7 @@ export async function createMatchAction(
         duration: duration || 'NONE',
         roomName: roomName || null,
         roomPassword: roomPassword || null,
-        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 4 * 3600 * 1000)),
+        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 3600 * 1000)),
         isRanked: challengeFee > 0,
         isProtected: !!roomPassword,
         isPartnerTournament: userData.role === 'PARTNER',
@@ -1329,7 +1329,7 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
          const readyPlayers = playersList.filter(p => p.ready);
          if (readyPlayers.length === 1) {
             // Start 30-minute extraction timer for the non-ready player
-            if (!matchData.readyDeadline) {
+            if (!matchData.readyDeadline && !matchData.readyDeadlineDisabled) {
                updates.readyDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
                const nonReadyPlayer = playersList.find(p => !p.ready);
                const readyPlayer = playersList.find(p => p.ready);
@@ -1354,6 +1354,42 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
       return { allReady };
     });
     return { success: true, ...result };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * SERVER ACTION: KEEP WAITING FOR OPPONENT
+ * Clears the ready deadline for this match and prevents the ready countdown from restarting.
+ */
+export async function keepWaitingAction(idToken: string, matchId: string) {
+  const uid = await getVerifiedUid(idToken);
+  const matchRef = adminDb.collection("matches").doc(matchId);
+  try {
+    await adminDb.runTransaction(async (transaction) => {
+      const matchSnap = await transaction.get(matchRef);
+      if (!matchSnap.exists) throw new Error("Match not found.");
+      const matchData = matchSnap.data() as any;
+      if (['CLOSED', 'COMPLETED', 'RESOLVING', 'DISPUTED'].includes(matchData.status)) {
+        throw new Error("Match cannot be extended.");
+      }
+
+      const playersList = Object.values(matchData.players || {});
+      const readyCount = playersList.filter((p: any) => p.ready).length;
+      if (readyCount !== 1) {
+        throw new Error("Grace can only be granted when exactly one player is ready.");
+      }
+      if (!matchData.readyDeadline) {
+        throw new Error("There is no active ready deadline to clear.");
+      }
+
+      transaction.update(matchRef, {
+        readyDeadline: null,
+        readyDeadlineDisabled: true,
+      });
+    });
+    return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
   }

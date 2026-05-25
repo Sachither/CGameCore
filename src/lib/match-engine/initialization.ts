@@ -52,7 +52,7 @@ export async function initializeCircuit(
    // TACTICAL EXPIRY: 90 mins for League rounds, 4h for standard tournaments
    const expiresAt = isLeague 
       ? new Date(Date.now() + 90 * 60 * 1000) 
-      : new Date(Date.now() + 4 * 3600 * 1000); 
+         : new Date(Date.now() + 24 * 3600 * 1000); 
    
    if (isLeague) {
       // LEAGUE INITIALIZATION (Round Robin - Circle Method)
@@ -165,7 +165,7 @@ export async function initializeCircuit(
 
       [p1, p2].forEach(p => {
          const opp = p.uid === p1.uid ? p2 : p1;
-         pushMatchNotification(transaction, p.uid, opp.uid, opp.username, mRef.id, initialRound, "4 Hours");
+         pushMatchNotification(transaction, p.uid, opp.uid, opp.username, mRef.id, initialRound, "24 Hours");
       });
    }
 

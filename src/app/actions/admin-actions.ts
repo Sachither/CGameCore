@@ -5,6 +5,7 @@ import admin from "firebase-admin";
 import { Match, Circuit } from "@/lib/match-service";
 import { purgeMatchDataInternal, purgeMatchMessagesOnly } from "@/lib/match-cleanup";
 import { internalFinalizeMatchClosure, dispatchMatchResolutionNotifications } from "./match-actions";
+import sweepExpiredMatches from '@/lib/match-monitor';
 import { decryptData } from "@/lib/encryption-utils";
 import { sendTacticalEmail } from "@/lib/mail";
 import { getExtractionEmailTemplate, getPartnerUpgradeEmailTemplate, getPartnerRevokedEmailTemplate } from "@/lib/mail-templates";
@@ -1533,6 +1534,124 @@ export async function getAllActiveMatchesAction(idToken: string) {
   } catch (error: any) {
     console.error("[AdminAction] getAllActiveMatches error:", error);
     return { success: false, error: error.message, matches: [] };
+  }
+}
+
+/**
+ * ADMIN ACTION: GET EXPIRED MATCHES
+ * Returns matches that have passed expiresAt and are still unresolved.
+ */
+export async function getExpiredMatchesAction(idToken: string) {
+  await getVerifiedAdminUid(idToken);
+  try {
+    const now = new Date();
+    const snap = await adminDb.collection('matches')
+      .where('expiresAt', '<=', admin.firestore.Timestamp.fromDate(now))
+      .where('status', 'not-in', ['CLOSED', 'COMPLETED'])
+      .limit(200)
+      .get();
+
+    const matches = snap.docs
+      .map(d => sanitizeData({ id: d.id, ...d.data() }))
+      .sort((a: any, b: any) => {
+        if ((a.expiresAt || '') < (b.expiresAt || '')) return -1;
+        if ((a.expiresAt || '') > (b.expiresAt || '')) return 1;
+        return (b.createdAt || '').localeCompare(a.createdAt || '');
+      });
+    return { success: true, matches };
+  } catch (error: any) {
+    console.error('[AdminAction] getExpiredMatches error:', error);
+    return { success: false, error: error.message, matches: [] };
+  }
+}
+
+/**
+ * ADMIN ACTION: RUN EXPIRED MATCH SWEEP NOW
+ * Executes a manual sweep of expired matches using the same server logic as the scheduled worker.
+ */
+export async function adminRunExpiredMatchSweepAction(idToken: string, limit = 100) {
+  await getVerifiedAdminUid(idToken);
+  try {
+    const result = await sweepExpiredMatches(limit);
+    return { success: true, result };
+  } catch (error: any) {
+    console.error('[AdminAction] adminRunExpiredMatchSweep error:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * ADMIN ACTION: RESOLVE A SPECIFIC EXPIRED MATCH
+ */
+export async function adminResolveExpiredMatchAction(idToken: string, matchId: string) {
+  await getVerifiedAdminUid(idToken);
+  try {
+    const matchRef = adminDb.collection('matches').doc(matchId);
+    const matchSnap = await matchRef.get();
+    if (!matchSnap.exists) throw new Error('Match not found.');
+    const matchData = matchSnap.data() as any;
+
+    if (!matchData.expiresAt || matchData.status === 'CLOSED' || matchData.status === 'COMPLETED') {
+      throw new Error('Match is not eligible for expiry resolution.');
+    }
+
+    const expiredAt = matchData.expiresAt.toDate ? matchData.expiresAt.toDate() : new Date(matchData.expiresAt);
+    if (expiredAt.getTime() > Date.now()) {
+      throw new Error('Match has not expired yet.');
+    }
+
+    await adminDb.runTransaction(async (transaction) => {
+      const playersList = Object.values(matchData.players || {});
+      const readyCount = playersList.filter((p: any) => p.ready).length;
+      const claimCount = playersList.filter((p: any) => p.claim).length;
+
+      if (matchData.status === 'WAITING') {
+        for (const uid of matchData.playerIds || []) {
+          transaction.update(adminDb.collection('users').doc(uid), {
+            balanceCoins: admin.firestore.FieldValue.increment(matchData.challengeFee || 0),
+          });
+          const logRef = adminDb.collection('transactions').doc();
+          transaction.set(logRef, {
+            uid,
+            type: 'CREDIT',
+            category: 'MATCH_REFUND',
+            description: 'Match timed out before opponent joined; refund processed.',
+            amount: matchData.challengeFee || 0,
+            status: 'COMPLETED',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        transaction.update(matchRef, {
+          status: 'CLOSED',
+          disputeReason: 'MATCHMAKING_EXPIRED_REFUNDED',
+          resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+
+      if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
+        const { resolveDoubleNoShow } = await import('@/lib/match-engine/validation');
+        await resolveDoubleNoShow(transaction, matchRef, matchData as any);
+      } else if (claimCount === 1) {
+        const claimantUid = Object.keys(matchData.players).find((pid) => !!(matchData.players[pid] as any).claim);
+        if (!claimantUid) throw new Error('No claimant found.');
+        const claim = (matchData.players[claimantUid] as any).claim;
+        let winnerUid = claimantUid;
+        if (claim === 'LOSS') {
+          winnerUid = Object.keys(matchData.players).find((pid) => pid !== claimantUid) || claimantUid;
+        }
+        const { resolveTechnicalWin } = await import('@/lib/match-engine/validation');
+        await resolveTechnicalWin(transaction, matchRef, matchData as any, winnerUid);
+      } else {
+        throw new Error('Match is ambiguous; manual dispute resolution required.');
+      }
+    });
+
+    await dispatchMatchResolutionNotifications(matchId, 'RESOLVED');
+    return { success: true };
+  } catch (error: any) {
+    console.error('[AdminAction] adminResolveExpiredMatch error:', error);
+    return { success: false, error: error.message };
   }
 }
 
