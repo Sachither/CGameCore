@@ -103,7 +103,7 @@ export default function ActiveTournamentsTable() {
       limit(15)
     );
     const unsubCircuits = onSnapshot(qCircuits, (snap) => {
-      const allowedStatuses = ["FILLING", "KNOCKOUT_Q", "KNOCKOUT_S", "KNOCKOUT_F", "ACTIVE"];
+      const allowedStatuses = ["FILLING", "KNOCKOUT_R128", "KNOCKOUT_R64", "KNOCKOUT_R32", "KNOCKOUT_R16", "KNOCKOUT_Q", "KNOCKOUT_S", "KNOCKOUT_F", "ACTIVE", "COMPLETED"];
       const isLocal = typeof window !== 'undefined' && window.location.hostname === 'localhost';
       const docs = snap.docs
         .filter(d => {
@@ -480,8 +480,11 @@ function LeagueCard({ league: t, progress, onJoin, currentUserUid }: { league: L
           <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 bg-black border rounded-sm ${isPartner ? 'border-yellow-500/30 text-yellow-500' : 'border-surface-border text-gray-400'}`}>
             {formatLabel}
           </span>
-          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-sm ${['FILLING','GROUPS','KNOCKOUT_Q', 'WAITING', 'LEAGUE_ACTIVE'].includes(t.status) ? (isPartner ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' : 'bg-accent/10 text-accent animate-pulse') : 'bg-blue-500/10 text-blue-400'}`}>
-            {t.status === 'GROUPS' ? 'GROUP STAGE' : t.status === 'KNOCKOUT_Q' ? 'KNOCKOUT' : t.status === 'LEAGUE_ACTIVE' ? 'LEAGUE ACTIVE' : t.status}
+          <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-sm ${['FILLING','GROUPS','KNOCKOUT_R128','KNOCKOUT_R64','KNOCKOUT_R32','KNOCKOUT_R16','KNOCKOUT_Q','KNOCKOUT_S','KNOCKOUT_F','ACTIVE','WAITING','LEAGUE_ACTIVE'].includes(t.status) ? (isPartner ? 'bg-yellow-500/10 text-yellow-500 animate-pulse' : 'bg-accent/10 text-accent animate-pulse') : 'bg-blue-500/10 text-blue-400'}`}>
+            {t.status === 'GROUPS' ? 'GROUP STAGE' : 
+             t.status.startsWith('KNOCKOUT_') ? 'KNOCKOUT STAGE' : 
+             t.status === 'LEAGUE_ACTIVE' ? 'LEAGUE ACTIVE' : 
+             t.status}
           </span>
         </div>
 

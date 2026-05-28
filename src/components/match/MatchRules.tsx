@@ -10,23 +10,23 @@ export default function MatchRules({ game, weaponClass }: MatchRulesProps) {
    const isCODM = game === 'CODM';
 
    return (
-      <div className="mt-10 bg-surface border border-surface-border p-8 rounded-sm relative overflow-hidden group">
+      <div className="mt-6 md:mt-10 bg-surface border border-surface-border p-4 md:p-8 rounded-sm relative overflow-hidden group">
          {isCODM && (
             <div className="absolute inset-0 opacity-[0.03] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
          )}
 
          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-8 border-b border-surface-border pb-6">
-               <div className={`p-3 rounded-full ${isCODM ? 'bg-red-500/10 text-red-500' : 'bg-accent/10 text-accent'}`}>
-                  <ShieldAlert className="w-6 h-6" />
+            <div className="flex items-center gap-3 mb-4 md:mb-8 border-b border-surface-border pb-4 md:pb-6">
+               <div className={`p-2.5 md:p-3 rounded-full ${isCODM ? 'bg-red-500/10 text-red-500' : 'bg-accent/10 text-accent'}`}>
+                  <ShieldAlert className="w-5.5 h-5.5 md:w-6 md:h-6" />
                </div>
                <div>
-                  <h2 className="text-xl font-black text-white italic uppercase tracking-tighter">Tactical Briefing & Rules</h2>
-                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mt-1">Official High-Stakes Combat Regulations</p>
+                  <h2 className="text-lg md:text-xl font-black text-white italic uppercase tracking-tighter">Tactical Briefing & Rules</h2>
+                  <p className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-[0.2em] mt-0.5 md:mt-1">Official High-Stakes Combat Regulations</p>
                </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 md:gap-8">
                {/* General Rule 1 */}
                <div className="space-y-3">
                   <div className="flex items-center gap-2 text-xs font-black uppercase text-white italic">

@@ -7,6 +7,8 @@ import { requestAdminInterventionAction } from '@/app/actions/match-actions';
 import { useCommandModal } from '@/context/CommandModalContext';
 import CompetitionChat from './CompetitionChat';
 import TacticalMap from './TacticalMap';
+import { getRoundDisplayName } from '@/lib/round-display-utils';
+import RulesModal from '../match/RulesModal';
 
 interface Props {
    competition: Circuit;
@@ -33,6 +35,7 @@ export default function CircuitWarRoom({
    const [showReportModal, setShowReportModal] = useState(false);
    const [reportingMatchId, setReportingMatchId] = useState<string | null>(null);
    const [showTacticalMap, setShowTacticalMap] = useState(false);
+   const [isRulesOpen, setIsRulesOpen] = useState(false);
 
    // --- TACTICAL FILTERING: HIDE PHANTOM/LEGACY MISSIONS ---
    const rawActiveMatches = activeMatches && activeMatches.length > 0 ? activeMatches : (nextMatch ? [nextMatch] : []);
@@ -136,9 +139,7 @@ export default function CircuitWarRoom({
                   <div className="flex items-center gap-3 mb-2">
                      <div className={`w-1.5 h-1.5 rounded-full ${m.status === 'IN_PROGRESS' ? 'bg-accent animate-pulse' : 'bg-blue-500'}`} />
                      <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest italic">
-                        {m.round === 'QR1' ? 'Round of 16 (Part 1)' : 
-                         m.round === 'QR2' ? 'Round of 16 (Part 2)' : 
-                         m.round || 'Tournament Match'} {m.leg && m.leg !== 'NONE' ? `· Leg ${m.leg}` : ''}
+                        {getRoundDisplayName(m.round || '', competition.playerIds?.length, competition.isPromo)} {m.leg && m.leg !== 'NONE' ? `· Leg ${m.leg}` : ''}
                      </span>
                   </div>
                   <h3 className="text-2xl font-black text-white italic uppercase tracking-tighter leading-none">
@@ -189,12 +190,20 @@ export default function CircuitWarRoom({
                </div>
             </div>
 
-            <button
-               onClick={() => setShowTacticalMap(true)}
-               className="px-8 py-4 bg-accent hover:bg-accent-hover text-black font-black uppercase tracking-widest text-[11px] rounded-sm transition-all flex items-center gap-3 italic shadow-lg"
-            >
-               <LayoutGrid className="w-4 h-4" /> View Operational Brackets
-            </button>
+            <div className="flex flex-wrap items-center gap-4">
+               <button
+                  onClick={() => setIsRulesOpen(true)}
+                  className="px-8 py-4 bg-blue-600/20 hover:bg-blue-600/40 border border-blue-500/40 text-blue-400 font-black uppercase tracking-widest text-[11px] rounded-sm transition-all flex items-center gap-3 italic shadow-lg active:translate-y-0.5"
+               >
+                  View Rules
+               </button>
+               <button
+                  onClick={() => setShowTacticalMap(true)}
+                  className="px-8 py-4 bg-accent hover:bg-accent-hover text-black font-black uppercase tracking-widest text-[11px] rounded-sm transition-all flex items-center gap-3 italic shadow-lg active:translate-y-0.5"
+               >
+                  <LayoutGrid className="w-4 h-4" /> View Operational Brackets
+               </button>
+            </div>
          </div>
 
          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -336,6 +345,13 @@ export default function CircuitWarRoom({
                </div>
             </div>
          )}
+
+         <RulesModal 
+            isOpen={isRulesOpen} 
+            onClose={() => setIsRulesOpen(false)} 
+            game={competition.game?.toUpperCase() as any} 
+            format={competition.format?.includes('LEAGUE') ? 'league' : 'tournament'} 
+         />
 
       </div>
    );

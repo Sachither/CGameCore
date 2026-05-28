@@ -36,13 +36,13 @@ export async function initializeCircuit(
       playersMap[p.uid] = { ...p, ready: true };
    });
 
-   // Validate player counts (2, 4, 8, 16)
-   const allowedCounts = [2, 4, 8, 16];
+   const isLeague = matchData.format === 'league';
+   // Validate player counts
+   const allowedCounts = isLeague ? [2, 4, 8, 10, 16, 32] : [2, 4, 8, 16, 32];
    if (!allowedCounts.includes(pCount)) {
-      throw new Error(`Tournament scaling error: Supported counts are 2, 4, 8, or 16 players. Got ${pCount}.`);
+      throw new Error(`Tournament scaling error: Supported counts are ${isLeague ? '2, 4, 8, 10, 16, or 32' : '2, 4, 8, 16, or 32'} players. Got ${pCount}.`);
    }
 
-   const isLeague = matchData.format === 'league';
    const format = isLeague ? `${pCount}_LEAGUE` : `${pCount}_TOURNAMENT`;
    const totalPool = Math.floor(fee * pCount * (1 - config.matchFeePercentage));
 
@@ -140,10 +140,29 @@ export async function initializeCircuit(
 
    let initialRound = 'QR1';
    let pairsCount = 8;
+   let initialStatus = 'KNOCKOUT_Q';
 
-   if (pCount === 2) { initialRound = 'FINAL'; pairsCount = 1; }
-   else if (pCount === 4) { initialRound = 'SF'; pairsCount = 2; }
-   else if (pCount === 8) { initialRound = 'QF'; pairsCount = 4; }
+   if (pCount === 32) {
+      initialRound = 'R32';
+      pairsCount = 16;
+      initialStatus = 'KNOCKOUT_R32';
+   } else if (pCount === 16) {
+      initialRound = 'QR1';
+      pairsCount = 8;
+      initialStatus = 'KNOCKOUT_Q';
+   } else if (pCount === 8) {
+      initialRound = 'QF';
+      pairsCount = 4;
+      initialStatus = 'KNOCKOUT_Q';
+   } else if (pCount === 4) {
+      initialRound = 'SF';
+      pairsCount = 2;
+      initialStatus = 'KNOCKOUT_S';
+   } else if (pCount === 2) {
+      initialRound = 'FINAL';
+      pairsCount = 1;
+      initialStatus = 'KNOCKOUT_F';
+   }
 
    // SEEDING
    for (let i = 0; i < pairsCount; i++) {
@@ -172,7 +191,7 @@ export async function initializeCircuit(
    transaction.set(circuitRef, {
       title: `${matchData.game} ELITE SERIES #${circuitId.slice(0, 4)}`,
       game: matchData.game, format, challengeFee: fee, 
-      status: pCount === 2 ? 'KNOCKOUT_F' : (pCount === 4 ? 'KNOCKOUT_S' : (pCount === 8 ? 'KNOCKOUT_Q' : 'KNOCKOUT_Q')),
+      status: initialStatus,
       playerIds: uniquePlayers.map(p => p.uid),
       players: playersMap, 
       totalPool,

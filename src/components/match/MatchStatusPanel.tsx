@@ -13,6 +13,7 @@ import {
 import { useToast } from "@/context/ToastContext";
 import SubmitResultModal from "./SubmitResultModal";
 import DisputeModal from "./DisputeModal";
+import RulesModal from "./RulesModal";
 
 interface MatchStatusPanelProps {
   match: Match;
@@ -25,6 +26,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const toast = useToast();
   const [isSubmitOpen, setSubmitOpen] = useState(false);
   const [isDisputeOpen, setDisputeOpen] = useState(false);
+  const [isRulesOpen, setIsRulesOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [roomCode, setRoomCode] = useState("");
   const [codeCopied, setCodeCopied] = useState(false);
@@ -32,13 +34,16 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
 
   const hasGhostOpponent = match?.players ? Object.values(match.players).some(p => p.username === 'GHOST' && p.uid !== currentUserUid) : false;
   const isDisputed = match?.status === 'DISPUTED';
+  const isTournamentOrLeague = (match.format === 'tournament' || match.format === 'league' || !!match.circuitId || !!match.leagueId);
 
   React.useEffect(() => {
     const hasReadyTimer = (match as any)?.readyDeadline && !['CLOSED', 'COMPLETED', 'IN_PROGRESS'].includes(match.status);
     const hasResolutionTimer = !hasReadyTimer && (match?.status === 'RESOLVING' || match?.status === 'WAITING_FOR_OPPONENT') && match?.resolutionEndTime;
-    const hasExtractionTimer = !hasReadyTimer && !hasResolutionTimer && !isDisputed && match?.expiresAt && !['CLOSED', 'COMPLETED', 'SCHEDULED'].includes(match.status);
+    const hasExtractionTimer = match?.expiresAt && !['CLOSED', 'COMPLETED', 'SCHEDULED'].includes(match.status) && !isDisputed;
+    // Always show the 24-hour room deadline for league/tournament/circuit matches when expiresAt exists
+    const showExtractionTimerAlways = isTournamentOrLeague && !!match?.expiresAt && !['CLOSED', 'COMPLETED', 'SCHEDULED'].includes(match.status);
 
-    if (!hasReadyTimer && !hasResolutionTimer && !hasExtractionTimer) {
+    if (!hasReadyTimer && !hasResolutionTimer && !hasExtractionTimer && !showExtractionTimerAlways) {
       setTimerSeconds(null);
       return;
     }
@@ -50,7 +55,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
       return new Date(val);
     };
 
-    const targetTimeSrc = hasReadyTimer ? (match as any).readyDeadline : (hasResolutionTimer ? match.resolutionEndTime : match.expiresAt);
+    const targetTimeSrc = isTournamentOrLeague && match?.expiresAt ? match.expiresAt : (hasReadyTimer ? (match as any).readyDeadline : (hasResolutionTimer ? match.resolutionEndTime : match.expiresAt));
     const dateObj = extractDate(targetTimeSrc);
     if (!dateObj) {
       setTimerSeconds(null);
@@ -174,7 +179,11 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const allPlayers = Object.values(match.players);
   const targetPlayers = match.maxPlayers || 2;
   const isGatheringLobby = (match.format === 'tournament' || match.format === 'league') && (match.maxPlayers || 2) > 2;
-  
+  const readyCount = allPlayers.filter(p => p.ready).length;
+  const hasReadyDeadline = !!(match as any).readyDeadline;
+  const isFinalTimeout = timerSeconds !== null && timerSeconds <= 0;
+  const showAwaitingOpponentReadyText = hasReadyDeadline && readyCount === 1 && !isFinalTimeout;
+
   // Check if current user is facing a ghost opponent (in tournament finals)
 
   const handleHostResponse = async (action: 'ACCEPT' | 'PASS') => {
@@ -248,7 +257,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const isUrgent = timerSeconds !== null && timerSeconds < 3600; // Under 1 hour
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 md:space-y-6">
       {/* Tactical Header: Round & Group Info */}
       {match.circuitId && (
         <div className="bg-black border-l-4 border-accent p-4 rounded-sm mb-2 flex justify-between items-center">
@@ -403,24 +412,24 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
         </>
       )}
 
-      <div className="bg-surface border border-surface-border rounded-sm p-5 shadow-xl">
-        <div className="flex items-center justify-between border-b border-surface-border pb-3 mb-5">
+      <div className="bg-surface border border-surface-border rounded-sm p-4 md:p-5 shadow-xl">
+        <div className="flex items-center justify-between border-b border-surface-border pb-2 md:pb-3 mb-4 md:mb-5">
            <h4 className="text-xs font-black uppercase tracking-widest text-gray-300">Live Match Tracker</h4>
            <button
               onClick={() => {
-                const url = window.location.origin + `/dashboard?join=${match.id}`;
-                navigator.clipboard.writeText(url);
-                toast.success("INVITE LINK COPIED", "Share this URL with squad members to invite them to this mission.");
+                 const url = window.location.origin + `/dashboard?join=${match.id}`;
+                 navigator.clipboard.writeText(url);
+                 toast.success("INVITE LINK COPIED", "Share this URL with squad members to invite them to this mission.");
               }}
               className="text-[10px] font-black uppercase tracking-widest text-accent hover:text-white flex items-center gap-1 transition-colors"
            >
               <Copy className="w-3 h-3" /> Share Mission
            </button>
         </div>
-        <div className="space-y-5">
+        <div className="space-y-3.5 md:space-y-5">
           {trackerSteps.map((step) => (
-            <div key={step.id} className={`flex items-start gap-3 transition-all duration-300 ${step.done || step.active ? 'opacity-100' : 'opacity-25'}`}>
-              <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 border-2 transition-all ${step.done ? 'bg-accent border-accent text-black' : step.active ? 'bg-accent/10 border-accent text-accent' : 'bg-black border-surface-border'}`}>
+            <div key={step.id} className={`flex items-start gap-2.5 md:gap-3 transition-all duration-300 ${step.done || step.active ? 'opacity-100' : 'opacity-25'}`}>
+              <div className={`w-4.5 h-4.5 md:w-5 md:h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 border-2 transition-all ${step.done ? 'bg-accent border-accent text-black' : step.active ? 'bg-accent/10 border-accent text-accent' : 'bg-black border-surface-border'}`}>
                 {step.done ? (
                   <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M5 13l4 4L19 7" /></svg>
                 ) : step.active ? (
@@ -428,8 +437,8 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                 ) : null}
               </div>
               <div>
-                <div className={`text-xs font-black uppercase tracking-widest ${step.done ? 'text-accent' : step.active ? 'text-white' : 'text-gray-600'}`}>{step.label}</div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-widest font-mono mt-0.5">{step.sub}</div>
+                <div className={`text-[11px] md:text-xs font-black uppercase tracking-widest ${step.done ? 'text-accent' : step.active ? 'text-white' : 'text-gray-600'}`}>{step.label}</div>
+                <div className="text-[9px] md:text-[10px] text-gray-500 uppercase tracking-widest font-mono mt-0.5">{step.sub}</div>
               </div>
             </div>
           ))}
@@ -453,6 +462,21 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Tournament/League Rules Info (for gathering lobbies) */}
+      {isTournamentOrLeague && (
+        <div className="bg-blue-950/30 border border-blue-500/40 p-4 rounded-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-blue-400 text-xs font-black uppercase tracking-widest">Tournament Rules & Regulations</span>
+          </div>
+          <button
+            onClick={() => setIsRulesOpen(true)}
+            className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/40 border border-blue-500/60 text-blue-400 font-black uppercase tracking-widest text-[10px] rounded-sm transition-all"
+          >
+            View Rules
+          </button>
         </div>
       )}
 
@@ -620,24 +644,32 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
         })()}
 
 
-        {!isGatheringLobby && (match.status !== 'WAITING' || (match as any).readyDeadline) && (isResolutionTimer || (timerSeconds !== null && !['CLOSED', 'COMPLETED', 'SCHEDULED'].includes(match.status))) && (
+        {!isGatheringLobby && (isResolutionTimer || (timerSeconds !== null && !['CLOSED', 'COMPLETED', 'SCHEDULED'].includes(match.status))) && (
           <div className={`${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent) ? 'bg-red-950 border-red-500 shadow-[0_0_30px_rgba(220,38,38,0.2)]' : 'bg-black border-accent shadow-[0_0_30px_rgba(0,255,102,0.15)]'} border-2 p-6 rounded-sm flex flex-col items-center justify-center text-center relative overflow-hidden group animate-in fade-in zoom-in`}>
             {isUrgent && <div className="absolute inset-0 bg-red-600/5 animate-pulse pointer-events-none" />}
             
-            <h4 className={`text-[10px] ${ (match.status === 'WAITING_FOR_OPPONENT' || isUrgent || !!(match as any).readyDeadline) ? 'text-red-500' : 'text-accent'} font-black uppercase tracking-[0.3em] mb-4 flex items-center gap-2 z-10`}>
-              <Flame className={`w-4 h-4 ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent || !!(match as any).readyDeadline) ? 'text-red-500' : 'text-accent'} animate-pulse`} /> 
+            <h4 className={`text-[10px] ${ (match.status === 'WAITING_FOR_OPPONENT' || isUrgent || hasReadyDeadline) ? 'text-red-500' : 'text-accent'} font-black uppercase tracking-[0.3em] mb-4 flex items-center gap-2 z-10`}>
+              <Flame className={`w-4 h-4 ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent || hasReadyDeadline) ? 'text-red-500' : 'text-accent'} animate-pulse`} /> 
               {isDisputed 
                 ? 'EXTRACTION HALTED'
                 : isResolutionTimer 
                   ? (match.status === 'WAITING_FOR_OPPONENT' ? 'Final Validation Countdown' : 'Strict Forfeit Timer')
-                  : (match as any).readyDeadline 
-                    ? 'Tactical Readiness Deadline'
-                    : (hasGhostOpponent ? 'AUTO-VICTORY COUNTDOWN' : 'Tactical Extraction Deadline')}
+                  : showAwaitingOpponentReadyText
+                    ? 'Awaiting opponent to ready'
+                    : hasReadyDeadline
+                      ? 'Tactical Readiness Deadline'
+                      : (hasGhostOpponent ? 'AUTO-VICTORY COUNTDOWN' : '24-Hour Room Deadline')}
             </h4>
 
-            <div className={`text-6xl font-black ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent || !!(match as any).readyDeadline) ? 'text-red-400 drop-shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-white drop-shadow-[0_0_10px_rgba(0,255,102,0.4)]'} italic tracking-tighter tabular-nums z-10`}>
-              {timerSeconds !== null ? formatTime(timerSeconds) : '--'}
-            </div>
+            {showAwaitingOpponentReadyText ? (
+              <div className="text-2xl font-black text-white italic tracking-tighter z-10">
+                Awaiting opponent to ready
+              </div>
+            ) : (
+              <div className={`text-6xl font-black ${(match.status === 'WAITING_FOR_OPPONENT' || isUrgent || hasReadyDeadline) ? 'text-red-400 drop-shadow-[0_0_10px_rgba(220,38,38,0.4)]' : 'text-white drop-shadow-[0_0_10px_rgba(0,255,102,0.4)]'} italic tracking-tighter tabular-nums z-10`}>
+                {timerSeconds !== null ? formatTime(timerSeconds) : '--'}
+              </div>
+            )}
 
             {!isResolutionTimer && (
               <div className="mt-4 z-10 w-full relative">
@@ -802,6 +834,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
         game={match.game}
       />
       <DisputeModal isOpen={isDisputeOpen} onClose={() => setDisputeOpen(false)} matchId={match.id!} username={profile?.username || "Operator"} />
+      <RulesModal isOpen={isRulesOpen} onClose={() => setIsRulesOpen(false)} game={match.game} format={match.format} />
     </div>
   );
 }

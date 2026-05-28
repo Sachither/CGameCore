@@ -270,12 +270,17 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
               </div>
             )}
 
-            {/* Player Selection for CODM FFA (3-8) or League (4-16) */}
-            {((game === 'CODM' && format === 'FFA') || (game === 'EFOOTBALL' && format === 'league')) && (
+            {/* Player Selection for CODM FFA (3-8) or League/Tournament (4-16) */}
+            {((game === 'CODM' && format === 'FFA') || (game === 'EFOOTBALL' && (format === 'league' || format === 'tournament'))) && (
               <div className="space-y-4 animate-in slide-in-from-top-2">
-                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">Operator Limits ({format === 'league' ? '4-16' : '3-8'} PLYRs)</label>
+                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">
+                  Operator Limits ({(format === 'league' || format === 'tournament') ? '4-16' : '3-8'} PLYRs)
+                </label>
                 <div className="grid grid-cols-4 gap-2">
-                   {(format === 'league' ? [4, 8, 10, 16] : [3, 4, 5, 6, 7, 8]).map(n => (
+                   {((format === 'league' || format === 'tournament') 
+                      ? (format === 'league' ? [4, 8, 10, 16] : [4, 8, 16]) 
+                      : [3, 4, 5, 6, 7, 8]
+                   ).map(n => (
                      <button 
                        key={n}
                        onClick={() => setMaxPlayers(n)}
@@ -302,7 +307,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                       className={`py-4 rounded-sm text-sm font-black transition-all border flex flex-col items-center justify-center gap-0.5 ${!isCustomFee && fee === f ? 'bg-white text-black border-white' : 'bg-black border-surface-border text-gray-600 hover:border-accent/40'}`}
                     >
                       <span>{f === 0 ? "FREE" : f} {f !== 0 && <span className="text-[9px] opacity-60">CR</span>}</span>
-                      {f !== 0 && <span className="text-[8px] opacity-40 italic">~${(f/100).toFixed(0)}</span>}
+                      {f !== 0 && <span className="text-[8px] opacity-40 italic">~${(f/100).toFixed(f % 100 === 0 ? 0 : 2)}</span>}
                     </button>
                   ))}
                   {(profile?.tier || 1) >= 2 && (

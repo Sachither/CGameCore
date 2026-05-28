@@ -210,12 +210,12 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
    }
 
    return (
-      <div className="w-full min-h-screen bg-background flex flex-col items-center pt-20">
+      <div className="w-full min-h-screen bg-background flex flex-col items-center pt-28 md:pt-20">
 
-         <div className="w-full bg-surface border-b border-surface-border py-4 px-6 flex items-center justify-between sticky top-20 z-50">
+         <div className="w-full bg-surface border-b border-surface-border py-3 md:py-4 px-4 md:px-6 flex items-center justify-between sticky top-16 md:top-20 z-50">
             <button
                onClick={() => setIsLeaveModalOpen(true)}
-               className="text-gray-400 hover:text-white transition-colors flex items-center gap-2 text-sm font-bold uppercase tracking-widest p-2 -ml-2 rounded-sm hover:bg-surface-hover"
+               className="text-gray-400 hover:text-white transition-colors flex items-center gap-1.5 md:gap-2 text-[11px] md:text-sm font-bold uppercase tracking-widest p-1.5 md:p-2 -ml-2 rounded-sm hover:bg-surface-hover"
             >
                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -307,44 +307,44 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             )}
 
             {/* Tactical Header */}
-            <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-surface border border-surface-border p-6 rounded-sm shadow-xl relative overflow-hidden">
+            <div className="mb-4 md:mb-6 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-4 bg-surface border border-surface-border p-4 md:p-6 rounded-sm shadow-xl relative overflow-hidden">
                {match?.game === 'CODM' && (
                   <div className="absolute inset-0 opacity-[0.05] pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]"></div>
                )}
-               <div className="flex items-center gap-6 relative z-10">
-                  <div className={`w-16 h-16 bg-black border ${match?.game === 'CODM' ? 'border-red-500/30' : 'border-accent/20'} rounded-sm flex items-center justify-center rotate-45 shrink-0`}>
-                     <Swords className={`w-8 h-8 -rotate-45 ${match?.game === 'CODM' ? 'text-red-500' : 'text-accent'}`} />
+               <div className="flex items-center gap-3 md:gap-6 relative z-10">
+                  <div className={`w-12 h-12 md:w-16 md:h-16 bg-black border ${match?.game === 'CODM' ? 'border-red-500/30' : 'border-accent/20'} rounded-sm flex items-center justify-center rotate-45 shrink-0`}>
+                     <Swords className={`w-6 h-6 md:w-8 md:h-8 -rotate-45 ${match?.game === 'CODM' ? 'text-red-500' : 'text-accent'}`} />
                   </div>
                   <div>
-                     <div className="flex items-center gap-3 mb-1">
-                        <span className={`text-[10px] font-black uppercase tracking-[0.2em] px-2 py-0.5 rounded-[2px] ${match?.game === 'CODM' ? 'bg-red-500 text-white' : 'bg-accent text-black'}`}>
+                     <div className="flex items-center gap-2 md:gap-3 mb-1">
+                        <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] px-1.5 md:px-2 py-0.5 rounded-[2px] ${match?.game === 'CODM' ? 'bg-red-500 text-white' : 'bg-accent text-black'}`}>
                            {match?.game}
                         </span>
-                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                        <span className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-widest">
                            Operations Theater #{match?.id?.slice(-6).toUpperCase()}
                         </span>
                      </div>
-                     <h1 className="text-3xl font-black text-white italic uppercase tracking-tighter flex items-center gap-3">
-                        {match?.format === '1v1' ? 'Tactical Duel (15 Mins)' : 'Combat Arena'}
+                     <h1 className="text-xl md:text-3xl font-black text-white italic uppercase tracking-tighter flex items-center gap-2 md:gap-3">
+                        {match?.format === '1v1' ? 'Tactical Duel' : 'Combat Arena'}
                         {match?.weaponClass && match?.weaponClass !== 'NONE' && (
-                           <span className="text-sm bg-white text-black px-3 py-1 rounded-sm not-italic tracking-widest ml-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
+                           <span className="text-[10px] md:text-sm bg-white text-black px-2 md:px-3 py-0.5 md:py-1 rounded-sm not-italic tracking-widest ml-1 md:ml-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]">
                               {match.weaponClass} ONLY
                            </span>
                         )}
                      </h1>
                   </div>
                </div>
-               <div className="flex items-center gap-8 relative z-10">
+               <div className="flex items-center gap-5 md:gap-8 relative z-10 pl-14 md:pl-0">
                   <div className="text-right">
-                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 text-center">Entry Grant</p>
-                     <p className="text-xl font-black text-white italic tracking-tighter">{match?.challengeFee} CR</p>
+                     <p className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 md:mb-1 text-center">Entry Grant</p>
+                     <p className="text-base md:text-xl font-black text-white italic tracking-tighter">{match?.challengeFee} CR</p>
                   </div>
-                  <div className="text-right border-l border-surface-border pl-8">
-                     <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 text-center">Victory Pool</p>
-                     <p className={`text-2xl font-black italic tracking-tighter ${match?.game === 'CODM' ? 'text-red-500' : 'text-accent'}`}>
+                  <div className="text-right border-l border-surface-border pl-5 md:pl-8">
+                     <p className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 md:mb-1 text-center">Victory Pool</p>
+                     <p className={`text-lg md:text-2xl font-black italic tracking-tighter ${match?.game === 'CODM' ? 'text-red-500' : 'text-accent'}`}>
                         {(match as any).isPromo 
-                          ? (((match as any).prizeUSD || 0) * 100).toLocaleString() 
-                          : Math.floor((match?.challengeFee || 0) * (match?.maxPlayers || 2) * 0.9).toLocaleString()
+                           ? (((match as any).prizeUSD || 0) * 100).toLocaleString() 
+                           : Math.floor((match?.challengeFee || 0) * (match?.maxPlayers || 2) * 0.9).toLocaleString()
                         } CR
                      </p>
                   </div>
@@ -384,7 +384,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
             </div>
 
             {/* Tactical Briefing & Rules */}
-            <div className="mt-40 border-t border-surface-border/30 pt-12">
+            <div className="mt-12 md:mt-24 border-t border-surface-border/30 pt-6 md:pt-12">
                <MatchRules game={match!.game} weaponClass={match!.weaponClass} />
             </div>
          </div>

@@ -49,6 +49,10 @@ export default function TournamentListingPage({ params }: { params: any }) {
       if (comp.title?.includes('MASTER_CIRCUIT')) return false;
       if (comp.status === 'KNOCKOUT_Q' || comp.status === 'GROUPS') return false;
       
+      // Exclude all completed or closed tournaments from the Live list
+      const isCompletedOrClosed = comp.status === 'COMPLETED' || comp.status === 'CLOSED';
+      if (isCompletedOrClosed) return false;
+
       if (comp.status !== 'WAITING') return true;
       
       const isParticipant = comp.playerIds?.includes(user?.uid);

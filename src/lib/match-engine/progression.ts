@@ -59,22 +59,37 @@ export async function pushMatchNotification(
  ) {
      const is16Player = circuit.format === '16_TOURNAMENT';
 
-     if (round === 'QR1') {
-        // Track Round 1 winners
+     if (round === 'R32' || round === 'QR1') {
+        // Track first-stage winners for 32-player R32 or 16-player QR1
         const mCount = (circuit.matchesCompleted || 0) + 1;
         transaction.update(circuitRef, {
            matchesCompleted: mCount,
            round1Winners: admin.firestore.FieldValue.arrayUnion(tieWinner)
         });
 
-        // When all 8 QR1 matches complete, spawn QF
         const winners = [...(circuit.round1Winners || []), tieWinner];
-        // 🔒 [SECURITY] Validate exact count: QR1 should have exactly 8 winners
-        if (winners.length > 8) {
-           throw new Error(`Invalid QR1 winner count: ${winners.length} (expected 8)`);
+        const expectedCount = round === 'R32' ? 16 : 8;
+        const nextSpawner = round === 'R32' ? spawnRoundOf16 : spawnQuarterFinals;
+        const nextLabel = round === 'R32' ? 'Round of 16' : 'Quarterfinals';
+
+        if (winners.length > expectedCount) {
+           throw new Error(`Invalid ${round} winner count: ${winners.length} (expected ${expectedCount})`);
         }
-        if (winners.length === 8) {
-           await spawnQuarterFinals(transaction, circuitRef, { ...circuit, round1Winners: winners }, operatorUid);
+        if (winners.length === expectedCount) {
+           await nextSpawner(transaction, circuitRef, { ...circuit, round1Winners: winners }, operatorUid);
+        }
+        return;
+     }
+
+     if (round === 'R16') {
+        const qfWinners = [...(circuit.qfWinners || []), tieWinner];
+        transaction.update(circuitRef, {
+           matchesCompleted: admin.firestore.FieldValue.increment(1),
+           qfWinners: admin.firestore.FieldValue.arrayUnion(tieWinner)
+        });
+
+        if (qfWinners.length === 8) {
+           await spawnQuarterFinals(transaction, circuitRef, { ...circuit, qfWinners }, operatorUid);
         }
         return;
      }
@@ -88,7 +103,6 @@ export async function pushMatchNotification(
         });
 
         // When all 4 QF matches complete, spawn SF
-        // Expect exactly 4 QF winners (no byes possible since 4 matches = 4 winners)
         if (qfWinners.length === 4) {
            await spawnSemiFinals(transaction, circuitRef, { ...circuit, qfWinners }, operatorUid);
         }
@@ -231,6 +245,54 @@ export async function purgeCompetitionChat(competitionId: string) {
    const batch = adminDb.batch();
    snap.docs.forEach(doc => batch.delete(doc.ref));
    await batch.commit();
+}
+
+/**
+ * HELPER: Spawn Round of 16 for 32-player tournaments
+ */
+async function spawnRoundOf16(
+   transaction: admin.firestore.Transaction,
+   circuitRef: admin.firestore.DocumentReference,
+   circuit: EngineCircuit,
+   operatorUid: string
+) {
+   const winners = circuit.round1Winners || [];
+   if (winners.length < 16) return;
+
+   const shuffled = [...winners].sort(() => Math.random() - 0.5);
+   const pairs = [];
+   for (let i = 0; i < 16; i += 2) {
+      pairs.push([shuffled[i], shuffled[i + 1]]);
+   }
+
+   const expiresAt = new Date(Date.now() + 24 * 3600 * 1000);
+   for (const [p1, p2] of pairs) {
+      const mRef = adminDb.collection("matches").doc();
+      transaction.set(mRef, {
+         game: circuit.game,
+         format: 'tournament',
+         challengeFee: 0,
+         status: 'WAITING',
+         circuitId: circuitRef.id,
+         round: 'R16',
+         playerIds: [p1, p2],
+         expiresAt,
+         hostUid: p1,
+         players: {
+            [p1]: { ...circuit.players[p1], ready: false, team: 'alpha', isHost: true },
+            [p2]: { ...circuit.players[p2], ready: false, team: 'bravo', isHost: false }
+         },
+         creatorId: (circuit as any).creatorId || operatorUid,
+         isPartnerTournament: !!(circuit as any).isPartnerTournament,
+         createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      pushMatchNotification(transaction, p1, p2, circuit.players[p2]?.username || 'Opponent', mRef.id, 'R16', '24 Hours');
+      pushMatchNotification(transaction, p2, p1, circuit.players[p1]?.username || 'Opponent', mRef.id, 'R16', '24 Hours');
+   }
+
+   transaction.update(circuitRef, { status: 'KNOCKOUT_R16' });
+   await pushGlobalCommand(transaction, circuitRef.id, `ROUND OF 16 ACTIVATED! 16 ADVANCERS SEEDED INTO 8 MATCHES — 24 HOUR DEADLINE.`);
 }
 
 /**

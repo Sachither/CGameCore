@@ -44,7 +44,7 @@ export interface EngineTie {
 
 export interface EngineCircuit {
    id?: string;
-   format: '16_TOURNAMENT';
+   format: '16_TOURNAMENT' | '32_TOURNAMENT';
    status: string;
    playerIds: string[];
    players: { [uid: string]: EnginePlayer };

@@ -265,10 +265,17 @@ function getNextRoundName(currentRound: string, limit: number, winnersRemaining:
   if (winnersRemaining === 4) return 'SF';
   if (winnersRemaining === 2) return 'FINAL';
   if (winnersRemaining === 8) return 'QF';
-  if (currentRound === 'QR1') return 'QR2';
-  if (currentRound === 'QR2') return 'QR3';
-  if (currentRound === 'QR3') return 'QR4';
-  return 'QR_NEXT';
+
+  const qrMatch = currentRound.match(/^QR(\d+)$/);
+  if (qrMatch) {
+    const nextQr = Number(qrMatch[1]) + 1;
+    return `QR${nextQr}`;
+  }
+
+  if (currentRound === 'QF') return 'SF';
+  if (currentRound === 'SF') return 'FINAL';
+
+  return currentRound;
 }
 
 async function spawnNextPromoRound(

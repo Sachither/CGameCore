@@ -363,7 +363,7 @@ export async function createMatchAction(
   maxPlayers: number = 2,
   roomCode?: string,
   circuitId?: string,
-  round?: 'QR1' | 'QR2' | 'QF' | 'SF' | 'FINAL' | 'NONE',
+  round?: 'R32' | 'R16' | 'QR1' | 'QR2' | 'QF' | 'SF' | 'FINAL' | 'NONE',
   group?: 'A' | 'B' | 'C' | 'D' | 'NONE',
   leg?: 1 | 2 | 3 | 'NONE',
   roomName?: string,
@@ -408,7 +408,7 @@ export async function createMatchAction(
      const cSnap = await adminDb.collection("circuits").doc(circuitId).get();
      if (cSnap.exists) {
         const c = cSnap.data() as EngineCircuit;
-        const is16 = c.format === '16_TOURNAMENT';
+        const is16 = c.format === '16_TOURNAMENT' || c.format === '32_TOURNAMENT';
         const max = is16 ? 1 : 0;
         
         if (max > 0) {
@@ -1328,9 +1328,9 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
          // 1v1 DUEL: Track readiness pressure
          const readyPlayers = playersList.filter(p => p.ready);
          if (readyPlayers.length === 1) {
-            // Start 30-minute extraction timer for the non-ready player
+            // Start 23.5-hour readiness timer for the non-ready player
             if (!matchData.readyDeadline && !matchData.readyDeadlineDisabled) {
-               updates.readyDeadline = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+               updates.readyDeadline = new Date(Date.now() + 23.5 * 3600 * 1000).toISOString();
                const nonReadyPlayer = playersList.find(p => !p.ready);
                const readyPlayer = playersList.find(p => p.ready);
                if (nonReadyPlayer && readyPlayer) {
@@ -1341,7 +1341,7 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
                      readyPlayer.username || 'Opponent',
                      matchId,
                      'Readiness Alert',
-                     '30 Minutes'
+                     '23 Hours 30 Minutes'
                   );
                }
             }

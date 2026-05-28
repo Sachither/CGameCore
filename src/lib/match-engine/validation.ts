@@ -7,7 +7,7 @@ import { handleKnockoutAdvancement, handleLeagueAdvancement } from "./progressio
  * VALIDATION: Enforce Absolute Victory (No Draws)
  */
 export function validateAbsoluteVictory(scoreFor: number, scoreAgainst: number, format: string, leg?: number | string) {
-   if (format === 'tournament' || format === '16_TOURNAMENT') {
+   if (format === 'tournament' || format === '16_TOURNAMENT' || format === '32_TOURNAMENT') {
       // Autorize draws ONLY for Leg 1 and Leg 2 in aggregate series
       const isSeriesLeg = leg === 1 || leg === 2 || leg === '1' || leg === '2';
       
