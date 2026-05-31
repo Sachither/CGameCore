@@ -1601,12 +1601,6 @@ export async function adminResolveMatchAction(
         circuitSnap = await transaction.get(circuitRef);
       }
 
-      // Add admin footprint
-      transaction.update(matchRef, {
-        adminResolved: true,
-        adminResolvedBy: profile.uid
-      });
-
       // Crucial: Finally close the match to distribute circuit points
       await internalFinalizeMatchClosure(
          transaction, 
@@ -1616,6 +1610,12 @@ export async function adminResolveMatchAction(
          profile.uid, 
          circuitSnap?.exists ? circuitSnap.data() : null
       );
+
+      // Add admin footprint after all reads are complete
+      transaction.update(matchRef, {
+        adminResolved: true,
+        adminResolvedBy: profile.uid
+      });
     });
 
     // PHASE 3: POST-MATCH NOTIFICATIONS

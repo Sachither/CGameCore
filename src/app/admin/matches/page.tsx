@@ -6,10 +6,12 @@ import {
   getExpiredMatchesAction,
   adminRunExpiredMatchSweepAction,
   adminResolveExpiredMatchAction,
+  adminResolveMatchWithPinAction,
   adminForceCloseMatchAction,
   adminDeleteMatchAction,
   adminDeleteCircuitByIdAction,
 } from "@/app/actions/admin-actions";
+import AdminPinTerminal from "@/components/admin/AdminPinTerminal";
 import { useCommandModal } from "@/context/CommandModalContext";
 import {
   Loader2,
@@ -58,12 +60,14 @@ function MatchRow({
   onForceClose,
   onDelete,
   onResolveExpired,
+  onAwardWin,
   loading,
 }: {
   match: ActiveMatch;
   onForceClose: (id: string) => void;
   onDelete: (id: string, withCircuit: boolean) => void;
   onResolveExpired?: (id: string) => void;
+  onAwardWin?: (matchId: string, winnerUid: string, winnerLabel: string) => void;
   loading: string | null;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -73,6 +77,7 @@ function MatchRow({
     .join(" vs ");
 
   const isExpired = match.expiresAt ? new Date(match.expiresAt).getTime() <= Date.now() : false;
+  const canAwardWin = ['WAITING_FOR_OPPONENT', 'RESOLVING'].includes(match.status);
 
   return (
     <div className="bg-[#0a0a0a] border border-white/5 rounded-sm overflow-hidden hover:border-white/10 transition-all">
@@ -187,6 +192,27 @@ function MatchRow({
               </button>
             )}
 
+            {canAwardWin && onAwardWin && (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(match.players).map(([uid, player]: [string, any]) => (
+                  <button
+                    key={uid}
+                    id={`award-win-${match.id}-${uid}`}
+                    onClick={() => onAwardWin(match.id, uid, player.username || uid)}
+                    disabled={!!loading}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 rounded-sm text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30"
+                  >
+                    {isProcessing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-3 h-3" />
+                    )}
+                    Award Win to {player.username || uid}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Force close */}
             <button
               id={`force-close-${match.id}`}
@@ -254,6 +280,9 @@ export default function AdminMatchesPage() {
   const [manualNukeId, setManualNukeId] = useState("");
   const [viewMode, setViewMode] = useState<'active' | 'expired'>('active');
   const [sweepLoading, setSweepLoading] = useState(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pendingAward, setPendingAward] = useState<{ matchId: string; winnerUid: string; winnerLabel: string } | null>(null);
 
   const showToast = (msg: string, ok: boolean) => {
     setToast({ msg, ok });
@@ -380,6 +409,34 @@ export default function AdminMatchesPage() {
     });
   };
 
+  const handleAwardWin = (matchId: string, winnerUid: string, winnerLabel: string) => {
+    setPendingAward({ matchId, winnerUid, winnerLabel });
+    setPinError(null);
+    setIsPinModalOpen(true);
+  };
+
+  const executeAwardWin = async (pin: string) => {
+    if (!user || !pendingAward) return;
+    setActionLoading(pendingAward.matchId);
+    setPinError(null);
+    try {
+      const idToken = await user.getIdToken();
+      const res = await adminResolveMatchWithPinAction(idToken, pendingAward.matchId, pendingAward.winnerUid, pin);
+      if (res.success) {
+        showToast(`Awarded win to ${pendingAward.winnerLabel}.`, true);
+        setIsPinModalOpen(false);
+        setPendingAward(null);
+        await fetchMatches();
+      } else {
+        setPinError(res.error || "Failed to award win.");
+      }
+    } catch (err: any) {
+      setPinError(err.message || "Failed to award win.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleManualNuke = async () => {
     if (!manualNukeId.trim()) return;
     command.confirm({
@@ -476,6 +533,18 @@ export default function AdminMatchesPage() {
           </button>
         </div>
       </div>
+
+      <AdminPinTerminal
+        isOpen={isPinModalOpen}
+        onClose={() => {
+          setIsPinModalOpen(false);
+          setPendingAward(null);
+          setPinError(null);
+        }}
+        onSuccess={executeAwardWin}
+        title={pendingAward ? `Confirm Award Win to ${pendingAward.winnerLabel}` : "Confirm Identity"}
+        error={pinError}
+      />
 
       {/* Toast */}
       {toast && (
@@ -609,6 +678,7 @@ export default function AdminMatchesPage() {
                     onForceClose={handleForceClose}
                     onDelete={handleDelete}
                     onResolveExpired={handleResolveExpired}
+                    onAwardWin={handleAwardWin}
                     loading={actionLoading}
                   />
                 ))}
@@ -637,6 +707,7 @@ export default function AdminMatchesPage() {
               onForceClose={handleForceClose}
               onDelete={handleDelete}
               onResolveExpired={handleResolveExpired}
+              onAwardWin={handleAwardWin}
               loading={actionLoading}
             />
           ))}

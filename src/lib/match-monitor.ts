@@ -8,17 +8,28 @@ import { adminDb } from './firebase-admin';
 export async function sweepExpiredMatches(limit = 100) {
   const now = admin.firestore.Timestamp.fromDate(new Date());
   try {
-    const snaps = await adminDb
+    const expirySnaps = await adminDb
       .collection('matches')
       .where('expiresAt', '<=', now)
-      .where('status', 'in', ['WAITING', 'WAITING_FOR_OPPONENT', 'RESOLVING'])
+      .where('status', 'in', ['WAITING', 'READY', 'WAITING_FOR_OPPONENT', 'RESOLVING'])
       .limit(limit)
       .get();
 
-    if (snaps.empty) return { success: true, processed: 0 };
+    const resolutionSnaps = await adminDb
+      .collection('matches')
+      .where('resolutionEndTime', '<=', now)
+      .where('status', 'in', ['WAITING_FOR_OPPONENT', 'RESOLVING'])
+      .limit(limit)
+      .get();
+
+    const snapMap = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
+    for (const doc of expirySnaps.docs) snapMap.set(doc.id, doc);
+    for (const doc of resolutionSnaps.docs) snapMap.set(doc.id, doc);
+    const snaps = Array.from(snapMap.values());
+    if (snaps.length === 0) return { success: true, processed: 0 };
 
     let processed = 0;
-    for (const doc of snaps.docs) {
+    for (const doc of snaps) {
       const matchId = doc.id;
       try {
         await adminDb.runTransaction(async (transaction) => {
@@ -60,6 +71,12 @@ export async function sweepExpiredMatches(limit = 100) {
           if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
             const { resolveDoubleNoShow } = await import('@/lib/match-engine/validation');
             await resolveDoubleNoShow(transaction, matchRef, matchData as any);
+          } else if (readyCount === 1 && claimCount === 0) {
+            const readyPlayerUid = (playersList.find((p: any) => p.ready) as any)?.uid;
+            if (readyPlayerUid) {
+              const { resolveTechnicalWin } = await import('@/lib/match-engine/validation');
+              await resolveTechnicalWin(transaction, matchRef, matchData as any, readyPlayerUid);
+            }
           } else if (claimCount === 1) {
             const claimantUid = Object.keys(matchData.players).find((pid) => !!(matchData.players[pid] as any).claim);
             if (claimantUid) {

@@ -55,7 +55,11 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
       return new Date(val);
     };
 
-    const targetTimeSrc = isTournamentOrLeague && match?.expiresAt ? match.expiresAt : (hasReadyTimer ? (match as any).readyDeadline : (hasResolutionTimer ? match.resolutionEndTime : match.expiresAt));
+    const targetTimeSrc = isResolutionTimer
+      ? match.resolutionEndTime
+      : hasReadyTimer
+        ? (match as any).readyDeadline
+        : match.expiresAt;
     const dateObj = extractDate(targetTimeSrc);
     if (!dateObj) {
       setTimerSeconds(null);

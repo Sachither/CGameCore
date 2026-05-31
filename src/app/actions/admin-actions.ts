@@ -4,7 +4,7 @@ import { adminAuth, adminDb } from "@/lib/firebase-admin";
 import admin from "firebase-admin";
 import { Match, Circuit } from "@/lib/match-service";
 import { purgeMatchDataInternal, purgeMatchMessagesOnly } from "@/lib/match-cleanup";
-import { internalFinalizeMatchClosure, dispatchMatchResolutionNotifications } from "./match-actions";
+import { internalFinalizeMatchClosure, dispatchMatchResolutionNotifications, adminResolveMatchAction as internalAdminResolveMatchAction } from "./match-actions";
 import sweepExpiredMatches from '@/lib/match-monitor';
 import { decryptData } from "@/lib/encryption-utils";
 import { sendTacticalEmail } from "@/lib/mail";
@@ -1632,6 +1632,11 @@ export async function adminResolveExpiredMatchAction(idToken: string, matchId: s
       if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
         const { resolveDoubleNoShow } = await import('@/lib/match-engine/validation');
         await resolveDoubleNoShow(transaction, matchRef, matchData as any);
+      } else if (readyCount === 1 && claimCount === 0) {
+        const readyPlayerUid = (playersList.find((p: any) => p.ready) as any)?.uid;
+        if (!readyPlayerUid) throw new Error('Unable to resolve ready player.');
+        const { resolveTechnicalWin } = await import('@/lib/match-engine/validation');
+        await resolveTechnicalWin(transaction, matchRef, matchData as any, readyPlayerUid);
       } else if (claimCount === 1) {
         const claimantUid = Object.keys(matchData.players).find((pid) => !!(matchData.players[pid] as any).claim);
         if (!claimantUid) throw new Error('No claimant found.');
@@ -1653,6 +1658,23 @@ export async function adminResolveExpiredMatchAction(idToken: string, matchId: s
     console.error('[AdminAction] adminResolveExpiredMatch error:', error);
     return { success: false, error: error.message };
   }
+}
+
+/**
+ * ADMIN ACTION: RESOLVE MATCH WITH SELECTED WINNER
+ * Use this for stuck matches when an admin wants to award a player and close the game.
+ */
+export async function adminResolveMatchAction(idToken: string, matchId: string, winnerUid: string) {
+  return await internalAdminResolveMatchAction(idToken, matchId, winnerUid);
+}
+
+export async function adminResolveMatchWithPinAction(idToken: string, matchId: string, winnerUid: string, securityPin: string) {
+  const adminUid = await getVerifiedAdminUid(idToken);
+  const pinVerification = await verifyAdminSecurityPin(adminUid, securityPin);
+  if (!pinVerification.success) {
+    throw new Error(pinVerification.error || 'Security PIN validation failed.');
+  }
+  return await internalAdminResolveMatchAction(idToken, matchId, winnerUid);
 }
 
 /**
