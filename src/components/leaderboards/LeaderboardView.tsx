@@ -20,16 +20,26 @@ export default function LeaderboardView() {
   // --- WEEKLY EARNERS FETCH ---
   useEffect(() => {
     if (filter === 'Weekly-Earners') {
+      let mounted = true;
       const fetchWeekly = async () => {
         setIsDataFetching(true);
-        const res = await getWeeklyEarnersAction();
-        if (res.success && res.earners) {
-          setLeaderboardUsers(res.earners);
+        try {
+          const res = await getWeeklyEarnersAction();
+          if (!mounted) return;
+          if (res.success && res.earners) {
+            setLeaderboardUsers(res.earners);
+          }
+        } catch (e) {
+          console.error('[Leaderboard] Weekly fetch failed:', e);
+        } finally {
+          if (mounted) setIsDataFetching(false);
+          if (mounted) setLoading(false);
         }
-        setIsDataFetching(false);
-        setLoading(false);
       };
+
       fetchWeekly();
+      const intervalId = setInterval(fetchWeekly, 60000); // refresh every 60s
+      return () => { mounted = false; clearInterval(intervalId); };
     }
   }, [filter]);
 
@@ -271,12 +281,12 @@ export default function LeaderboardView() {
 
          {/* Filters & Search */}
          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-            <div className="flex bg-black border border-surface-border rounded-[3px] overflow-hidden shadow-lg">
+            <div className="flex bg-black border border-surface-border rounded-[3px] overflow-x-auto hide-scrollbar shadow-lg whitespace-nowrap">
                {(['All-Time', 'Monthly', 'CODM', 'eFootball', 'Weekly-Earners'] as const).map(f => (
                  <button 
                    key={f}
                    onClick={() => setFilter(f)}
-                   className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors flex items-center gap-2 ${filter === f ? 'bg-accent/10 text-accent-aware border-b-2 border-accent' : 'text-gray-500 hover:bg-surface hover:text-main border-b-2 border-transparent'}`}
+                   className={`px-4 py-3 text-[10px] font-bold uppercase tracking-widest transition-colors inline-flex items-center gap-2 flex-shrink-0 ${filter === f ? 'bg-accent/10 text-accent-aware border-b-2 border-accent' : 'text-gray-500 hover:bg-surface hover:text-main border-b-2 border-transparent'}`}
                  >
                    {f === 'Weekly-Earners' && (
                      isDataFetching ? <Loader2 className="w-3 h-3 text-accent animate-spin" /> : <Zap className="w-3 h-3 text-accent" />

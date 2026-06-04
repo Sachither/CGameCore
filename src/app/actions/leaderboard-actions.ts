@@ -11,20 +11,24 @@ export async function getWeeklyEarnersAction() {
     // Convert to Firestore Timestamp
     const lastWeekTimestamp = admin.firestore.Timestamp.fromDate(lastWeek);
 
-    const transactionsSnap = await adminDb.collection("transactions")
-      .where("type", "==", "CREDIT")
-      .where("category", "==", "MATCH_PRIZE")
-      .where("createdAt", ">=", lastWeekTimestamp)
-      .get();
-
     const earningsMap: Record<string, number> = {};
+    const categories = ["MATCH_PRIZE", "PARTNER_COMMISSION"];
 
-    transactionsSnap.docs.forEach(doc => {
-      const data = doc.data();
-      const uid = data.uid;
-      const amount = data.amount || 0;
-      earningsMap[uid] = (earningsMap[uid] || 0) + amount;
-    });
+    for (const category of categories) {
+      const transactionsSnap = await adminDb.collection("transactions")
+        .where("type", "==", "CREDIT")
+        .where("category", "==", category)
+        .where("createdAt", ">=", lastWeekTimestamp)
+        .get();
+
+      transactionsSnap.docs.forEach(doc => {
+        const data = doc.data();
+        const uid = data.uid;
+        const amount = Number(data.amount || 0);
+        if (!uid) return;
+        earningsMap[uid] = (earningsMap[uid] || 0) + amount;
+      });
+    }
 
     // Convert to array and sort
     const sortedEarners = Object.entries(earningsMap)

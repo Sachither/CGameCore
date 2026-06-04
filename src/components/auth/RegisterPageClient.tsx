@@ -1,13 +1,12 @@
 "use client";
 import RegisterForm from "@/components/auth/RegisterForm";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "./AuthProvider";
 
 export default function RegisterPageClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, isSyncing } = useAuth();
 
   useEffect(() => {
     const code = searchParams.get('code');
@@ -27,10 +26,9 @@ export default function RegisterPageClient() {
   }, [searchParams]);
 
   // 🛡️ Smart Flicker Suppression
-  // Show loader ONLY if:
-  // 1. System is still initializing (loading)
-  // 2. User is already fully enlisted (user AND profile) -> They will be redirected to Dashboard
-  const shouldShowLoader = loading || (user && profile);
+  // Show loader if the auth system is still initializing or if the signed-in
+  // user is still being checked for an existing Firestore profile.
+  const shouldShowLoader = loading || isSyncing || (user && profile);
 
   if (shouldShowLoader) {
      return (

@@ -150,7 +150,9 @@ function AdminDisputesContent() {
     }
   };
 
-  const playerList = selected ? Object.values(selected.players || {}) : [];
+  const playerList = selected
+    ? Object.entries(selected.players || {}).map(([uid, player]) => ({ uid, ...(player as any) }))
+    : [];
 
   return (
     <div className="max-w-7xl mx-auto">

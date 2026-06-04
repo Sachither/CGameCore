@@ -138,6 +138,12 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   };
 
   const fees = getAvailableFees();
+  // Remove FREE (0) stake option for all modes except eFootball LEAGUE
+  const visibleFees = fees.filter(f => {
+    if (f !== 0) return true;
+    // allow free only when creating an eFootball league
+    return game === 'EFOOTBALL' && format === 'league';
+  });
   const weaponClasses = ['ALL GUNS', 'SHOTGUN', 'SNIPER'] as const;
 
   return (
@@ -300,7 +306,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                   <span className="text-[8px] text-accent font-black uppercase tracking-widest border border-accent/20 px-1.5 py-0.5 rounded-sm">Tier {profile?.tier || 1} Limits Active</span>
                </div>
                <div className="grid grid-cols-3 gap-3">
-                  {fees.map(f => (
+                  {visibleFees.map(f => (
                     <button 
                       key={f}
                       onClick={() => { setFee(f); setIsCustomFee(false); }}

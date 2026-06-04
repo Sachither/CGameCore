@@ -14,8 +14,8 @@
   --color-surface-hover: var(--surface-hover);
   --color-surface-border: var(--surface-border);
 
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "Monaco", "Menlo", "Ubuntu Mono", "Courier New", monospace;
 }
 
 @utility scrollbar-hide {
@@ -128,4 +128,13 @@ body {
   &::-webkit-scrollbar-thumb:hover {
     background: #333;
   }
+}
+
+/* Reliable utility to hide scrollbars across browsers */
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
 }
