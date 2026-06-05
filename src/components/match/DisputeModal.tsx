@@ -61,7 +61,7 @@ export default function DisputeModal({ isOpen, onClose, matchId, username }: {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-300">
       <div className="bg-surface border border-surface-border p-6 w-full max-w-lg rounded-sm shadow-2xl relative overflow-hidden">
         {/* Aesthetic background accent */}
         <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 -rotate-45 translate-x-16 -translate-y-16 pointer-events-none" />

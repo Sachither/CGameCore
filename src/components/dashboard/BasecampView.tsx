@@ -12,6 +12,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import DepositRecoveryHeartbeat from "@/components/wallet/DepositRecoveryHeartbeat";
 import RegionGate from "@/components/dashboard/RegionGate";
 import CreateChallengeModal from "./CreateChallengeModal";
+import GauntletHub from "@/components/dashboard/GauntletHub";
 
 export default function BasecampView() {
   const { user, profile } = useAuth();
@@ -68,6 +69,12 @@ export default function BasecampView() {
         <WalletCard />
         <GameCategoryGrid />
         <LiveChallengeList onHostClick={() => setIsCreateOpen(true)} />
+        
+        <div className="flex flex-col gap-6 w-full">
+           <GauntletHub game="CODM" />
+           <GauntletHub game="EFOOTBALL" />
+        </div>
+
         <CombatInterestHub />
         <ActiveTournamentsTable />
 

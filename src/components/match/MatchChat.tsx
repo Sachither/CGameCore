@@ -291,21 +291,15 @@ Secure the objective.`,
               onChange={e => setMsg(e.target.value)}
               placeholder="Transmit tactical data... (No-shows = Loss / Toxic = Ban)" 
               className="flex-1 bg-surface border border-surface-border focus:border-accent text-white font-bold p-3 text-xs rounded-[3px] outline-none transition-all placeholder-gray-600"
-              disabled={match.status === 'CLOSED' || (match.status === 'WAITING' && !isMod && match.format !== 'league' && match.format !== 'tournament')}
+              disabled={match.status === 'CLOSED'}
             />
-            <button type="submit" disabled={match.status === 'CLOSED' || (match.status === 'WAITING' && !isMod && match.format !== 'league' && match.format !== 'tournament')} className="bg-accent hover:bg-accent-hover disabled:bg-surface disabled:text-gray-500 transition-colors text-black font-black uppercase tracking-widest p-3 rounded-[3px] shrink-0 flex items-center justify-center shadow-[0_0_15px_rgba(0,255,102,0.1)]">
+            <button type="submit" disabled={match.status === 'CLOSED'} className="bg-accent hover:bg-accent-hover disabled:bg-surface disabled:text-gray-500 transition-colors text-black font-black uppercase tracking-widest p-3 rounded-[3px] shrink-0 flex items-center justify-center shadow-[0_0_15px_rgba(0,255,102,0.1)]">
                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
             </button>
          </div>
       </form>
       
-      {match.status === 'WAITING' && !isMod && match.format !== 'league' && match.format !== 'tournament' && (
-        <div className="absolute bottom-[72px] left-4 right-4 bg-black/90 border border-accent/20 backdrop-blur-sm p-3 rounded-sm z-20 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-2">
-           <div className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse shadow-[0_0_8px_rgba(0,255,102,0.5)]"></div>
-           <p className="text-[9px] text-accent font-black uppercase tracking-[0.2em]">Tactical Silence: Comms locked until arena is full</p>
-        </div>
-      )}
-      
+
       {match.status === 'CLOSED' && (
         <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center border-t border-surface-border">
            <svg className="w-10 h-10 text-gray-500 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>

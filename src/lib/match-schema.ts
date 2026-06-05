@@ -62,6 +62,7 @@ export interface Match {
   isTestMode?: boolean;
   partnerName?: string;
   overseers?: { [uid: string]: any };
+  isGauntlet?: boolean;
 }
 
 export interface ChallengeInterest {
@@ -73,6 +74,13 @@ export interface ChallengeInterest {
   segment: '1v1' | 'br' | 'ffa' | 'tournament' | 'alcatraz';
   fee: number;
   expiresAt: any;
+}
+
+export interface GauntletState {
+  active: boolean;
+  game: 'CODM' | 'EFOOTBALL';
+  targetWins: number;
+  currentWins: number;
 }
 
 export type { Circuit, CircuitTie };

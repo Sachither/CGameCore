@@ -22,8 +22,8 @@ export async function createPendingFlutterwaveDepositAction(
   idToken: string,
   amountUsd: number
 ) {
-  if (!idToken || amountUsd < 1) {
-    return { success: false, error: "Invalid amount or authentication. Minimum $1.00 required." };
+  if (!idToken || amountUsd < 0.5) {
+    return { success: false, error: "Invalid amount or authentication. Minimum $0.50 required." };
   }
 
   try {

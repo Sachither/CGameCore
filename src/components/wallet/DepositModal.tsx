@@ -35,7 +35,7 @@ export default function DepositModal({
   const fiatSupported = true; // RE-ENABLED: Paystack UI was hidden, now transit to Flutterwave
   const numericUsd = Number(amountUsd) || 0;
   const coinsGenerated = Math.floor(numericUsd * 100);
-  const minRequired = paymentMethod === 'CRYPTO' ? 1 : 1; // Testing: Reduced to $1.00 for SOL/LTC
+  const minRequired = paymentMethod === 'CRYPTO' ? 1.0 : 0.5;
   const isInvalid = numericUsd > 0 && numericUsd < minRequired;
 
   // 🔒 REGIONAL GATE: Force Crypto for non-fiat regions
@@ -307,7 +307,7 @@ export default function DepositModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose} />
 
       <div className="relative w-full max-w-md bg-surface border border-surface-border rounded-xl shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col custom-scrollbar max-h-[90vh]">
@@ -429,6 +429,25 @@ export default function DepositModal({
 
           <div>
             <label className="text-xs uppercase font-bold text-gray-400 tracking-widest block mb-3">Amount to Deposit (USD)</label>
+
+            {/* Quick preset amounts */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {(paymentMethod === 'CRYPTO' ? [1, 5, 10, 25] : [0.5, 1, 5, 10]).map((amt) => {
+                const disabledPreset = amt < minRequired || isProcessing;
+                return (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setAmountUsd(amt.toString())}
+                    disabled={disabledPreset}
+                    className={`text-[12px] font-black uppercase tracking-wider px-3 py-2 rounded-full transition-all ${disabledPreset ? 'bg-surface text-gray-500 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 text-white'}`}
+                  >
+                    ${amt % 1 === 0 ? `${amt}` : amt.toFixed(2)}
+                  </button>
+                );
+              })}
+            </div>
+
             <div className="relative">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-gray-400 text-lg">$</span>
               <input
@@ -446,7 +465,7 @@ export default function DepositModal({
                     setAmountUsd(val);
                   }
                 }}
-                placeholder="1.00"
+                placeholder={paymentMethod === 'CRYPTO' ? "1.00" : "0.50"}
                 disabled={isProcessing}
                 className={`w-full bg-black border ${isInvalid ? 'border-red-500/50' : 'border-surface-border focus:border-white'} text-white font-black text-2xl pl-10 pr-4 py-4 rounded-[3px] outline-none transition-all placeholder-gray-800 disabled:opacity-50`}
               />

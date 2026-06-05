@@ -1,0 +1,159 @@
+/**
+ * SERVER ACTION: ENLIST GAUNTLET
+ */
+export async function enlistGauntletAction(idToken: string, game: 'CODM' | 'EFOOTBALL', targetWins: number) {
+  const uid = await getVerifiedUid(idToken);
+  const userRef = adminDb.collection("users").doc(uid);
+  
+  if (![1, 2, 3, 4, 5].includes(targetWins)) {
+     return { success: false, error: "Invalid target wins. Must be 1-5." };
+  }
+
+  try {
+     await adminDb.runTransaction(async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        if (!userSnap.exists) throw new Error("Operative not found.");
+        const userData = userSnap.data()!;
+        
+        if ((userData.balanceCoins || 0) < 20) {
+           throw new Error("Insufficient balance for Gauntlet (20 CR required).");
+        }
+
+        if (userData.gauntlet?.active && userData.gauntlet.status !== 'FAILED') {
+           throw new Error("You already have an active Gauntlet. Finish or forfeit before enlisting again.");
+        }
+
+        transaction.update(userRef, {
+           balanceCoins: admin.firestore.FieldValue.increment(-20),
+           lifetimeWagered: admin.firestore.FieldValue.increment(20),
+           gauntlet: {
+              active: true,
+              game,
+              targetWins,
+              currentWins: 0,
+              status: 'OPEN',
+              startedAt: admin.firestore.FieldValue.serverTimestamp()
+           }
+        });
+
+        transaction.set(adminDb.collection("stats").doc("platform_finances"), {
+           totalPlatformCut: admin.firestore.FieldValue.increment(20),
+           updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+     });
+     return { success: true };
+  } catch (err: any) {
+     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * SERVER ACTION: JOIN GAUNTLET QUEUE
+ */
+export async function joinGauntletQueueAction(
+  idToken: string,
+  _ignoredUsername: string,
+  _ignoredAvatarId: number,
+  game: 'CODM' | 'EFOOTBALL',
+  inGameName: string
+) {
+  const { uid, profile } = await getVerifiedIdentity(idToken);
+  const userRef = adminDb.collection("users").doc(uid);
+  const queueRef = adminDb.collection("queues").doc(`gauntlet_${game.toLowerCase()}`);
+
+  try {
+     const result = await adminDb.runTransaction(async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        const queueSnap = await transaction.get(queueRef);
+
+        if (!userSnap.exists) throw new Error("Operative profile not found.");
+        const userData = userSnap.data()!;
+
+        if (!userData.gauntlet?.active || userData.gauntlet.game !== game) {
+           throw new Error("You do not have an active Gauntlet for this game. Enlist first.");
+        }
+
+        const tagField = game === 'CODM' ? 'codTag' : 'efootballTag';
+        const finalInGameName = inGameName || (userData[tagField] || "Unknown");
+
+        if (!userData[tagField] && finalInGameName !== "Unknown") {
+           transaction.update(userRef, { [tagField]: finalInGameName });
+        }
+
+        const queueData = (queueSnap.exists ? queueSnap.data() : { playerIds: [], players: [] }) as any;
+        const effectivePlayerIds = queueData.playerIds || [];
+        const effectivePlayers = queueData.players || [];
+
+        if (effectivePlayerIds.includes(uid)) {
+           return { matchCreated: false, alreadyRegistered: true };
+        }
+
+        if (effectivePlayerIds.length + 1 >= 2) {
+           const currentRegistered = { uid, username: profile.username, avatarId: profile.avatarId, inGameName: finalInGameName };
+           const allPlayers = [effectivePlayers[0], currentRegistered];
+
+           const playersMap: Record<string, any> = {};
+           allPlayers.forEach((p: any, idx: number) => {
+             playersMap[p.uid] = { ...p, ready: false, team: idx === 0 ? 'alpha' : 'bravo' };
+           });
+
+           const matchRef = adminDb.collection("matches").doc();
+           transaction.set(matchRef, {
+             game,
+             format: '1v1',
+             challengeFee: 20,
+             isGauntlet: true,
+             status: 'WAITING',
+             maxPlayers: 2,
+             playerIds: allPlayers.map((p: any) => p.uid),
+             players: playersMap,
+             championUid: null,
+             creatorId: uid,
+             createdAt: admin.firestore.FieldValue.serverTimestamp(),
+             expiresAt: new Date(Date.now() + 6 * 3600 * 1000),
+           });
+
+           transaction.set(queueRef, {
+             playerIds: [],
+             players: [],
+             status: 'OPEN',
+             updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           });
+
+           return { matchCreated: true, matchId: matchRef.id };
+        } else {
+           transaction.set(queueRef, {
+             playerIds: admin.firestore.FieldValue.arrayUnion(uid),
+             players: admin.firestore.FieldValue.arrayUnion({ uid, username: profile.username, avatarId: profile.avatarId, inGameName: finalInGameName }),
+             status: 'OPEN',
+             updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           }, { merge: true });
+           return { matchCreated: false };
+        }
+     });
+     return { success: true, ...result };
+  } catch (error: any) {
+     return { success: false, error: error.message };
+  }
+}
+
+export async function leaveGauntletQueueAction(idToken: string, game: 'CODM' | 'EFOOTBALL') {
+  const uid = await getVerifiedUid(idToken);
+  const queueRef = adminDb.collection("queues").doc(`gauntlet_${game.toLowerCase()}`);
+  
+  await adminDb.runTransaction(async (transaction) => {
+     const queueSnap = await transaction.get(queueRef);
+     if (queueSnap.exists) {
+        const queueData = queueSnap.data()!;
+        if (queueData.playerIds?.includes(uid)) {
+           const updatedPlayers = queueData.players.filter((p: any) => p.uid !== uid);
+           const updatedIds = queueData.playerIds.filter((id: string) => id !== uid);
+           transaction.update(queueRef, {
+              playerIds: updatedIds,
+              players: updatedPlayers
+           });
+        }
+     }
+  });
+  return { success: true };
+}

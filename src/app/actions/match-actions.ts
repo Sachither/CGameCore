@@ -64,7 +64,7 @@ export async function dispatchMatchResolutionNotifications(matchId: string, stat
         for (const pid of Object.keys(closedData.players)) {
            await createNotificationInternal(
               pid,
-              "⚖️ Match Under Review",
+              "âš–ï¸ Match Under Review",
               `Your ${gameLabel} match has conflicting results and is now under tribunal review.`,
               "DISPUTE"
            );
@@ -79,7 +79,7 @@ export async function dispatchMatchResolutionNotifications(matchId: string, stat
 
         for (const pid of Object.keys(closedData.players)) {
            if (pid === finalChampion) {
-              let title = "🏆 Victory Confirmed";
+              let title = "ðŸ† Victory Confirmed";
               let body = `HQ Verified: You won the ${gameLabel} match! `;
               
               const isFinal = closedData.round === 'FINAL';
@@ -87,7 +87,7 @@ export async function dispatchMatchResolutionNotifications(matchId: string, stat
 
               if (isFinal && isPromoOrCircuit) {
                  const finalReward = ((closedData as any).prizeUSD || 0) * 100;
-                 title = "🏆 TOURNAMENT CHAMPION";
+                 title = "ðŸ† TOURNAMENT CHAMPION";
                  body = `HQ Verified: You are the OVERALL WINNER of the ${gameLabel} Tournament! ${finalReward > 0 ? `${finalReward} CR credited.` : 'Glory secured.'}`;
               } else {
                  body += reward > 0 ? `${reward} CR credited.` : `Tournament advancement confirmed.`;
@@ -135,13 +135,17 @@ export async function internalFinalizeMatchClosure(
      victoryReward = prizeUSD * 100;
   }
 
+  if (matchData.isGauntlet) {
+     victoryReward = 0; // Handled separately in the Gauntlet resolution block
+  }
+
   let needsTournamentCleanup = false;
   let tournamentCleanupCircuitId: string | null = null;
 
   const playerIds = Object.keys(matchData.players);
   const gameKey = matchData.game;
 
-  // --- 🛑 ATOMIC READ PHASE (CRITICAL: ALL READS BEFORE ANY WRITES) ---
+  // --- ðŸ›‘ ATOMIC READ PHASE (CRITICAL: ALL READS BEFORE ANY WRITES) ---
   
   // A. [PARTNER READ] If partner lobby or circuit, fetch the partner/creator
   let creatorSnap: admin.firestore.DocumentSnapshot | null = null;
@@ -176,7 +180,7 @@ export async function internalFinalizeMatchClosure(
         .get();
   }
 
-  // --- ✅ WRITE PHASE (CRITICAL: NO READS ALLOWED AFTER THIS POINT) ---
+  // --- âœ… WRITE PHASE (CRITICAL: NO READS ALLOWED AFTER THIS POINT) ---
   
   transaction.update(matchRef, {
     status: 'CLOSED',
@@ -270,7 +274,56 @@ export async function internalFinalizeMatchClosure(
   const isLeague = matchData.format === 'league' || (circuitData?.format || '').includes('LEAGUE');
 
   const allowTestFinancials = process.env.ALLOW_TEST_FINANCIALS === 'true';
-  if (!matchData.circuitId && championUid && victoryReward > 0 && (!matchData.isTestMode || allowTestFinancials)) {
+  
+  if (matchData.isGauntlet && championUid && (!matchData.isTestMode || allowTestFinancials)) {
+     const championSnap = playerUserSnaps.find(s => s.id === championUid);
+     const championData = championSnap?.data();
+     const losers = playerIds.filter(pid => pid !== championUid);
+     
+     for (const loserUid of losers) {
+        transaction.update(adminDb.collection("users").doc(loserUid), {
+           "gauntlet.active": false
+        });
+     }
+
+      if (championData?.gauntlet?.active) {
+         const newWins = (championData.gauntlet.currentWins || 0) + 1;
+         const target = championData.gauntlet.targetWins || 1;
+         const GAUNTLET_PAYOUTS: Record<number, number> = { 1: 36, 2: 54, 3: 72, 4: 90, 5: 108 };
+
+         if (newWins >= target) {
+            const payout = GAUNTLET_PAYOUTS[target] || GAUNTLET_PAYOUTS[5];
+           
+           transaction.update(adminDb.collection("users").doc(championUid), {
+              "gauntlet.active": false,
+              "gauntlet.currentWins": newWins,
+              balanceCoins: admin.firestore.FieldValue.increment(payout)
+           });
+
+           transaction.set(adminDb.collection("transactions").doc(), {
+              uid: championUid, 
+              type: "CREDIT", 
+              category: "MATCH_PRIZE",
+              description: `GAUNTLET CHAMPION (${target} Wins): ${matchData.game}`,
+              amount: payout, 
+              status: "COMPLETED",
+              matchId: matchRef.id,
+              resolvedBy: operatorUid,
+              createdAt: admin.firestore.FieldValue.serverTimestamp()
+           });
+
+           transaction.set(adminDb.collection("stats").doc("platform_finances"), {
+              totalPayouts: admin.firestore.FieldValue.increment(payout),
+              totalPlatformCut: admin.firestore.FieldValue.increment(-payout),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           }, { merge: true });
+        } else {
+           transaction.update(adminDb.collection("users").doc(championUid), {
+              "gauntlet.currentWins": newWins
+           });
+        }
+     }
+  } else if (!matchData.circuitId && championUid && victoryReward > 0 && (!matchData.isTestMode || allowTestFinancials)) {
     transaction.update(adminDb.collection("users").doc(championUid), { balanceCoins: admin.firestore.FieldValue.increment(victoryReward) });
     transaction.set(adminDb.collection("transactions").doc(), {
       uid: championUid, 
@@ -376,7 +429,7 @@ export async function createMatchAction(
 
   if (challengeFee < 0) throw new Error("Invalid challenge fee configuration.");
 
-  // [PROT-TOUR-02] 🔒 Entry Fee Duplication Prevention
+  // [PROT-TOUR-02] ðŸ”’ Entry Fee Duplication Prevention
   // Only enforce for tournament format matches (gathering, not sub-matches)
   if ((format === 'tournament' || format === 'league') && !circuitId && profile.role !== 'PARTNER') {
     const existingTournaments = await adminDb
@@ -734,7 +787,7 @@ export async function submitMatchResultAction(
 ) {
   const uid = await getVerifiedUid(idToken);
 
-  // 🔒 [SECURITY] PHASE 6: Rate limit match submissions (5 matches/minute per user)
+  // ðŸ”’ [SECURITY] PHASE 6: Rate limit match submissions (5 matches/minute per user)
   const rateLimitKey = `match_submissions_${uid}`;
   const rateLimitResult = await checkRateLimit(rateLimitKey, 5, 60 * 1000); // 5 requests per minute
 
@@ -769,7 +822,7 @@ export async function submitMatchResultAction(
 
       if (!matchData.playerIds.includes(uid)) throw new Error("Unauthorized operative.");
       
-      // 🔒 [SECURITY] Prevent modifications to resolved matches IF user already submitted
+      // ðŸ”’ [SECURITY] Prevent modifications to resolved matches IF user already submitted
       const myData = matchData.players[uid];
       if ((matchData.status === 'CLOSED' || matchData.status === 'COMPLETED') && (myData as any)?.claim) {
          throw new Error("Match has already been resolved. Tactical report cannot be modified.");
@@ -778,7 +831,7 @@ export async function submitMatchResultAction(
       validateAbsoluteVictory(scoreFor || 0, scoreAgainst || 0, matchData.format);
 
       // [SCORE-VERIFICATION] Mirror-Score Lockdown
-      // 🔒 [SECURITY] M-002 FIX: Validate scores atomically - require complete matching
+      // ðŸ”’ [SECURITY] M-002 FIX: Validate scores atomically - require complete matching
       const isEFootball = matchData.game === 'EFOOTBALL';
       if (isEFootball && scoreFor !== undefined && scoreAgainst !== undefined) {
          const opponents = Object.entries(matchData.players).filter(([pid]) => pid !== uid);
@@ -786,13 +839,13 @@ export async function submitMatchResultAction(
             const opScoreFor = (opData as any).scoreFor;
             const opScoreAgainst = (opData as any).scoreAgainst;
 
-            // 🔒 If opponent has complete scores, they must match exactly
+            // ðŸ”’ If opponent has complete scores, they must match exactly
             if (opScoreFor !== undefined && opScoreAgainst !== undefined) {
                if (scoreFor !== opScoreAgainst || scoreAgainst !== opScoreFor) {
                   throw new Error("SCORE_MISMATCH: Tactical conflict detected. Your reported scoreline does not match your opponent's submission.");
                }
             } 
-            // 🔒 If opponent has partial scores, this is an error (incomplete submission)
+            // ðŸ”’ If opponent has partial scores, this is an error (incomplete submission)
             else if ((opScoreFor !== undefined || opScoreAgainst !== undefined)) {
                throw new Error("INVALID: Opponent submitted incomplete score. Wait for full submission or dispute.");
             }
@@ -821,7 +874,7 @@ export async function submitMatchResultAction(
       const draws = playerList.filter(p => (p as any).claim === 'DRAW');
       const isConsensusDraw = (matchData.format === 'league') && totalSubmitted === totalPlayers && draws.length === totalPlayers;
 
-      // 🔒 [SECURITY] MULTI-PLAYER CONSENSUS FIX
+      // ðŸ”’ [SECURITY] MULTI-PLAYER CONSENSUS FIX
       // Auto-resolve if: ALL players submitted AND (exactly ONE winner OR consensus draw)
       if (totalSubmitted === totalPlayers && (winners.length === 1 || isConsensusDraw)) {
          if (matchData.status !== 'CLOSED') {
@@ -840,20 +893,20 @@ export async function submitMatchResultAction(
             if (!isCircuitMatch) needsNuke = true;
          }
       } 
-      // 🔒 DISPUTE DETECTED: Conflict (Multiple winners) or Deadlock (Zero winners)
+      // ðŸ”’ DISPUTE DETECTED: Conflict (Multiple winners) or Deadlock (Zero winners)
       else if (totalSubmitted === totalPlayers && (winners.length > 1 || winners.length === 0)) {
          updates.status = 'DISPUTED';
          updates.disputedAt = admin.firestore.FieldValue.serverTimestamp();
          updates.championUid = null;
       } 
-      // 🕒 PENDING: Awaiting more results
+      // ðŸ•’ PENDING: Awaiting more results
       else if (totalSubmitted > 0 && matchData.status !== 'WAITING_FOR_OPPONENT' && matchData.status !== 'DISPUTED') {
          updates.status = 'WAITING_FOR_OPPONENT';
          updates.resolutionEndTime = new Date(Date.now() + 15 * 60 * 1000).toISOString();
          updates.championUid = winners.length > 0 ? (winners[0] as any).uid : null;
       }
 
-      // 🛡️ TRIBUNAL VISIBILITY: Record evidence (Moved to WRITE phase to avoid read-after-write errors)
+      // ðŸ›¡ï¸ TRIBUNAL VISIBILITY: Record evidence (Moved to WRITE phase to avoid read-after-write errors)
       if (proofUrl) {
          const evidenceRef = matchRef.collection("match_evidence").doc(`result_${uid}`);
          transaction.set(evidenceRef, {
@@ -1426,7 +1479,7 @@ export async function respondToHostRoleAction(idToken: string, matchId: string, 
 
 /**
  * SERVER ACTION: UPDATE ROOM CODE
- * 🔒 [SECURITY] H-003 FIX: Add explicit null check on hostUid
+ * ðŸ”’ [SECURITY] H-003 FIX: Add explicit null check on hostUid
  */
 export async function updateRoomCodeAction(idToken: string, matchId: string, roomCode: string) {
   const uid = await getVerifiedUid(idToken);
@@ -1436,7 +1489,7 @@ export async function updateRoomCodeAction(idToken: string, matchId: string, roo
       const matchSnap = await transaction.get(matchRef);
       const matchData = matchSnap.data() as Match;
       
-      // 🔒 [SECURITY] Prevent null/undefined hostUid bypass
+      // ðŸ”’ [SECURITY] Prevent null/undefined hostUid bypass
       if (!matchData.hostUid || matchData.hostUid !== uid) {
         throw new Error("Unauthorized: Only the assigned host can set the room code.");
       }
@@ -1532,7 +1585,7 @@ export async function applyExpirationExtractionAction(idToken: string, matchId: 
          if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
             await resolveDoubleNoShow(transaction, matchRef, matchData as any as EngineMatch);
          } else if (claimCount === 1) {
-            // 🏆 AUTO-RESOLVE: One person submitted, the other vanished. 
+            // ðŸ† AUTO-RESOLVE: One person submitted, the other vanished. 
             const claimantUid = Object.keys(matchData.players).find(pid => !!(matchData.players[pid] as any).claim);
             if (claimantUid) {
                const claim = (matchData.players[claimantUid] as any).claim;
@@ -1664,7 +1717,7 @@ export async function requestAdminInterventionAction(
 
 /**
  * USER ACTION: Ping Opponent (Tactical Alert)
- * 🔒 [SECURITY] M-010: Enforce 3m cooldown on pings
+ * ðŸ”’ [SECURITY] M-010: Enforce 3m cooldown on pings
  */
 export async function pingOpponentAction(idToken: string, matchId: string) {
   const { uid, profile } = await getVerifiedIdentity(idToken);
@@ -1859,4 +1912,165 @@ export async function summonPartnerAction(idToken: string, matchId: string) {
     console.error("[MatchAction] summonPartner error:", error);
     return { success: false, error: error.message };
   }
+}
+
+
+/**
+ * SERVER ACTION: ENLIST GAUNTLET
+ */
+export async function enlistGauntletAction(idToken: string, game: 'CODM' | 'EFOOTBALL', targetWins: number) {
+  const uid = await getVerifiedUid(idToken);
+  const userRef = adminDb.collection("users").doc(uid);
+  
+  if (![1, 2, 3, 4, 5].includes(targetWins)) {
+     return { success: false, error: "Invalid target wins. Must be 1-5." };
+  }
+
+  try {
+     await adminDb.runTransaction(async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        if (!userSnap.exists) throw new Error("Operative not found.");
+        const userData = userSnap.data()!;
+        
+        if ((userData.balanceCoins || 0) < 20) {
+           throw new Error("Insufficient balance for Gauntlet (20 CR required).");
+        }
+
+        if (userData.gauntlet?.active && userData.gauntlet.status !== 'FAILED') {
+           throw new Error("You already have an active Gauntlet. Finish or forfeit before enlisting again.");
+        }
+
+        transaction.update(userRef, {
+           balanceCoins: admin.firestore.FieldValue.increment(-20),
+           lifetimeWagered: admin.firestore.FieldValue.increment(20),
+           gauntlet: {
+              active: true,
+              game,
+              targetWins,
+              currentWins: 0,
+              status: 'OPEN',
+              startedAt: admin.firestore.FieldValue.serverTimestamp()
+           }
+        });
+
+        transaction.set(adminDb.collection("stats").doc("platform_finances"), {
+           totalPlatformCut: admin.firestore.FieldValue.increment(20),
+           updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+     });
+     return { success: true };
+  } catch (err: any) {
+     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * SERVER ACTION: JOIN GAUNTLET QUEUE
+ */
+export async function joinGauntletQueueAction(
+  idToken: string,
+  _ignoredUsername: string,
+  _ignoredAvatarId: number,
+  game: 'CODM' | 'EFOOTBALL',
+  inGameName: string
+) {
+  const { uid, profile } = await getVerifiedIdentity(idToken);
+  const userRef = adminDb.collection("users").doc(uid);
+  const queueRef = adminDb.collection("queues").doc(`gauntlet_${game.toLowerCase()}`);
+
+  try {
+     const result = await adminDb.runTransaction(async (transaction) => {
+        const userSnap = await transaction.get(userRef);
+        const queueSnap = await transaction.get(queueRef);
+
+        if (!userSnap.exists) throw new Error("Operative profile not found.");
+        const userData = userSnap.data()!;
+
+        if (!userData.gauntlet?.active || userData.gauntlet.game !== game) {
+           throw new Error("You do not have an active Gauntlet for this game. Enlist first.");
+        }
+
+        const tagField = game === 'CODM' ? 'codTag' : 'efootballTag';
+        const finalInGameName = inGameName || (userData[tagField] || "Unknown");
+
+        if (!userData[tagField] && finalInGameName !== "Unknown") {
+           transaction.update(userRef, { [tagField]: finalInGameName });
+        }
+
+        const queueData = (queueSnap.exists ? queueSnap.data() : { playerIds: [], players: [] }) as any;
+        const effectivePlayerIds = queueData.playerIds || [];
+        const effectivePlayers = queueData.players || [];
+
+        if (effectivePlayerIds.includes(uid)) {
+           return { matchCreated: false, alreadyRegistered: true };
+        }
+
+        if (effectivePlayerIds.length + 1 >= 2) {
+           const currentRegistered = { uid, username: profile.username, avatarId: profile.avatarId, inGameName: finalInGameName };
+           const allPlayers = [effectivePlayers[0], currentRegistered];
+
+           const playersMap: Record<string, any> = {};
+           allPlayers.forEach((p: any, idx: number) => {
+             playersMap[p.uid] = { ...p, ready: false, team: idx === 0 ? 'alpha' : 'bravo' };
+           });
+
+           const matchRef = adminDb.collection("matches").doc();
+           transaction.set(matchRef, {
+             game,
+             format: '1v1',
+             challengeFee: 20,
+             isGauntlet: true,
+             status: 'WAITING',
+             maxPlayers: 2,
+             playerIds: allPlayers.map((p: any) => p.uid),
+             players: playersMap,
+             championUid: null,
+             creatorId: uid,
+             createdAt: admin.firestore.FieldValue.serverTimestamp(),
+             expiresAt: new Date(Date.now() + 24 * 3600 * 1000),
+           });
+
+           transaction.set(queueRef, {
+             playerIds: [],
+             players: [],
+             status: 'OPEN',
+             updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           });
+
+           return { matchCreated: true, matchId: matchRef.id };
+        } else {
+           transaction.set(queueRef, {
+             playerIds: admin.firestore.FieldValue.arrayUnion(uid),
+             players: admin.firestore.FieldValue.arrayUnion({ uid, username: profile.username, avatarId: profile.avatarId, inGameName: finalInGameName }),
+             status: 'OPEN',
+             updatedAt: admin.firestore.FieldValue.serverTimestamp()
+           }, { merge: true });
+           return { matchCreated: false };
+        }
+     });
+     return { success: true, ...result };
+  } catch (error: any) {
+     return { success: false, error: error.message };
+  }
+}
+
+export async function leaveGauntletQueueAction(idToken: string, game: 'CODM' | 'EFOOTBALL') {
+  const uid = await getVerifiedUid(idToken);
+  const queueRef = adminDb.collection("queues").doc(`gauntlet_${game.toLowerCase()}`);
+  
+  await adminDb.runTransaction(async (transaction) => {
+     const queueSnap = await transaction.get(queueRef);
+     if (queueSnap.exists) {
+        const queueData = queueSnap.data()!;
+        if (queueData.playerIds?.includes(uid)) {
+           const updatedPlayers = queueData.players.filter((p: any) => p.uid !== uid);
+           const updatedIds = queueData.playerIds.filter((id: string) => id !== uid);
+           transaction.update(queueRef, {
+              playerIds: updatedIds,
+              players: updatedPlayers
+           });
+        }
+     }
+  });
+  return { success: true };
 }

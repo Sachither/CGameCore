@@ -36,7 +36,10 @@ import {
   setReadyStatusAction,
   keepWaitingAction,
   respondToHostRoleAction,
-  updateRoomCodeAction
+  updateRoomCodeAction,
+  enlistGauntletAction,
+  joinGauntletQueueAction,
+  leaveGauntletQueueAction
 } from "@/app/actions/match-actions";
 
 /**
@@ -389,4 +392,37 @@ export const respondToHostRole = async (idToken: string, matchId: string, action
 export const updateRoomCode = async (idToken: string, matchId: string, roomCode: string) => {
   const result = await updateRoomCodeAction(idToken, matchId, roomCode);
   if (!result.success) throw new Error(result.error);
+};
+
+
+/**
+ * SERVER SIDE WRAPPER: GAUNTLET
+ */
+export const enlistGauntlet = async (
+  idToken: string,
+  game: 'CODM' | 'EFOOTBALL',
+  targetWins: number
+) => {
+  const result = await enlistGauntletAction(idToken, game, targetWins);
+  if (!result.success) throw new Error(result.error);
+};
+
+export const joinGauntletQueue = async (
+  idToken: string,
+  username: string,
+  avatarId: number,
+  game: 'CODM' | 'EFOOTBALL',
+  inGameName: string
+) => {
+  const result = await joinGauntletQueueAction(idToken, username, avatarId, game, inGameName);
+  if (!result.success) throw new Error((result as any).error);
+  return result;
+};
+
+export const leaveGauntletQueue = async (
+  idToken: string,
+  game: 'CODM' | 'EFOOTBALL'
+) => {
+  const result = await leaveGauntletQueueAction(idToken, game);
+  if (!result.success) throw new Error((result as any).error);
 };
