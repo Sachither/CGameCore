@@ -179,7 +179,7 @@ export const leaveMatch = async (idToken: string, matchId: string) => {
 export const submitMatchResult = async (
   idToken: string, 
   matchId: string, 
-  claim: 'WIN' | 'LOSS',
+  claim: 'WIN' | 'LOSS' | 'DRAW',
   proofUrl?: string
 ) => {
   const result = await submitMatchResultAction(idToken, matchId, claim, proofUrl);

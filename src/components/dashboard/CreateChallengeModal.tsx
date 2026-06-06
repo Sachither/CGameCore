@@ -138,12 +138,8 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   };
 
   const fees = getAvailableFees();
-  // Remove FREE (0) stake option for all modes except eFootball LEAGUE
-  const visibleFees = fees.filter(f => {
-    if (f !== 0) return true;
-    // allow free only when creating an eFootball league
-    return game === 'EFOOTBALL' && format === 'league';
-  });
+  // Remove FREE (0) stake option for all modes in Operational Deployment
+  const visibleFees = fees.filter(f => f !== 0);
   const weaponClasses = ['ALL GUNS', 'SHOTGUN', 'SNIPER'] as const;
 
   return (
@@ -276,17 +272,14 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
               </div>
             )}
 
-            {/* Player Selection for CODM FFA (3-8) or League/Tournament (4-16) */}
-            {((game === 'CODM' && format === 'FFA') || (game === 'EFOOTBALL' && (format === 'league' || format === 'tournament'))) && (
+            {/* Player Selection for CODM FFA (3-8) or Tournament (4-16) */}
+            {((game === 'CODM' && format === 'FFA') || (game === 'EFOOTBALL' && format === 'tournament')) && (
               <div className="space-y-4 animate-in slide-in-from-top-2">
                 <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">
-                  Operator Limits ({(format === 'league' || format === 'tournament') ? '4-16' : '3-8'} PLYRs)
+                  Operator Limits {format === 'tournament' ? '(4-16 PLYRs)' : '(3-8 PLYRs)'}
                 </label>
                 <div className="grid grid-cols-4 gap-2">
-                   {((format === 'league' || format === 'tournament') 
-                      ? (format === 'league' ? [4, 8, 10, 16] : [4, 8, 16]) 
-                      : [3, 4, 5, 6, 7, 8]
-                   ).map(n => (
+                   {((format === 'tournament') ? [4, 8, 16] : [3, 4, 5, 6, 7, 8]).map(n => (
                      <button 
                        key={n}
                        onClick={() => setMaxPlayers(n)}
@@ -295,6 +288,40 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
                        {n}
                      </button>
                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Player Selection for League via slider */}
+            {game === 'EFOOTBALL' && format === 'league' && (
+              <div className="space-y-4 animate-in slide-in-from-top-2">
+                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block">
+                  Operator Limits (4-32 PLYRs)
+                </label>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-[10px] text-gray-400 font-black uppercase tracking-[0.2em]">Players</span>
+                    <span className="text-[12px] font-black uppercase tracking-[0.2em] text-white">{maxPlayers}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={4}
+                    max={32}
+                    step={1}
+                    value={maxPlayers}
+                    onChange={(e) => setMaxPlayers(Number(e.target.value))}
+                    className="w-full accent-accent"
+                  />
+                  <div className="flex items-center justify-between text-[8px] uppercase tracking-[0.25em] text-gray-500 font-black">
+                    <span>4</span>
+                    <span>8</span>
+                    <span>16</span>
+                    <span>24</span>
+                    <span>32</span>
+                  </div>
+                  <p className="text-[8px] text-gray-500 uppercase tracking-[0.2em] font-bold">
+                    League mode allows any count from 4 to 32 players. Even numbers are not required.
+                  </p>
                 </div>
               </div>
             )}

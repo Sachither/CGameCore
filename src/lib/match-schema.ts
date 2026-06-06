@@ -12,7 +12,7 @@ export interface MatchPlayer {
   losses?: number;
   goalsFor?: number;
   goalsAgainst?: number;
-  claim?: 'WIN' | 'LOSS';
+  claim?: 'WIN' | 'LOSS' | 'DRAW';
   proofUrl?: string;
   isHostCandidate?: boolean;
   isHost?: boolean;

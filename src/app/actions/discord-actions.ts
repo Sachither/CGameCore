@@ -82,7 +82,7 @@ async function validateImageAI(file: File, username: string, inGameName: string,
 export async function submitResultWithDiscordAction(formData: FormData) {
   const idToken = formData.get("idToken") as string;
   const matchId = formData.get("matchId") as string;
-  const claim = formData.get("claim") as "WIN" | "LOSS";
+  const claim = formData.get("claim") as "WIN" | "LOSS" | "DRAW";
   const file = formData.get("file") as File | null;
   const username = formData.get("username") as string || "Player";
   const inGameName = formData.get("inGameName") as string || "";
@@ -105,7 +105,7 @@ export async function submitResultWithDiscordAction(formData: FormData) {
 
   // 1. AI Evidence Triage
   let requiresAdminReview = false;
-  if (file && file.size > 0 && claim === 'WIN') {
+  if (file && file.size > 0 && (claim === 'WIN' || claim === 'DRAW')) {
     const aiCheck = await validateImageAI(file, username, inGameName, game);
     if (!aiCheck.success) {
        return aiCheck;

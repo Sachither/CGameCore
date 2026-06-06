@@ -157,7 +157,7 @@ export default function SubmitResultModal({
          formData.append("kills", kills);
       }
 
-      if (file && claim === 'WIN') {
+      if (file && (claim === 'WIN' || claim === 'DRAW')) {
         formData.append("file", file);
       }
 

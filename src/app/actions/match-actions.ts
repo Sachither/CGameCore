@@ -145,6 +145,10 @@ export async function internalFinalizeMatchClosure(
   const playerIds = Object.keys(matchData.players);
   const gameKey = matchData.game;
 
+  const getPlayerMatchData = (uid: string) => {
+    return (overridePlayers?.[uid] || matchData.players[uid] || {}) as any;
+  };
+
   // --- ðŸ›‘ ATOMIC READ PHASE (CRITICAL: ALL READS BEFORE ANY WRITES) ---
   
   // A. [PARTNER READ] If partner lobby or circuit, fetch the partner/creator
@@ -344,6 +348,41 @@ export async function internalFinalizeMatchClosure(
     }, { merge: true });
   }
 
+  // 1.9 LEGACY LEAGUE STANDINGS SUPPORT
+  if (matchData.leagueId && !matchData.circuitId) {
+    const legacyLeagueRef = adminDb.collection("leagues").doc(matchData.leagueId);
+    const p1 = matchData.playerIds[0];
+    const p2 = matchData.playerIds[1];
+    const p1Data = getPlayerMatchData(p1);
+    const p2Data = getPlayerMatchData(p2);
+    const p1Goals = p1Data.scoreFor ?? 0;
+    const p2Goals = p2Data.scoreFor ?? 0;
+    const isDraw = !championUid && p1Data.claim === 'DRAW' && p2Data.claim === 'DRAW';
+
+    const legacyUpdates: any = {
+      [`players.${p1}.played`]: admin.firestore.FieldValue.increment(1),
+      [`players.${p2}.played`]: admin.firestore.FieldValue.increment(1),
+      [`players.${p1}.goalsFor`]: admin.firestore.FieldValue.increment(p1Goals),
+      [`players.${p1}.goalsAgainst`]: admin.firestore.FieldValue.increment(p2Goals),
+      [`players.${p2}.goalsFor`]: admin.firestore.FieldValue.increment(p2Goals),
+      [`players.${p2}.goalsAgainst`]: admin.firestore.FieldValue.increment(p1Goals)
+    };
+
+    if (isDraw) {
+      legacyUpdates[`players.${p1}.points`] = admin.firestore.FieldValue.increment(1);
+      legacyUpdates[`players.${p2}.points`] = admin.firestore.FieldValue.increment(1);
+      legacyUpdates[`players.${p1}.draws`] = admin.firestore.FieldValue.increment(1);
+      legacyUpdates[`players.${p2}.draws`] = admin.firestore.FieldValue.increment(1);
+    } else if (championUid) {
+      const loserUid = championUid === p1 ? p2 : p1;
+      legacyUpdates[`players.${championUid}.points`] = admin.firestore.FieldValue.increment(3);
+      legacyUpdates[`players.${championUid}.wins`] = admin.firestore.FieldValue.increment(1);
+      legacyUpdates[`players.${loserUid}.losses`] = admin.firestore.FieldValue.increment(1);
+    }
+
+    transaction.update(legacyLeagueRef, legacyUpdates);
+  }
+
   // 2. Circuit Logic (Standings/Advancement)
   if (matchData.circuitId && circuitData) {
     const circuitRef = adminDb.collection("circuits").doc(matchData.circuitId);
@@ -352,8 +391,8 @@ export async function internalFinalizeMatchClosure(
       const winner = (Object.values(matchData.players) as any[]).find(p => p.uid === championUid);
       const loser = (Object.values(matchData.players) as any[]).find(p => p.uid !== championUid);
       if (winner && loser) {
-        const winnerSF = (winner.scoreFor ?? winner.kills ?? 0);
-        const loserSF = (loser.scoreFor ?? loser.kills ?? 0);
+        const winnerSF = (getPlayerMatchData(winner.uid).scoreFor ?? getPlayerMatchData(winner.uid).kills ?? 0);
+        const loserSF = (getPlayerMatchData(loser.uid).scoreFor ?? getPlayerMatchData(loser.uid).kills ?? 0);
         transaction.update(circuitRef, {
           matchesCompleted: admin.firestore.FieldValue.increment(1),
           [`groups.${g}.standings.${winner.uid}.played`]: admin.firestore.FieldValue.increment(1),
@@ -371,8 +410,8 @@ export async function internalFinalizeMatchClosure(
        // LEAGUE ADVANCEMENT
        const p1 = matchData.playerIds[0];
        const p2 = matchData.playerIds[1];
-       const p1Score = matchData.players[p1]?.scoreFor || 0;
-       const p2Score = matchData.players[p2]?.scoreFor || 0;
+       const p1Score = getPlayerMatchData(p1).scoreFor || 0;
+       const p2Score = getPlayerMatchData(p2).scoreFor || 0;
        await handleLeagueAdvancement(transaction, circuitRef, circuitData as any, matchData as any, championUid, p1Score, p2Score, creatorSnap || undefined);
     } else if (matchData.round && championUid) {
       if (circuitData.isPromo) {
@@ -775,7 +814,7 @@ export async function leaveMatchAction(idToken: string, matchId: string) {
 export async function submitMatchResultAction(
   idToken: string,
   matchId: string,
-  claim: 'WIN' | 'LOSS',
+  claim: 'WIN' | 'LOSS' | 'DRAW',
   proofUrl?: string,
   scoreFor?: number,
   scoreAgainst?: number,
@@ -862,7 +901,18 @@ export async function submitMatchResultAction(
         ...(requiresAdminReview && { [`players.${uid}.requiresAdminReview`]: true })
       };
 
-      const updatedPlayers = { ...matchData.players, [uid]: { ...matchData.players[uid], claim } };
+      const updatedPlayers = {
+        ...matchData.players,
+        [uid]: {
+          ...matchData.players[uid],
+          claim,
+          ...(proofUrl ? { proofUrl } : {}),
+          ...(scoreFor !== undefined ? { scoreFor } : {}),
+          ...(scoreAgainst !== undefined ? { scoreAgainst } : {}),
+          ...(kills !== undefined ? { kills } : {}),
+          ...(requiresAdminReview ? { requiresAdminReview: true } : {})
+        }
+      };
       const playerList = Object.entries(updatedPlayers).map(([pid, p]) => ({ ...(p as any), uid: pid }));
       const winners = playerList.filter(p => (p as any).claim === 'WIN');
       const losers = playerList.filter(p => (p as any).claim === 'LOSS');

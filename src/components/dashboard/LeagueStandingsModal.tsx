@@ -46,6 +46,8 @@ export default function LeagueStandingsModal({ title, standings, isOpen, onClose
                   <th className="px-6 py-4">Operative</th>
                   <th className="px-6 py-4 text-center">P</th>
                   <th className="px-6 py-4 text-center">W</th>
+                  <th className="px-6 py-4 text-center">D</th>
+                  <th className="px-6 py-4 text-center">L</th>
                   <th className="px-6 py-4 text-center">GD</th>
                   <th className="px-6 py-4 text-center text-accent">PTS</th>
                </tr>
@@ -60,6 +62,8 @@ export default function LeagueStandingsModal({ title, standings, isOpen, onClose
                   <td className="px-6 py-4">{p.username}</td>
                   <td className="px-6 py-4 text-center tabular-nums">{p.played}</td>
                   <td className="px-6 py-4 text-center tabular-nums">{p.wins}</td>
+                  <td className="px-6 py-4 text-center tabular-nums">{p.draws}</td>
+                  <td className="px-6 py-4 text-center tabular-nums">{p.losses}</td>
                   <td className="px-6 py-4 text-center tabular-nums">{p.gf - p.ga}</td>
                   <td className="px-6 py-4 text-center tabular-nums text-accent font-black">{p.pts}</td>
                </tr>

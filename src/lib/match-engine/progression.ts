@@ -150,7 +150,8 @@ export async function handleLeagueAdvancement(
 ) {
    const matchesCompleted = (circuit.matchesCompleted || 0) + 1;
    const totalMatches = circuit.totalMatches || 1;
-   const isDraw = !winnerUid && p1Goals === p2Goals;
+   const drawClaims = Object.values(matchData.players).filter(p => (p as any).claim === 'DRAW').length;
+   const isDraw = !winnerUid && (drawClaims === matchData.playerIds.length || p1Goals === p2Goals);
    
    const updates: any = {
       matchesCompleted: admin.firestore.FieldValue.increment(1)
