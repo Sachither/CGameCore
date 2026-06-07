@@ -35,7 +35,7 @@ export default function DepositModal({
   const fiatSupported = true; // RE-ENABLED: Paystack UI was hidden, now transit to Flutterwave
   const numericUsd = Number(amountUsd) || 0;
   const coinsGenerated = Math.floor(numericUsd * 100);
-  const minRequired = paymentMethod === 'CRYPTO' ? 1.0 : 0.5;
+  const minRequired = paymentMethod === 'CRYPTO' ? 1.0 : 0.3;
   const isInvalid = numericUsd > 0 && numericUsd < minRequired;
 
   // 🔒 REGIONAL GATE: Force Crypto for non-fiat regions
@@ -432,7 +432,7 @@ export default function DepositModal({
 
             {/* Quick preset amounts */}
             <div className="flex flex-wrap gap-2 mb-3">
-              {(paymentMethod === 'CRYPTO' ? [1, 5, 10, 25] : [0.5, 1, 5, 10]).map((amt) => {
+              {(paymentMethod === 'CRYPTO' ? [1, 5, 10, 25] : [0.3, 0.5, 1, 5, 10]).map((amt) => {
                 const disabledPreset = amt < minRequired || isProcessing;
                 return (
                   <button
