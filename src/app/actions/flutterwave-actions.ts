@@ -27,11 +27,21 @@ export async function createPendingFlutterwaveDepositAction(
   }
 
   try {
+    // Validate environment configuration
+    if (!FLUTTERWAVE_SECRET_KEY) {
+      console.error("[FlutterwaveAction] FLUTTERWAVE_SECRET_KEY is not configured");
+      return { success: false, error: "Platform Error: Flutterwave credentials not configured. Contact support." };
+    }
+
     const decodedToken = await adminAuth.verifyIdToken(idToken);
     const uid = decodedToken.uid;
     const userSnap = await adminDb.collection("users").doc(uid).get();
 
-    if (!userSnap.exists) return { success: false, error: "Profile not found." };
+    if (!userSnap.exists) {
+      console.error("[FlutterwaveAction] User profile not found for UID:", uid);
+      return { success: false, error: "Profile not found." };
+    }
+
     const userData = userSnap.data();
     const currency = userData?.currency || "NGN";
 
@@ -59,10 +69,19 @@ export async function createPendingFlutterwaveDepositAction(
       metadata: { uid }
     });
 
+    console.log(`[FlutterwaveAction] ✅ Payment handshake initialized: ${reference}`);
     return { success: true, reference, localAmount, currency };
   } catch (error: any) {
-    console.error("[FlutterwaveAction] Pre-Auth Error:", error);
-    return { success: false, error: "Failed to initialize payment handshake." };
+    const errorDetails = error?.message || String(error);
+    console.error("[FlutterwaveAction] Handshake Init Error Details:", {
+      message: errorDetails,
+      code: error?.code,
+      stack: error?.stack
+    });
+    return { 
+      success: false, 
+      error: `Failed to initialize payment handshake: ${errorDetails}` 
+    };
   }
 }
 
