@@ -1,7 +1,7 @@
 // Firebase Client SDK - Safe for browser use
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider } from "firebase/auth";
-import { initializeFirestore } from "firebase/firestore";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, memoryLocalCache } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -24,6 +24,11 @@ setPersistence(auth, browserLocalPersistence).catch(() => {});
 
 export const db = initializeFirestore(app, {
   experimentalAutoDetectLongPolling: false,
+  localCache: typeof window !== 'undefined'
+    ? persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+      })
+    : memoryLocalCache(),
 });
 export const storage = getStorage(app);
 export default app;

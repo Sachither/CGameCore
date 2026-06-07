@@ -129,7 +129,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   };
 
   const getAvailableFees = () => {
-    const allFees = [0, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+    const allFees = [0, 30, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
     const userTier = profile?.tier || 1;
     
     if (userTier === 1) return allFees.filter(f => f <= 1000);
