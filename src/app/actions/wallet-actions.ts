@@ -24,10 +24,14 @@ export async function requestWithdrawalAction(
 ) {
   const uid = await getVerifiedUid(idToken);
   
-  if (amountCoins < 100) return { success: false, error: "Minimum withdrawal is 100 Coins." };
-  
   const isCrypto = isCryptoWithdrawalNetwork(bankCode);
   const isSolana = bankCode === "USDC_SOL";
+  
+  // Minimum withdrawal: 50 Coins for bank transfers, 100 Coins for crypto
+  const minWithdrawal = isCrypto ? 100 : 50;
+  if (amountCoins < minWithdrawal) {
+    return { success: false, error: `Minimum withdrawal is ${minWithdrawal} Coins.` };
+  }
   
   // 🌍 REGIONAL VALIDATION: Ensure user has a region set
   const userRef = adminDb.collection("users").doc(uid);

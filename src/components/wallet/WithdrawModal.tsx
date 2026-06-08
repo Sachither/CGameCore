@@ -132,7 +132,9 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
   const localPayoutValue = (netCoins / 100) * withdrawalRate;
   const usdEquivalent = netCoins / 100;
   
-  const isInvalidAmount = numericCoins > 0 && (numericCoins < 100); // Minimum $1.00
+  // Minimum withdrawal: 50 Coins for bank, 100 Coins for crypto
+  const minWithdrawal = gatewayType === 'BANK' ? 50 : 100;
+  const isInvalidAmount = numericCoins > 0 && (numericCoins < minWithdrawal);
   const isOverBalance = numericCoins > balance;
   const isOverLimit = isTier3 && numericCoins > maxWithdrawable;
 
@@ -382,7 +384,7 @@ export default function WithdrawModal({ isOpen, onClose, balance }: { isOpen: bo
                         className={`w-full bg-black border ${isInvalidAmount || isOverBalance || isOverLimit ? 'border-red-500/50' : 'border-surface-border focus:border-white'} text-white font-black text-2xl pl-10 pr-4 py-4 rounded-[3px] outline-none transition-all placeholder-gray-800`}
                       />
                    </div>
-                   {isInvalidAmount && <p className="text-[10px] text-red-500 font-bold tracking-widest uppercase mt-2">Minimum withdrawal is 100 Coins.</p>}
+                   {isInvalidAmount && <p className="text-[10px] text-red-500 font-bold tracking-widest uppercase mt-2">Minimum withdrawal is {minWithdrawal} Coins.</p>}
                    {isOverBalance && <p className="text-[10px] text-red-500 font-bold tracking-widest uppercase mt-2">Insufficient Balance.</p>}
                    {isOverLimit && <p className="text-[10px] text-yellow-500 font-bold tracking-widest uppercase mt-2">Rollover Limit: Use matches to unlock the remaining {balance - maxWithdrawable} CR.</p>}
                 </div>
