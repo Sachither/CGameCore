@@ -10,6 +10,7 @@ import {
 import {
   verifyFlutterwaveTransaction,
 } from "@/lib/flutterwave-api";
+import { getCachedTokenUid } from "@/lib/firebase-token-cache";
 
 import { getPlatformRate } from "@/app/actions/rate-actions";
 
@@ -33,8 +34,19 @@ export async function createPendingFlutterwaveDepositAction(
       return { success: false, error: "Platform Error: Flutterwave credentials not configured. Contact support." };
     }
 
-    const decodedToken = await adminAuth.verifyIdToken(idToken);
-    const uid = decodedToken.uid;
+    let uid: string;
+    try {
+      uid = await getCachedTokenUid(idToken);
+    } catch (authError: any) {
+      if (authError?.code === 8 || authError?.message?.includes('RESOURCE_EXHAUSTED')) {
+        console.error("[FlutterwaveAction] Firebase quota exceeded - service temporarily unavailable");
+        return { 
+          success: false, 
+          error: "Service temporarily unavailable due to high demand. Please try again in a few moments." 
+        };
+      }
+      throw authError;
+    }
     const userSnap = await adminDb.collection("users").doc(uid).get();
 
     if (!userSnap.exists) {
@@ -110,8 +122,18 @@ export async function verifyFlutterwavePaymentAction(
        if (!uid) return { success: false, error: "Mapping failed." };
     } else {
        // Standard user-initiated verification
-       const decodedToken = await adminAuth.verifyIdToken(idToken);
-       uid = decodedToken.uid;
+       try {
+         uid = await getCachedTokenUid(idToken);
+       } catch (authError: any) {
+         if (authError?.code === 8 || authError?.message?.includes('RESOURCE_EXHAUSTED')) {
+           console.error("[FlutterwaveAction] Firebase quota exceeded during payment verification");
+           return { 
+             success: false, 
+             error: "Service temporarily unavailable due to high demand. Please try again in a few moments." 
+           };
+         }
+         throw authError;
+       }
     }
 
     if (!FLUTTERWAVE_SECRET_KEY) {

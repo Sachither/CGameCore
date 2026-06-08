@@ -90,7 +90,7 @@ export async function POST(req: Request) {
     const verification = await verifyFlutterwaveAmount(reference, data.amount, true);
     if (!verification.verified) {
       console.error(`[FlutterwaveWebhook] ❌ SECURITY ALERT: Amount mismatch for ${reference}`);
-      console.error(`[FlutterwaveWebhook] Webhook Amount: ${data.amount}, DB Amount: ${verification.expectedAmount}`);
+      console.error(`[FlutterwaveWebhook] Expected: $${verification.storedAmountUsd}, Received: $${verification.claimedAmountUsd}`);
       return NextResponse.json({ error: "Amount verification failed" }, { status: 400 });
     }
 
