@@ -1,9 +1,8 @@
 "use client";
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
 import { validate } from '@/lib/validation-utils';
+import { sendPasswordResetEmailAction } from '@/app/actions/password-reset-actions';
 
 export default function ForgotPasswordForm() {
   const [loading, setLoading] = useState(false);
@@ -26,24 +25,19 @@ export default function ForgotPasswordForm() {
     try {
       setError("DISPATCHING RESET COMMAND...");
       
-      // We configure actionCodeSettings so that it redirects back to our reset page if supported by Firebase
-      const actionCodeSettings = {
-        url: window.location.origin + '/reset-password',
-        handleCodeInApp: true,
-      };
+      // Call server action to send password reset email
+      const result = await sendPasswordResetEmailAction(email.trim());
 
-      await sendPasswordResetEmail(auth, email.trim(), actionCodeSettings);
-      setSuccess(true);
-      setError("");
-    } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/user-not-found') {
-        setError("NO OPERATIVE ENLISTED WITH THIS EMAIL.");
-      } else if (err.code === 'auth/invalid-email') {
-        setError("INVALID EMAIL FORMAT.");
+      if (result.success) {
+        setSuccess(true);
+        setError("");
+        setEmail("");
       } else {
-        setError("FAILED TO DISPATCH RESET EMAIL. TRY AGAIN LATER.");
+        setError(result.error || "FAILED TO DISPATCH RESET EMAIL. TRY AGAIN LATER.");
       }
+    } catch (err: any) {
+      console.error("[ForgotPassword]", err);
+      setError("FAILED TO DISPATCH RESET EMAIL. TRY AGAIN LATER.");
     } finally {
       setLoading(false);
     }
