@@ -1133,7 +1133,6 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         throw new Error("ENCRYPTION_KEY mismatch or data corrupted");
       }
       console.log(`[AdminAction] ✅ Decrypted account number for ${wData.username}:`, {
-        full: accountNumber,
         masked: accountNumber.slice(0, 4) + '***',
         length: accountNumber.length
       });
@@ -1169,11 +1168,7 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         currency,
         rate,
         localAmount: transferAmount,
-        accountNumber: {
-          full: accountNumber,
-          masked: accountNumber.slice(0, 4) + '***',
-          length: accountNumber.length
-        },
+        accountNumber: accountNumber.slice(0, 4) + '***',
         bankCode
       });
 
