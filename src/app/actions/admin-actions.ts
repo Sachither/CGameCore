@@ -1132,11 +1132,16 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
       if (!accountNumber) {
         throw new Error("ENCRYPTION_KEY mismatch or data corrupted");
       }
-      console.log(`[AdminAction] ✅ Decrypted account number for ${wData.username}`);
+      console.log(`[AdminAction] ✅ Decrypted account number for ${wData.username}:`, {
+        full: accountNumber,
+        masked: accountNumber.slice(0, 4) + '***',
+        length: accountNumber.length
+      });
     } catch (decryptErr: any) {
       console.error(`[AdminAction] ❌ Decryption failed for withdrawal ${withdrawalId}:`, {
         message: decryptErr.message,
-        hasEncrypted: !!wData.encryptedAccountNumber
+        hasEncrypted: !!wData.encryptedAccountNumber,
+        storedValue: wData.encryptedAccountNumber?.substring(0, 50) + '...'
       });
       return { success: false, error: `Decryption failed: ${decryptErr.message}. Possible ENCRYPTION_KEY mismatch.` };
     }
@@ -1164,7 +1169,11 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         currency,
         rate,
         localAmount: transferAmount,
-        accountNumber: accountNumber.slice(-4) + '***',
+        accountNumber: {
+          full: accountNumber,
+          masked: accountNumber.slice(0, 4) + '***',
+          length: accountNumber.length
+        },
         bankCode
       });
 
