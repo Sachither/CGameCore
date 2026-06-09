@@ -17,6 +17,7 @@ import { checkRateLimit } from "@/lib/rate-limiter";
 import { createNotificationInternal } from "@/lib/notifications";
 import { isCryptoWithdrawalNetwork } from "@/lib/withdrawal-fees";
 import { verifyAdminSecurityPin, setAdminSecurityPin } from "@/lib/admin-security";
+import { getPlatformRate } from "@/app/actions/rate-actions";
 
 let platformStatsCache: {
   expiresAt: number;
@@ -1112,11 +1113,33 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
     }
     const wData = initialSnap.data()!;
     const amountCoins = wData.amountCoins || 0;
+    const netAmount = wData.netAmount || 0;
     const fiatAmountUSD = wData.fiatAmount || 0;
     const currency = wData.currency || "NGN";
 
+    console.log(`[AdminAction] Processing withdrawal ${withdrawalId}:`, {
+      amountCoins,
+      netAmount,
+      fiatAmountUSD,
+      currency,
+      user: wData.username
+    });
+
     // Decrypt account number for processing
-    const accountNumber = decryptData(wData.encryptedAccountNumber || wData.accountNumber);
+    let accountNumber = '';
+    try {
+      accountNumber = decryptData(wData.encryptedAccountNumber || wData.accountNumber);
+      if (!accountNumber) {
+        throw new Error("ENCRYPTION_KEY mismatch or data corrupted");
+      }
+      console.log(`[AdminAction] ✅ Decrypted account number for ${wData.username}`);
+    } catch (decryptErr: any) {
+      console.error(`[AdminAction] ❌ Decryption failed for withdrawal ${withdrawalId}:`, {
+        message: decryptErr.message,
+        hasEncrypted: !!wData.encryptedAccountNumber
+      });
+      return { success: false, error: `Decryption failed: ${decryptErr.message}. Possible ENCRYPTION_KEY mismatch.` };
+    }
 
     // ── STEP 1: Process Transfer ──────────────────────────────────────────
     let transferId = "";
@@ -1132,6 +1155,19 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
       transferStatus = "successful";
       await new Promise(res => setTimeout(res, 800)); // Realism
     } else {
+      // Fetch real exchange rate for the target currency
+      const rate = await getPlatformRate(currency, 'WITHDRAWAL');
+      const transferAmount = Math.round(fiatAmountUSD * rate);
+
+      console.log(`[AdminAction] Flutterwave transfer details:`, {
+        fiatUSD: fiatAmountUSD,
+        currency,
+        rate,
+        localAmount: transferAmount,
+        accountNumber: accountNumber.slice(-4) + '***',
+        bankCode
+      });
+
       const transferRes = await fetch("https://api.flutterwave.com/v3/transfers", {
         method: "POST",
         headers: {
@@ -1141,11 +1177,11 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         body: JSON.stringify({
           account_bank: bankCode,
           account_number: accountNumber,
-          amount: wData.netAmount / 100 || fiatAmountUSD * 1500, // NET Amount is in coins/cents usually
+          amount: transferAmount,
           narration: `CGameCore payout for ${wData.username} (${amountCoins} CR)`,
           currency: currency,
           callback_url: `${process.env.NEXT_PUBLIC_BASE_URL}/api/webhooks/flutterwave`,
-          debit_currency: "NGN",
+          debit_currency: currency,
         }),
       });
 

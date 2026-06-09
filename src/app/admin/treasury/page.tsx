@@ -699,7 +699,7 @@ export default function AdminTreasuryPage() {
              </div>
              <h3 className="text-xl font-black italic uppercase text-center text-white mb-2 tracking-tighter">Execute Automated Payout?</h3>
              <p className="text-xs text-gray-400 text-center uppercase tracking-widest font-bold leading-relaxed mb-6">
-                You are about to initiate an automatic transfer of <span className="text-white">$ {(ticketToApprove.amountCoins / 100).toFixed(2)} USD</span> to <span className="text-white block break-all max-w-full">{ticketToApprove.accountNumber}</span>.
+                You are about to initiate an automatic transfer of <span className="text-white">$ {(ticketToApprove.netAmount / 100).toFixed(2)} USD</span> to <span className="text-white block break-all max-w-full">{ticketToApprove.accountNumber}</span>.
              </p>
              <div className="flex gap-3">
                 <button 
