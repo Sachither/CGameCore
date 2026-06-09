@@ -1,8 +1,8 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { enlistGauntlet, joinGauntletQueue, leaveGauntletQueue, getChallengeInterestCount } from "@/lib/match-service";
+import { enlistGauntlet, joinGauntletQueue, leaveGauntletQueue, getChallengeInterestCount, forfeitGauntlet } from "@/lib/match-service";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { Loader2, Swords, Target, Flame, ArrowLeftRight } from "lucide-react";
+import { Loader2, Swords, Target, Flame, ArrowLeftRight, LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -28,6 +28,7 @@ export default function GauntletHub({ game }: GauntletHubProps) {
   const [showEnlistConfirm, setShowEnlistConfirm] = useState(false);
   const [showNameInput, setShowNameInput] = useState(false);
   const [tempName, setTempName] = useState("");
+  const [showForfeitConfirm, setShowForfeitConfirm] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -112,6 +113,25 @@ export default function GauntletHub({ game }: GauntletHubProps) {
         await leaveGauntletQueue(idToken, game);
      } catch (err: any) {
         setError(err.message || "Failed to leave queue.");
+     }
+     setRegistering(false);
+  };
+
+  const handleForfeit = async () => {
+     if (!user || registering) return;
+     setRegistering(true);
+     setError("");
+     try {
+        const idToken = await user.getIdToken();
+        const result = await forfeitGauntlet(idToken);
+        if (!result.success) {
+           setError(result.error || "Failed to forfeit Gauntlet.");
+        } else {
+           setShowForfeitConfirm(false);
+           setActiveGauntlet(null);
+        }
+     } catch (err: any) {
+        setError(err.message || "Failed to forfeit Gauntlet.");
      }
      setRegistering(false);
   };
@@ -271,17 +291,51 @@ export default function GauntletHub({ game }: GauntletHubProps) {
                   </div>
                </div>
             ) : (
-               <button 
-                  onClick={handlePair}
-                  disabled={registering}
-                  className="w-full max-w-sm bg-orange-600 hover:bg-orange-500 text-black py-4 rounded-sm text-sm font-black uppercase tracking-widest transition-all hover:scale-105 shadow-[0_0_30px_rgba(255,100,0,0.5)] flex items-center justify-center gap-2"
-               >
-                  {registering ? <Loader2 className="w-5 h-5 animate-spin" /> : (
-                     <>
-                        <Swords className="w-5 h-5" /> Pair Now
-                     </>
+               <div className="w-full max-w-sm space-y-3 flex flex-col items-center">
+                  {activeGauntlet.currentWins === 0 && !showForfeitConfirm && (
+                     <button 
+                        onClick={() => setShowForfeitConfirm(true)}
+                        className="w-full text-center text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-red-500 transition-colors flex items-center justify-center gap-1.5 py-2 border-b border-surface-border"
+                     >
+                        <LogOut className="w-3 h-3" /> Forfeit & Get Refund
+                     </button>
                   )}
-               </button>
+
+                  {showForfeitConfirm && activeGauntlet.currentWins === 0 && (
+                     <div className="w-full space-y-3 animate-in fade-in zoom-in-95 mb-4">
+                        <p className="text-[10px] text-yellow-300 text-center uppercase tracking-widest">Get 20 CR back? (can't undo)</p>
+                        <div className="flex gap-2">
+                           <button 
+                              onClick={() => setShowForfeitConfirm(false)}
+                              className="flex-1 border border-surface-border text-gray-400 py-2 rounded-sm text-[10px] font-black uppercase tracking-widest hover:bg-white/5"
+                           >
+                              Keep Going
+                           </button>
+                           <button 
+                              onClick={handleForfeit}
+                              disabled={registering}
+                              className="flex-1 bg-red-600 text-white py-2 rounded-sm text-[10px] font-black uppercase tracking-widest flex items-center justify-center"
+                           >
+                              {registering ? <Loader2 className="w-3 h-3 animate-spin" /> : "Forfeit"}
+                           </button>
+                        </div>
+                     </div>
+                  )}
+
+                  {!showForfeitConfirm && (
+                     <button 
+                        onClick={handlePair}
+                        disabled={registering}
+                        className="w-full max-w-sm bg-orange-600 hover:bg-orange-500 text-black py-4 rounded-sm text-sm font-black uppercase tracking-widest transition-all hover:scale-105 shadow-[0_0_30px_rgba(255,100,0,0.5)] flex items-center justify-center gap-2"
+                     >
+                        {registering ? <Loader2 className="w-5 h-5 animate-spin" /> : (
+                           <>
+                              <Swords className="w-5 h-5" /> Pair Now
+                           </>
+                        )}
+                     </button>
+                  )}
+               </div>
             )}
          </div>
       )}

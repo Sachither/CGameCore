@@ -2124,3 +2124,51 @@ export async function leaveGauntletQueueAction(idToken: string, game: 'CODM' | '
   });
   return { success: true };
 }
+
+/**
+ * SERVER ACTION: FORFEIT GAUNTLET (only if haven't played any matches)
+ */
+export async function forfeitGauntletAction(idToken: string) {
+  const uid = await getVerifiedUid(idToken);
+  const userRef = adminDb.collection("users").doc(uid);
+
+  try {
+    await adminDb.runTransaction(async (transaction) => {
+      const userSnap = await transaction.get(userRef);
+      if (!userSnap.exists) throw new Error("Operative not found.");
+      const userData = userSnap.data()!;
+
+      const gauntlet = userData.gauntlet;
+      if (!gauntlet?.active) {
+        throw new Error("You don't have an active Gauntlet to forfeit.");
+      }
+
+      if ((gauntlet.currentWins || 0) > 0) {
+        throw new Error("You can only forfeit before playing any matches. You have wins to protect!");
+      }
+
+      // Refund 20 CR entry fee
+      transaction.update(userRef, {
+        balanceCoins: admin.firestore.FieldValue.increment(20),
+        gauntlet: {
+          active: false,
+          status: 'FORFEITED',
+          game: gauntlet.game,
+          targetWins: gauntlet.targetWins,
+          currentWins: 0,
+          forfeitedAt: admin.firestore.FieldValue.serverTimestamp()
+        }
+      });
+
+      // Update platform finances
+      transaction.set(adminDb.collection("stats").doc("platform_finances"), {
+        totalPlatformCut: admin.firestore.FieldValue.increment(-20),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    });
+
+    return { success: true, message: "Gauntlet forfeited. 20 CR refunded." };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

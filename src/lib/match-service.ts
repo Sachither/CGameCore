@@ -39,7 +39,8 @@ import {
   updateRoomCodeAction,
   enlistGauntletAction,
   joinGauntletQueueAction,
-  leaveGauntletQueueAction
+  leaveGauntletQueueAction,
+  forfeitGauntletAction
 } from "@/app/actions/match-actions";
 
 /**
@@ -425,4 +426,12 @@ export const leaveGauntletQueue = async (
 ) => {
   const result = await leaveGauntletQueueAction(idToken, game);
   if (!result.success) throw new Error((result as any).error);
+};
+
+export const forfeitGauntlet = async (
+  idToken: string
+) => {
+  const result = await forfeitGauntletAction(idToken);
+  if (!result.success) return { success: false, error: result.error };
+  return result;
 };

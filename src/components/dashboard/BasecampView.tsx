@@ -71,8 +71,8 @@ export default function BasecampView() {
         <LiveChallengeList onHostClick={() => setIsCreateOpen(true)} />
         
         <div className="flex flex-col gap-6 w-full">
-           <GauntletHub game="CODM" />
            <GauntletHub game="EFOOTBALL" />
+           <GauntletHub game="CODM" />
         </div>
 
         <CombatInterestHub />
