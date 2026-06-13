@@ -1,0 +1,123 @@
+# CGameCore - Quick Installation Commands
+# Copy and paste these commands one by one into your terminal
+
+# 1. Clone the repository
+git clone https://github.com/Sachither/CGameCore.git
+cd CGameCore
+
+# 2. Install all dependencies
+npm install
+
+# 3. Create environment file (edit with your API keys)
+cp .env.example .env.local
+# Then open .env.local and fill in your credentials
+
+# 4. Run database migrations
+npm run db:push
+
+# 5. Create super admin account (for dashboard access)
+npm run bootstrap:admin
+
+# 6. Start development server (runs on http://localhost:3000)
+npm run dev
+
+# ===== PRODUCTION DEPLOYMENT =====
+
+# 7. Build for production
+npm run build
+
+# 8. Run production server
+npm start
+
+# ===== DATABASE MANAGEMENT =====
+
+# Open Drizzle Studio (visual database explorer)
+npm run db:studio
+
+# Push schema changes to database
+npm run db:push
+
+# ===== DEVELOPMENT UTILITIES =====
+
+# Run TypeScript type checker
+npm run type-check
+
+# Run ESLint code quality checker
+npm run lint
+
+# Analyze bundle size
+npm run build:analyze
+
+# ===== TROUBLESHOOTING =====
+
+# If port 3000 is already in use, run on different port
+npm run dev -- -p 3001
+
+# If dependencies have issues
+rm -rf node_modules package-lock.json
+npm install
+
+# Check Node.js version (should be 18+)
+node --version
+
+# Check npm version
+npm --version
+
+# Install specific package version
+npm install <package-name>@<version>
+
+# Update all dependencies
+npm update
+
+# ===== FOR WINDOWS USERS =====
+
+# Use PowerShell or Command Prompt
+# Run the automated installer
+.\INSTALL_WINDOWS.bat
+
+# ===== FOR macOS/LINUX USERS =====
+
+# Make shell script executable
+chmod +x INSTALL_MAC_LINUX.sh
+
+# Run the automated installer
+./INSTALL_MAC_LINUX.sh
+
+# ===== ENVIRONMENT SETUP TIPS =====
+
+# Get Firebase credentials:
+# 1. Go to https://console.firebase.google.com
+# 2. Select your project > Project Settings
+# 3. Copy credentials to .env.local
+
+# Get Flutterwave keys:
+# 1. Go to https://dashboard.flutterwave.com
+# 2. Settings > API Keys
+# 3. Copy Public and Secret keys
+
+# Get Paystack keys:
+# 1. Go to https://dashboard.paystack.com
+# 2. Settings > API Keys & Webhooks
+# 3. Copy Public and Secret keys
+
+# Get database URL:
+# 1. For Neon: https://console.neon.tech
+# 2. For local PostgreSQL: postgresql://user:password@localhost:5432/cgamecore
+
+# ===== COMMON ISSUES =====
+
+# "Cannot find module" error
+npm install
+
+# "Port 3000 in use" error
+npm run dev -- -p 3001
+
+# Database connection failed
+# Check DATABASE_URL in .env.local and ensure database is running
+
+# Firebase authentication failed
+# Verify NEXT_PUBLIC_FIREBASE_API_KEY in .env.local
+
+# Payment gateway errors
+# Ensure API keys are correct and account is active
+# For localhost development, ALLOW_TEST_FINANCIALS=true
