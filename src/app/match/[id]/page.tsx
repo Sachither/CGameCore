@@ -47,6 +47,14 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       const isUserChampion = match.championUid === user.uid;
       if (!isUserChampion) return;
 
+      // Only show victory celebration for final prize winnings (standard match wins, or tournament finals)
+      // Skip intermediate league or tournament progression matches
+      const isProgressionMatch = !!match.circuitId && (match as any).round !== 'FINAL';
+      if (isProgressionMatch) {
+         setVictoryShown(true);
+         return;
+      }
+
       setVictoryShown(true);
 
       // Get player name from match data
@@ -55,7 +63,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
       
       // Determine game label and prize
       const gameLabel = (match as any).game === 'CODM' ? 'Call of Duty: Mobile' : 'eFootball';
-      const isTournamentChampion = !!(match as any).isFinal; // Check if this is a tournament final
+      const isTournamentChampion = (match as any).round === 'FINAL'; // Check if this is a tournament final
       const prizeAmount = (match as any).prizeUSD || (match as any).rewardAmount || 0;
       const rewardType = prizeAmount > 10 ? 'USD' : 'COINS';
 

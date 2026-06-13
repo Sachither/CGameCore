@@ -157,8 +157,8 @@ export default function TacticalMap({ competition, allMatches, userUid, isOpen, 
                         <div className="h-px bg-white/5 flex-1" />
                      </div>
                      
-                     <div className="bg-black border border-white/10 rounded-sm overflow-hidden">
-                        <table className="w-full text-left border-collapse">
+                     <div className="bg-black border border-white/10 rounded-sm overflow-x-auto scrollbar-hide">
+                        <table className="w-full text-left border-collapse whitespace-nowrap">
                            <thead>
                               <tr className="bg-white/5 text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">
                                  <th className="px-6 py-4">Rank</th>
