@@ -14,12 +14,14 @@ import LeaveMatchModal from "../../../components/match/LeaveMatchModal";
 import MatchRules from "@/components/match/MatchRules";
 import { Loader2, ShieldCheck, Swords, ShieldAlert, Share2 } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
+import { useVictoryCelebration, VictoryData } from "@/context/VictoryCelebrationContext";
 
 export default function ActiveMatchPage({ params }: { params: Promise<{ id: string }> }) {
    const { id } = use(params);
    const router = useRouter();
    const { user } = useAuth();
    const { info: showInfoToast } = useToast();
+   const { showVictory } = useVictoryCelebration();
 
    const [match, setMatch] = useState<Match | null>(null);
    const [loading, setLoading] = useState(true);
@@ -29,6 +31,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
    const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
    const [disputeReason, setDisputeReason] = useState("");
    const [isDisputing, setIsDisputing] = useState(false);
+   const [victoryShown, setVictoryShown] = useState(false);
    const lastMatchRef = React.useRef<Match | null>(null);
 
    useEffect(() => {
@@ -36,6 +39,40 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
          setRedirectCountdown(10);
       }
    }, [match?.status]);
+
+   // Victory detection and celebration
+   useEffect(() => {
+      if (!match || match.status !== 'CLOSED' || victoryShown || !user?.uid) return;
+      
+      const isUserChampion = match.championUid === user.uid;
+      if (!isUserChampion) return;
+
+      setVictoryShown(true);
+
+      // Get player name from match data
+      const playerData = (match as any).players?.[user.uid];
+      const playerName = playerData?.username || user.displayName || 'Champion';
+      
+      // Determine game label and prize
+      const gameLabel = (match as any).game === 'CODM' ? 'Call of Duty: Mobile' : 'eFootball';
+      const isTournamentChampion = !!(match as any).isFinal; // Check if this is a tournament final
+      const prizeAmount = (match as any).prizeUSD || (match as any).rewardAmount || 0;
+      const rewardType = prizeAmount > 10 ? 'USD' : 'COINS';
+
+      const victoryData = {
+        playerName,
+        gameLabel,
+        prizeAmount,
+        isTournamentChampion,
+        rewardType
+      } as any;
+
+      // Show victory modal immediately
+      showVictory(victoryData);
+
+      // Also store in localStorage for dashboard display after redirect
+      localStorage.setItem('pending_victory_celebration', JSON.stringify(victoryData));
+   }, [match, user?.uid, victoryShown, showVictory]);
 
     useEffect(() => {
        if (redirectCountdown === null) return;

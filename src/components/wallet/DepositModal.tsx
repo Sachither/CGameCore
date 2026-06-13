@@ -22,7 +22,7 @@ export default function DepositModal({
 }) {
   const { user, profile, refreshProfile } = useAuth();
   const [amountUsd, setAmountUsd] = useState<number | string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'FIAT' | 'CRYPTO'>('CRYPTO');
+  const [paymentMethod, setPaymentMethod] = useState<'FIAT' | 'CRYPTO'>('FIAT');
   const [isProcessing, setIsProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");

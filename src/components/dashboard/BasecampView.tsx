@@ -1,5 +1,5 @@
 "use client";
-import React, { Suspense } from "react";
+import React, { Suspense, useEffect } from "react";
 import Link from "next/link";
 import WalletCard from "@/components/dashboard/WalletCard";
 import GameCategoryGrid from "@/components/dashboard/GameCategoryGrid";
@@ -13,10 +13,26 @@ import DepositRecoveryHeartbeat from "@/components/wallet/DepositRecoveryHeartbe
 import RegionGate from "@/components/dashboard/RegionGate";
 import CreateChallengeModal from "./CreateChallengeModal";
 import GauntletHub from "@/components/dashboard/GauntletHub";
+import { useVictoryCelebration } from "@/context/VictoryCelebrationContext";
 
 export default function BasecampView() {
   const { user, profile } = useAuth();
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
+  const { showVictory } = useVictoryCelebration();
+
+  // Detect victory celebration from localStorage (set by match page)
+  useEffect(() => {
+    const victoryData = localStorage.getItem('pending_victory_celebration');
+    if (victoryData) {
+      try {
+        const data = JSON.parse(victoryData);
+        showVictory(data);
+        localStorage.removeItem('pending_victory_celebration');
+      } catch (err) {
+        console.error('Failed to parse victory data:', err);
+      }
+    }
+  }, [showVictory]);
 
   return (
     <Suspense fallback={<div className="w-full max-w-6xl mx-auto h-[500px] animate-pulse bg-white/5 rounded-lg border border-white/10" />}>

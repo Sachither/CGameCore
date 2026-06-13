@@ -1125,8 +1125,10 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
       user: wData.username
     });
 
-    // Decrypt account number for processing
+    // 🔒 [DEVELOPMENT MODE] Bypass decryption for localhost testing
+    const isDevMode = process.env.NODE_ENV === 'development';
     let accountNumber = '';
+    
     try {
       accountNumber = decryptData(wData.encryptedAccountNumber || wData.accountNumber);
       if (!accountNumber) {
@@ -1137,12 +1139,17 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
         length: accountNumber.length
       });
     } catch (decryptErr: any) {
-      console.error(`[AdminAction] ❌ Decryption failed for withdrawal ${withdrawalId}:`, {
-        message: decryptErr.message,
-        hasEncrypted: !!wData.encryptedAccountNumber,
-        storedValue: wData.encryptedAccountNumber?.substring(0, 50) + '...'
-      });
-      return { success: false, error: `Decryption failed: ${decryptErr.message}. Possible ENCRYPTION_KEY mismatch.` };
+      if (isDevMode) {
+        console.warn(`[AdminAction] Development mode: Using test account for simulation.`);
+        accountNumber = "0000000000";
+      } else {
+        console.error(`[AdminAction] ❌ Decryption failed for withdrawal ${withdrawalId}:`, {
+          message: decryptErr.message,
+          hasEncrypted: !!wData.encryptedAccountNumber,
+          storedValue: wData.encryptedAccountNumber?.substring(0, 50) + '...'
+        });
+        return { success: false, error: `Decryption failed: ${decryptErr.message}. Possible ENCRYPTION_KEY mismatch.` };
+      }
     }
 
     // ── STEP 1: Process Transfer ──────────────────────────────────────────
@@ -1153,9 +1160,9 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
     // Force Success in Test Mode if using the universal test account
     const isTestAccount = accountNumber === "0000000000" || accountNumber.includes("0000");
 
-    if (FLUTTERWAVE_SECRET.startsWith("FLWSECK_TEST") && isTestAccount) {
-      console.warn("[AdminAction] Simulating Flutterwave Transfer for Test Account.");
-      transferId = `FW_MOCK_${Math.random().toString(36).substring(7).toUpperCase()}`;
+    if ((isDevMode || (FLUTTERWAVE_SECRET.startsWith("FLWSECK_TEST") && isTestAccount))) {
+      console.warn("[AdminAction] Simulating Flutterwave Transfer for Test Account / Development Mode.");
+      transferId = `FW_SIM_${Math.random().toString(36).substring(7).toUpperCase()}`;
       transferStatus = "successful";
       await new Promise(res => setTimeout(res, 800)); // Realism
     } else {
@@ -1233,17 +1240,19 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
 
       const withdrawalReference = transferId || `FW_WITHDRAW_${wRef.id}`;
       const displayAmountUSD = (amountCoins / 100).toFixed(2);
-      const notificationMessage = `Your withdrawal of $${displayAmountUSD} has been initiated via Flutterwave. Reference: ${withdrawalReference}. Funds typically arrive within 24 hours.`;
+      const notificationMessage = isDevMode 
+        ? `[DEV] Simulated withdrawal of $${displayAmountUSD} (not real). Reference: ${withdrawalReference}.`
+        : `Your withdrawal of $${displayAmountUSD} has been initiated via Flutterwave. Reference: ${withdrawalReference}. Funds typically arrive within 24 hours.`;
 
       await createNotificationInternal(
         wData.uid,
-        "Withdrawal Sent!",
+        isDevMode ? "[DEV] Withdrawal Simulated" : "Withdrawal Sent!",
         notificationMessage,
         "SYSTEM"
       );
 
       // 3. Dispatch Extraction Email (Tactical Success)
-      if (wData.email) {
+      if (wData.email && !isDevMode) {
         const displayAmountUSD = (amountCoins / 100).toFixed(2);
         const amountStr = `$${displayAmountUSD} (${currency})`;
         const emailHtml = getExtractionEmailTemplate(wData.username, amountStr, wData.bankName || "Digital Extraction");
@@ -1253,7 +1262,8 @@ export async function adminApproveWithdrawalAction(idToken: string, withdrawalId
       }
     });
 
-    return { success: true, transferId };
+    console.log(`[AdminAction] ✅ Withdrawal processed ${isDevMode ? '(SIMULATED)' : ''}: transferId=${transferId}`);
+    return { success: true, transferId, isSimulated: isDevMode };
   } catch (error: any) {
     console.error("[AdminAction] adminApproveWithdrawal error:", error);
     return { success: false, error: error.message };

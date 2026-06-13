@@ -90,6 +90,7 @@ export const viewport = {
 };
 
 import { CommandModalProvider } from "@/context/CommandModalContext";
+import { VictoryCelebrationProvider } from "@/context/VictoryCelebrationContext";
 
 export default function RootLayout({
   children,
@@ -102,13 +103,15 @@ export default function RootLayout({
         <AuthProvider>
           <ToastProvider>
             <CommandModalProvider>
-              <GlobalInterventionOverlay />
-              <MatchReadyDispatcher />
-              <PushNotificationManager />
-              <QuickPingOverlay />
-              <ClientLayoutWrapper>
-                {children}
-              </ClientLayoutWrapper>
+              <VictoryCelebrationProvider>
+                <GlobalInterventionOverlay />
+                <MatchReadyDispatcher />
+                <PushNotificationManager />
+                <QuickPingOverlay />
+                <ClientLayoutWrapper>
+                  {children}
+                </ClientLayoutWrapper>
+              </VictoryCelebrationProvider>
             </CommandModalProvider>
           </ToastProvider>
         </AuthProvider>

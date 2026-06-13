@@ -24,10 +24,10 @@ export default function RulesModal({ isOpen, onClose, game = 'EFOOTBALL', format
   ];
 
   const disconnectRules = [
-    { title: 'Scenario 1: Player Winning, Network Disconnect', description: 'If you are winning and your internet disconnects during the match, you are entitled to a REPLAY of the entire match.' },
-    { title: 'Scenario 2: Player Losing, Network Disconnect (Second Half)', description: 'If you are losing and disconnect during the SECOND HALF of the match, there is NO REPLAY. The win goes to your opponent.' },
-    { title: 'Scenario 3: Any Player, Network Disconnect (First Half)', description: 'If either player disconnects during the FIRST HALF, the match is REPLAYED. However, the score from the first match carries over to the replay (e.g., if Player A was winning 1-0, they start the replay already 1-0 up).' },
-    { title: 'Scenario 4: Deliberate Disconnect', description: 'Deliberately disconnecting to avoid a loss is considered unsporting conduct and may result in account penalties.' },
+    { title: 'Scenario 1: Player Winning, Network Disconnect', description: 'If you are winning (leading on score) and your internet disconnects during the match, you are entitled to a REPLAY of the entire match.' },
+    { title: 'Scenario 2: Player Losing, Network Disconnect - No Replay Condition', description: 'If you are losing and disconnect, there is NO REPLAY if: (1) You are trailing by 3 or more goals, OR (2) The match is in the SECOND HALF. The win goes to your opponent in these cases.' },
+    { title: 'Scenario 3: Player Losing, Network Disconnect - Replay Eligible', description: 'If you are losing by less than 3 goals AND disconnect during the FIRST HALF, you are entitled to a REPLAY. The score from the first match carries over to the replay (e.g., if you were losing 0-2, the replay starts 0-2).' },
+    { title: 'Scenario 4: Deliberate Disconnect', description: 'Deliberately disconnecting to avoid a loss is considered unsporting conduct and may result in account penalties and suspension.' },
   ];
 
   const scoringRules = [

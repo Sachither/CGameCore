@@ -5,10 +5,11 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { Match } from "@/lib/match-service";
 import { sanitize } from "@/lib/validation-utils";
-import { Gavel, ShieldCheck, ShieldAlert, Send, Terminal } from "lucide-react";
+import { Gavel, ShieldCheck, ShieldAlert, Send, Terminal, BookOpen } from "lucide-react";
 import { useToast } from "@/context/ToastContext";
 import TierBadge from "@/components/community/TierBadge";
 import { getTierFromWins } from "@/lib/tier-utils";
+import MatchChatRulesModal from "@/components/match/MatchChatRulesModal";
 
 interface Message {
   id: string;
@@ -27,6 +28,7 @@ export default function MatchChat({ match }: { match: Match }) {
   const toast = useToast();
   const [msg, setMsg] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [showRulesModal, setShowRulesModal] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const matchId = match?.id;
 
@@ -82,23 +84,8 @@ export default function MatchChat({ match }: { match: Match }) {
               .map(doc => ({ id: doc.id, ...doc.data() } as Message))
               .sort((a, b) => getTime(a.createdAt) - getTime(b.createdAt));
 
-            // Inject System Initial Message
-            const systemInitial: Message = {
-              id: 'system-intro',
-              text: `MISSION PROTOCOL:
-1. HOST: Create the room & share room code/Password(if needed) here immediately.
-2. DISPUTE: You MUST record gameplay to provide evidence.
-3. NO-SHOW: Failure to join within 5 mins = Disqualification.
-4. CONDUCT: Zero tolerance for harassment or toxic behavior.
-<<<CRITICAL_RED_START>>>5. SCREENSHOT REQUIRED: You MUST have a screenshot of your victory to claim/submit your win!<<<CRITICAL_RED_END>>>
-Secure the objective.`,
-              senderUid: 'system',
-              senderName: 'COMMAND CENTER',
-              isSystem: true,
-              createdAt: { seconds: 0 }
-            };
-
-            setMessages([systemInitial, ...dbMsgs]);
+            // Don't inject system message anymore - use rules modal instead
+            setMessages([...dbMsgs]);
             setTimeout(() => {
               if (scrollRef.current) {
                 scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -202,27 +189,30 @@ Secure the objective.`,
     <div className="bg-surface border border-surface-border rounded-[5px] shadow-2xl overflow-hidden flex flex-col h-full">
       
       {/* Header */}
-      <div className="bg-black border-b border-surface-border p-4 flex items-center justify-between shrink-0">
-         <h3 className="text-sm font-black italic uppercase tracking-widest text-white flex items-center gap-2">
-            <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
-            {(match.format === 'league' || match.format === 'tournament') ? 'Unified Sector Comms' : 'Combat Comms'}
+      <div className="bg-black border-b border-surface-border p-3 md:p-4 flex items-center justify-between shrink-0 gap-2">
+         <h3 className="text-xs md:text-sm font-black italic uppercase tracking-widest text-white flex items-center gap-2 flex-1 min-w-0">
+            <svg className="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" /></svg>
+            <span className="truncate">{(match.format === 'league' || match.format === 'tournament') ? 'Unified Sector Comms' : 'Combat Comms'}</span>
          </h3>
-         <span className="text-[10px] bg-black border border-surface-border text-gray-300 font-bold px-2 py-0.5 rounded-[3px] uppercase tracking-widest flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></span>
-            {(match.format === 'league' || match.format === 'tournament') ? 'RECRUITMENT FREQUENCY' : 'ENCRYPTED 1V1 LINK'}
-         </span>
+         <div className="flex items-center gap-1 md:gap-2 shrink-0">
+            <button
+              onClick={() => setShowRulesModal(true)}
+              title="View match rules"
+              className="flex items-center gap-2 px-2.5 md:px-3 py-2 hover:bg-accent/20 rounded-lg transition-colors text-accent border border-accent/30 hover:border-accent/60 bg-accent/10 text-xs md:text-sm font-semibold"
+            >
+              <BookOpen className="w-4 h-4 md:w-5 md:h-5 shrink-0" />
+              <span className="hidden sm:inline">RULES</span>
+            </button>
+            <span className="text-[8px] md:text-[10px] bg-black border border-surface-border text-gray-300 font-bold px-2 py-1 md:py-0.5 rounded-[3px] uppercase tracking-widest flex items-center gap-1 shrink-0">
+               <span className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse"></span>
+               <span className="hidden sm:inline">{(match.format === 'league' || match.format === 'tournament') ? 'RECRUITMENT' : '1V1'}</span>
+            </span>
+         </div>
       </div>
 
       {/* Message Feed Container */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-4 bg-zinc-950/20 relative">
          
-         <div className="sticky top-0 bg-red-500/10 border border-red-500/20 p-3 rounded-[3px] shadow-lg mb-6 backdrop-blur-md z-10 transition-all group hover:bg-red-500/20">
-            <p className="text-[10px] text-red-500 font-black uppercase tracking-widest leading-relaxed flex items-start gap-2">
-               <svg className="w-4 h-4 shrink-0 text-red-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-               Security Protocol: No-shows = Automatic Loss. Recorded proof required for disputes.
-            </p>
-         </div>
-
          {chatError && (
            <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-sm mb-4">
              <p className="text-[10px] text-red-400 font-black uppercase tracking-widest">⚠ Comms Link Interrupted</p>
@@ -283,18 +273,19 @@ Secure the objective.`,
          ))}
       </div>
 
-      <form onSubmit={handleSend} className="bg-black border-t border-surface-border p-4 shrink-0">
-         <div className="flex items-center gap-2">
+      <form onSubmit={handleSend} className="bg-black border-t border-surface-border p-3 md:p-4 shrink-0">
+         <div className="flex flex-col gap-2">
             <input 
               type="text" 
               value={msg}
               onChange={e => setMsg(e.target.value)}
               placeholder="Transmit tactical data... (No-shows = Loss / Toxic = Ban)" 
-              className="flex-1 bg-surface border border-surface-border focus:border-accent text-white font-bold p-3 text-xs rounded-[3px] outline-none transition-all placeholder-gray-600"
+              className="w-full bg-surface border border-surface-border focus:border-accent text-white font-bold p-3 md:p-3 text-xs md:text-sm rounded-[3px] outline-none transition-all placeholder-gray-600 min-h-12 md:min-h-10"
               disabled={match.status === 'CLOSED'}
             />
-            <button type="submit" disabled={match.status === 'CLOSED'} className="bg-accent hover:bg-accent-hover disabled:bg-surface disabled:text-gray-500 transition-colors text-black font-black uppercase tracking-widest p-3 rounded-[3px] shrink-0 flex items-center justify-center shadow-[0_0_15px_rgba(0,255,102,0.1)]">
-               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+            <button type="submit" disabled={match.status === 'CLOSED'} className="w-full md:w-auto bg-accent hover:bg-accent-hover disabled:bg-surface disabled:text-gray-500 transition-colors text-black font-black uppercase tracking-widest py-2.5 px-3 md:py-3 md:px-4 rounded-[3px] shrink-0 flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(0,255,102,0.1)] text-sm md:text-base">
+               <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
+               <span className="md:hidden">Send</span>
             </button>
          </div>
       </form>
@@ -307,6 +298,13 @@ Secure the objective.`,
            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest max-w-[70%] text-center mt-2">Combat concluded. Sub-collections successfully eradicated from servers.</p>
         </div>
       )}
+
+      {/* Rules Modal */}
+      <MatchChatRulesModal 
+        isOpen={showRulesModal} 
+        onClose={() => setShowRulesModal(false)}
+        game={match.game}
+      />
     </div>
   );
 }
