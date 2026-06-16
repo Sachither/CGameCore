@@ -273,6 +273,21 @@ function AdminDisputesContent() {
                       <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400 italic">Tribunal Forensic Evidence</h4>
                    </div>
                    
+                   {/* Dispute Filer Info */}
+                   {selected.disputeTriggeredBy && (
+                     <div className="bg-black/40 border border-white/5 p-4 rounded-sm mb-4">
+                        <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-2">Dispute Raised By:</p>
+                        <div className="flex items-center gap-3">
+                           <div>
+                              <p className="text-white font-black italic uppercase tracking-tighter">{
+                                 playerList.find((p: any) => p.uid === selected.disputeTriggeredBy)?.username || "Operative " + selected.disputeTriggeredBy?.slice(0, 6)
+                              }</p>
+                              <p className="text-[9px] text-gray-600 font-mono mt-0.5">{selected.disputeTriggeredBy}</p>
+                           </div>
+                        </div>
+                     </div>
+                   )}
+                   
                    <div className="bg-black/40 border border-white/5 p-4 rounded-sm mb-6">
                       <p className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-2">Operative Claim / Reason:</p>
                       <p className="text-white text-xs font-bold leading-relaxed italic">"{selected.disputeReason || "No statement provided."}"</p>
