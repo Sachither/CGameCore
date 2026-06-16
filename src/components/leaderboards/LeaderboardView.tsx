@@ -281,7 +281,7 @@ export default function LeaderboardView() {
 
          {/* Filters & Search */}
          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
-            <div className="flex bg-black border border-surface-border rounded-[3px] overflow-x-auto hide-scrollbar shadow-lg whitespace-nowrap">
+            <div className="flex bg-black border border-surface-border rounded-[3px] overflow-x-auto scrollbar-hide shadow-lg whitespace-nowrap">
                {(['All-Time', 'Monthly', 'CODM', 'eFootball', 'Weekly-Earners'] as const).map(f => (
                  <button 
                    key={f}
