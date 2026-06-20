@@ -274,7 +274,7 @@ export default function ProfileSettingsView() {
            
            <div className="space-y-6">
                <div>
-                  <label className="text-[10px] uppercase font-bold text-sub tracking-widest block mb-2 ml-1 flex justify-between">
+                  <label className="text-[10px] uppercase font-bold text-sub tracking-widest flex mb-2 ml-1 justify-between">
                      Platform Nickname 
                      {profile?.usernameUpdatedAt && (
                         <span className="text-yellow-500/60 text-[9px]">30-Day Cooldown Active</span>
@@ -297,7 +297,7 @@ export default function ProfileSettingsView() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase font-bold text-sub tracking-widest block ml-1 flex justify-between">
+                    <label className="text-[10px] uppercase font-bold text-sub tracking-widest flex ml-1 justify-between">
                        CODM ID <span className="text-red-500 text-[9px]">Fine applied</span>
                     </label>
                     <div className="relative group">
@@ -310,7 +310,7 @@ export default function ProfileSettingsView() {
                     </div>
                  </div>
                  <div className="space-y-2">
-                    <label className="text-[10px] uppercase font-bold text-sub tracking-widest block ml-1 flex justify-between">
+                    <label className="text-[10px] uppercase font-bold text-sub tracking-widest flex ml-1 justify-between">
                        eFootball ID <span className="text-red-500 text-[9px]">Fine applied</span>
                     </label>
                     <div className="relative group">
@@ -374,7 +374,7 @@ export default function ProfileSettingsView() {
 
       {/* Avatar Selection Modal */}
       {isAvatarModalOpen && (
-         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
+         <div className="fixed inset-0 z-100 flex items-center justify-center p-4 backdrop-blur-md">
             <div className="absolute inset-0 bg-black/90" onClick={() => setIsAvatarModalOpen(false)} />
             <div className="relative w-full max-w-md bg-surface border border-surface-border p-8 rounded-sm shadow-2xl">
                <h3 className="text-xl font-black text-main italic uppercase tracking-widest text-center mb-8">Select Premium Avatar</h3>
@@ -408,7 +408,7 @@ export default function ProfileSettingsView() {
 
       {/* Fine Modal */}
       {showFineModal && (
-         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 backdrop-blur-xl">
+         <div className="fixed inset-0 z-200 flex items-center justify-center p-4 backdrop-blur-xl">
             <div className="absolute inset-0 bg-black/95" onClick={() => setShowFineModal(false)} />
             <div className="relative w-full max-w-sm bg-surface border border-red-500/30 p-10 rounded-sm shadow-2xl text-center">
                <div className="w-20 h-20 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto mb-8 animate-pulse">

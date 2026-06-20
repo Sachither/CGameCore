@@ -4,11 +4,11 @@ import { usePathname } from 'next/navigation';
 
 export default function Footer() {
   const { user } = useAuth();
+  const pathname = usePathname();
   
   // Members do not see the footer to maximize their dashboard experience
   if (user) return null;
 
-  const pathname = usePathname();
   const isDashboard = pathname?.startsWith('/dashboard');
 
   return (

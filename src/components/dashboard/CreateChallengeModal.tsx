@@ -143,7 +143,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
   const weaponClasses = ['ALL GUNS', 'SHOTGUN', 'SNIPER'] as const;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 sm:p-0">
+    <div className="fixed inset-0 z-100 flex items-center justify-center p-6 sm:p-0">
       <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={onClose} />
       
       <div className="bg-surface border border-surface-border w-full max-w-lg rounded-sm relative overflow-hidden animate-in zoom-in-95 fade-in duration-200 flex flex-col max-h-[90vh] shadow-2xl">
@@ -236,7 +236,7 @@ export default function CreateChallengeModal({ isOpen, onClose }: CreateChalleng
             {/* Weapon Class - Only for CODM Duels (1v1/FFA) */}
             {game === 'CODM' && (format === '1v1' || format === 'FFA') && (
               <div className="space-y-4 animate-in slide-in-from-top-2">
-                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] block flex items-center gap-2">
+                <label className="text-[9px] text-gray-500 font-black uppercase tracking-[0.2em] flex items-center gap-2">
                   <Crosshair className="w-3 h-3 text-accent" />
                   Tactical Selection (Mandatory)
                 </label>

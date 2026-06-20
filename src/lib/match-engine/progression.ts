@@ -197,11 +197,14 @@ export async function handleLeagueAdvancement(
       const currentRound = (circuit as any).currentRound || 1;
       const nextRound = currentRound + 1;
       const nextRoundMatchIds = (circuit as any).roundSchedule?.[nextRound] || [];
-      const nextExpiry = new Date(Date.now() + 24 * 3600 * 1000); 
+      // Each scheduled match gets a fresh timer when activated (test mode: 3 min, production: 24h)
+      const isTestMode = (circuit as any).isTestMode || process.env.NEXT_PUBLIC_TEST_MODE === 'true';
+      const expiryMs = isTestMode ? 3 * 60 * 1000 : 24 * 3600 * 1000; // 3 minutes or 24 hours
+      const matchActivatedExpiry = new Date(Date.now() + expiryMs);
       for (const mid of nextRoundMatchIds) {
          transaction.update(adminDb.collection("matches").doc(mid), { 
             status: 'WAITING',
-            expiresAt: nextExpiry
+            expiresAt: matchActivatedExpiry
          });
       }
       transaction.update(circuitRef, { currentRound: nextRound });
@@ -463,8 +466,8 @@ export async function distributeCircuitPrizes(
     const challengeFee = circuitData.challengeFee || 0;
     const totalStake = participantCount * challengeFee;
    
-   // Apply 20% Platform Fee
-   const platformFee = Math.floor(totalStake * 0.2);
+   // Platform fee: 10% on all game types (leagues, tournaments, individual matches)
+   const platformFee = Math.floor(totalStake * 0.1);
    const netPrizePool = totalStake - platformFee;
 
    const threshold = 50000; // 50k threshold

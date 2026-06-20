@@ -83,7 +83,7 @@ export default function MatchHistoryPage() {
            {historyMatches.map((match) => {
              const opponent = match.players ? Object.values(match.players).find(p => p.uid !== user?.uid) : null;
              const isWinner = match.championUid === user?.uid;
-             const isDraw = !match.championUid && match.status === 'CLOSED'; // Simplified
+             const isDraw = !match.championUid && match.status === 'CLOSED';
              const date = match.createdAt?.seconds 
                ? new Date(match.createdAt.seconds * 1000).toLocaleDateString(undefined, {
                    year: 'numeric', month: 'short', day: 'numeric'
@@ -113,8 +113,8 @@ export default function MatchHistoryPage() {
                      <div>
                         <div className="text-[9px] text-sub font-black uppercase tracking-widest mb-1">Result / Payout</div>
                         <div className="flex items-center gap-2">
-                           <span className={`text-sm font-black uppercase italic ${isWinner ? 'text-accent' : 'text-red-500'}`}>
-                             {isWinner ? 'Victory' : 'Defeat'}
+                           <span className={`text-sm font-black uppercase italic ${isWinner ? 'text-accent' : isDraw ? 'text-yellow-400' : 'text-red-500'}`}>
+                             {isWinner ? 'Victory' : isDraw ? 'Draw' : 'Defeat'}
                            </span>
                            <span className="text-xs font-mono text-gray-500">
                              {!!match.circuitId

@@ -214,8 +214,8 @@ export default function MyMatchesPage() {
              <Link href="/dashboard/matches/history" className="text-[10px] font-black uppercase text-sub hover:text-white transition-colors tracking-widest">See All History</Link>
           </div>
         </div>
-        <div className="bg-surface border border-surface-border overflow-hidden rounded-sm">
-           <table className="w-full text-left">
+        <div className="bg-surface border border-surface-border rounded-sm overflow-x-auto custom-scrollbar">
+           <table className="w-full text-left min-w-max">
               <thead className="bg-surface-hover border-b border-surface-border">
                  <tr>
                     <th className="px-6 py-4 text-[10px] font-bold text-sub uppercase tracking-widest">Match Details</th>
@@ -230,6 +230,7 @@ export default function MyMatchesPage() {
                        ? Object.values(match.players).find(p => p.uid !== user?.uid)
                        : null;
                      const isWinner = match.championUid === user?.uid;
+                     const isDraw = !match.championUid && match.status === 'CLOSED';
                      const resolvedSec = (match as any).resolvedAt?.seconds;
                      const createdSec = match.createdAt?.seconds;
                      const date = resolvedSec
@@ -265,8 +266,8 @@ export default function MyMatchesPage() {
                         </td>
                         <td className="px-6 py-4 text-xs text-sub font-mono">{date}</td>
                         <td className="px-6 py-4">
-                           <span className={`${isWinner ? 'text-accent' : 'text-red-500'} font-black italic uppercase text-xs tracking-tighter`}>
-                             {isWinner ? 'Victory' : 'Defeat'}
+                           <span className={`${isWinner ? 'text-accent' : isDraw ? 'text-yellow-400' : 'text-red-500'} font-black italic uppercase text-xs tracking-tighter`}>
+                             {isWinner ? 'Victory' : isDraw ? 'Draw' : 'Defeat'}
                            </span>
                         </td>
                           <td className="px-6 py-4 text-right">

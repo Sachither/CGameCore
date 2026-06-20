@@ -45,12 +45,16 @@ export async function initializeCircuit(
 
    const format = isLeague ? `${pCount}_LEAGUE` : `${pCount}_TOURNAMENT`;
    const totalPool = Math.floor(fee * pCount * (1 - config.matchFeePercentage));
+   
+   // TEST MODE: Use 3 minutes instead of 24 hours for faster testing
+   const isTestMode = matchData.isTestMode || process.env.NEXT_PUBLIC_TEST_MODE === 'true';
+   const expiryHours = isTestMode ? 0.05 : 24; // 0.05 hours = 3 minutes; 24 hours for production
+   const timerDisplay = isTestMode ? '3 Minutes' : '24 Hours'; // Display text for notifications
 
    // HQ BROADCAST: Tournament Start
    pushGlobalCommand(transaction, circuitId, `INITIALIZING SECTOR OPS: ${format.toUpperCase()} DEPLOYMENT CONFIRMED. Prize pool locked: ${totalPool} CR.`);
 
-   // TACTICAL EXPIRY: 24 hours for league and tournament rounds
-   const expiresAt = new Date(Date.now() + 24 * 3600 * 1000);
+   // TACTICAL EXPIRY: Each match gets its own expiry time based on round to prevent cascade failures
    
    if (isLeague) {
       // LEAGUE INITIALIZATION (Round Robin - Circle Method)
@@ -63,6 +67,10 @@ export async function initializeCircuit(
 
       for (let r = 0; r < numRounds; r++) {
          const roundNumber = r + 1;
+         // Only Round 1 matches get immediate expiry
+         // Scheduled matches (Round 2+) get expiresAt set when they're activated
+         const matchExpiresAt = roundNumber === 1 ? new Date(Date.now() + 3600 * 1000 * expiryHours) : null;
+         
          for (let m = 0; m < numMatchesPerRound; m++) {
             const p1 = pool[m];
             const p2 = pool[pool.length - 1 - m];
@@ -75,7 +83,7 @@ export async function initializeCircuit(
                   circuitId, round: 'LEAGUE', roundNumber, 
                   group: matchData.group || 'NONE',
                   playerIds: [p1.uid, p2.uid], gatheringRoomId: matchRef.id,
-                  expiresAt,
+                  ...(matchExpiresAt && { expiresAt: matchExpiresAt }),
                   players: {
                      [p1.uid]: { ...p1, ready: false, team: 'alpha' },
                      [p2.uid]: { ...p2.uid === p1.uid ? { ...p2, uid: p2.uid + '_alt' } : p2, ready: false, team: 'bravo' } 
@@ -87,10 +95,13 @@ export async function initializeCircuit(
 
                leagueMatches.push({ id: mRef.id, p1, p2, roundNumber });
 
-               [p1, p2].forEach(p => {
-                  const opp = p.uid === p1.uid ? p2 : p1;
-                  pushMatchNotification(transaction, p.uid, opp.uid, opp.username, mRef.id, `Round ${roundNumber}`, "24 Hours");
-               });
+               // Only notify active (Round 1) matches with timer; scheduled matches notified separately when activated
+               if (roundNumber === 1) {
+                  [p1, p2].forEach(p => {
+                     const opp = p.uid === p1.uid ? p2 : p1;
+                     pushMatchNotification(transaction, p.uid, opp.uid, opp.username, mRef.id, `Round ${roundNumber}`, timerDisplay);
+                  });
+               }
             }
          }
          // Rotate pool (keep first element fixed)
@@ -108,6 +119,9 @@ export async function initializeCircuit(
          };
       });
 
+      // League container expiry is when all rounds complete
+      const leagueExpiresAt = new Date(Date.now() + (3600 * 1000 * expiryHours) * numRounds);
+      
       transaction.set(circuitRef, {
          title: `${matchData.game} ELITE LEAGUE #${circuitId.slice(0, 4)}`,
          game: matchData.game, format, challengeFee: fee, 
@@ -120,7 +134,7 @@ export async function initializeCircuit(
          partnerName: matchData.partnerName || 'Partner',
          quota: pCount,
          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-         expiresAt,
+         expiresAt: leagueExpiresAt,
          matchesCompleted: 0,
          totalMatches: leagueMatches.length,
          currentRound: 1,
@@ -162,6 +176,9 @@ export async function initializeCircuit(
       initialStatus = 'KNOCKOUT_F';
    }
 
+   // Tournament expiry: 24 hours from now
+   const tournamentExpiresAt = new Date(Date.now() + 3600 * 1000 * expiryHours);
+
    // SEEDING
    for (let i = 0; i < pairsCount; i++) {
       const p1 = shuffled[i * 2];
@@ -170,7 +187,7 @@ export async function initializeCircuit(
       transaction.set(mRef, {
          game: matchData.game, format: 'tournament', challengeFee: 0, status: 'WAITING',
          circuitId, round: initialRound, leg: 'NONE', playerIds: [p1.uid, p2.uid], gatheringRoomId: matchRef.id,
-         expiresAt,
+         expiresAt: tournamentExpiresAt,
          players: {
             [p1.uid]: { ...p1, ready: false, team: 'alpha' },
             [p2.uid]: { ...p2, ready: false, team: 'bravo' }
@@ -182,7 +199,7 @@ export async function initializeCircuit(
 
       [p1, p2].forEach(p => {
          const opp = p.uid === p1.uid ? p2 : p1;
-         pushMatchNotification(transaction, p.uid, opp.uid, opp.username, mRef.id, initialRound, "24 Hours");
+         pushMatchNotification(transaction, p.uid, opp.uid, opp.username, mRef.id, initialRound, timerDisplay);
       });
    }
 
@@ -198,9 +215,9 @@ export async function initializeCircuit(
       partnerName: matchData.partnerName || 'Partner',
       quota: pCount,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      expiresAt,
+      expiresAt: tournamentExpiresAt,
       matchesCompleted: 0,
-      isTestMode: !!matchData.isTestMode
+      isTestMode: isTestMode
    });
 
    return circuitId;

@@ -332,7 +332,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
              )}
           </div>
 
-         <div className="w-full max-w-[100rem] mx-auto p-4 sm:p-6 lg:p-8 flex-1">
+         <div className="w-full max-w-400 mx-auto p-4 sm:p-6 lg:p-8 flex-1">
             {/* TACTICAL VIEWER BANNER */}
             {match?.overseers?.[user?.uid || ''] && (
                <div className="mb-6 bg-yellow-500/10 border border-yellow-500/30 p-4 rounded-sm flex items-center justify-between animate-in slide-in-from-top-4 duration-500">
@@ -362,7 +362,7 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
                   </div>
                   <div>
                      <div className="flex items-center gap-2 md:gap-3 mb-1">
-                        <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] px-1.5 md:px-2 py-0.5 rounded-[2px] ${match?.game === 'CODM' ? 'bg-red-500 text-white' : 'bg-accent text-black'}`}>
+                        <span className={`text-[8px] md:text-[10px] font-black uppercase tracking-[0.2em] px-1.5 md:px-2 py-0.5 rounded-xs ${match?.game === 'CODM' ? 'bg-red-500 text-white' : 'bg-accent text-black'}`}>
                            {match?.game}
                         </span>
                         <span className="text-[9px] md:text-[10px] text-gray-500 font-bold uppercase tracking-widest">
@@ -414,15 +414,15 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
 
             <div className="flex flex-col lg:grid lg:grid-cols-12 gap-6 items-stretch h-full">
 
-               <div className="lg:col-span-3 order-3 lg:order-1 h-[600px] lg:h-[800px]">
+               <div className="lg:col-span-3 order-3 lg:order-1 h-150 lg:h-200">
                   <MatchRoster match={match!} currentUserUid={user?.uid} />
                </div>
 
-               <div className="lg:col-span-6 order-2 lg:order-2 h-[600px] lg:h-[800px]">
+               <div className="lg:col-span-6 order-2 lg:order-2 h-150 lg:h-200">
                   <MatchChat match={match!} />
                </div>
 
-               <div className="lg:col-span-3 order-1 lg:order-3 h-auto lg:h-[800px] lg:overflow-y-auto custom-scrollbar lg:pr-2 lg:pb-4">
+               <div className="lg:col-span-3 order-1 lg:order-3 h-auto lg:h-200 lg:overflow-y-auto custom-scrollbar lg:pr-2 lg:pb-4">
                   <MatchStatusPanel match={match!} currentUserUid={user?.uid} />
                </div>
 
@@ -452,9 +452,9 @@ export default function ActiveMatchPage({ params }: { params: Promise<{ id: stri
 
          {/* EXTRACTION OVERLAY */}
          {redirectCountdown !== null && (
-            <div className="fixed inset-0 z-[200] bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500 p-8 text-center">
+            <div className="fixed inset-0 z-200 bg-black/95 backdrop-blur-2xl flex flex-col items-center justify-center animate-in fade-in zoom-in duration-500 p-8 text-center">
                <div className="absolute inset-0 opacity-10 pointer-events-none overflow-hidden">
-                  <div className="absolute inset-[-100%] bg-[radial-gradient(circle_at_center,_rgba(0,255,102,0.15)_0%,_transparent_70%)] animate-pulse" />
+                  <div className="absolute -inset-full bg-[radial-gradient(circle_at_center,rgba(0,255,102,0.15)_0%,transparent_70%)] animate-pulse" />
                </div>
 
                <div className="relative space-y-12 max-w-lg">

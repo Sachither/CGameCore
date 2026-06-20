@@ -197,7 +197,7 @@ export const executeMatchClosure = async (idToken: string, matchId: string) => {
 
 /**
  * Admin or Auto-Resolve Match Reward
- * Uses a 20% platform commission since v2.0
+ * Uses a 10% platform commission (standard across all game types)
  * Handles 50k threshold: <50k (100% to 1st), >=50k (75/25 split to 1st and 2nd)
  */
 export const resolveMatch = async (matchId: string, championUid: string, loserUid?: string) => {
