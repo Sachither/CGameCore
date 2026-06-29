@@ -703,10 +703,10 @@ export default function ModeratorHubPage() {
 
       {/* 🛡️ Intelligence Terminal (User Profile & Audit) */}
       {selectedUser && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-start justify-center p-3 pt-16 sm:items-center sm:p-4 sm:pt-4 overflow-hidden animate-in fade-in duration-200">
            <div className="absolute inset-0 bg-black/90 backdrop-blur-md" onClick={() => { setSelectedUser(null); setAuditData([]); }} />
            
-           <div className="relative w-full max-w-2xl bg-surface border border-surface-border rounded-sm shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+           <div className="relative w-full max-w-2xl mt-0 bg-surface border border-surface-border rounded-sm shadow-2xl overflow-hidden flex flex-col max-h-[calc(100vh-5rem)]">
               {/* Header */}
               <div className="p-6 bg-black border-b border-surface-border flex justify-between items-start">
                  <div className="flex items-center gap-4">
