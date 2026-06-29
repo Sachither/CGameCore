@@ -88,6 +88,22 @@ export async function resolveTechnicalWin(
    }
    transaction.update(matchRef, matchUpdate);
 
+   // [FIX] Update user profile stats: Increment totalMatches and totalWins
+   if (matchData.isRanked !== false) {
+      const winnerUserRef = adminDb.collection('users').doc(winnerUid);
+      transaction.update(winnerUserRef, {
+         totalMatches: admin.firestore.FieldValue.increment(1),
+         totalWins: admin.firestore.FieldValue.increment(1),
+      });
+      
+      if (opponentId && !isGhostOpponent) {
+         const loserUserRef = adminDb.collection('users').doc(opponentId);
+         transaction.update(loserUserRef, {
+            totalMatches: admin.firestore.FieldValue.increment(1),
+         });
+      }
+   }
+
    // NOTE: Promo prize distribution is handled EXCLUSIVELY by the circuit engine
    // (handlePromoAdvancement → distributePromoPrizes). Do NOT award here to prevent
    // double-crediting the winner. The promo advancement below will handle it.
@@ -101,18 +117,9 @@ export async function resolveTechnicalWin(
       };
 
       const g = matchData.group;
-      const isLeague = circuit.format?.includes('LEAGUE');
+      const isLeague = typeof circuit.format === 'string' && circuit.format.toUpperCase().includes('LEAGUE');
 
-      if (isLeague && opponentId && !isGhostOpponent) {
-         // LEAGUE STANDINGS (Round Robin)
-         updates[`standings.${winnerUid}.played`] = admin.firestore.FieldValue.increment(1);
-         updates[`standings.${winnerUid}.wins`] = admin.firestore.FieldValue.increment(1);
-         updates[`standings.${winnerUid}.pts`] = admin.firestore.FieldValue.increment(3);
-         updates[`standings.${winnerUid}.gf`] = admin.firestore.FieldValue.increment(2);
-         updates[`standings.${opponentId}.played`] = admin.firestore.FieldValue.increment(1);
-         updates[`standings.${opponentId}.losses`] = admin.firestore.FieldValue.increment(1);
-         updates[`standings.${opponentId}.ga`] = admin.firestore.FieldValue.increment(2);
-      } else if (g && circuit.groups?.[g] && opponentId && !isGhostOpponent) {
+      if (g && circuit.groups?.[g] && opponentId && !isGhostOpponent) {
          // TOURNAMENT GROUP STANDINGS
          updates[`groups.${g}.standings.${winnerUid}.played`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${winnerUid}.wins`] = admin.firestore.FieldValue.increment(1);
@@ -123,7 +130,7 @@ export async function resolveTechnicalWin(
          updates[`groups.${g}.standings.${opponentId}.ga`] = admin.firestore.FieldValue.increment(2);
       }
 
-      if (!circuit.isPromo) {
+      if (!circuit.isPromo && !isLeague) {
          transaction.update(circuitRef, updates);
       }
 
@@ -189,6 +196,16 @@ export async function resolveDoubleNoShow(
       ...updatesForPlayers
    });
 
+   // [FIX] Update user profile stats: Increment totalMatches for both players
+   if (matchData.isRanked !== false) {
+      for (const uid of matchData.playerIds) {
+         const userRef = adminDb.collection('users').doc(uid);
+         transaction.update(userRef, {
+            totalMatches: admin.firestore.FieldValue.increment(1),
+         });
+      }
+   }
+
    // Log the loss for both players (coins already deducted at match creation)
    for (const uid of matchData.playerIds) {
       const logRef = adminDb.collection("transactions").doc();
@@ -206,26 +223,25 @@ export async function resolveDoubleNoShow(
    if (circuitSnap && circuitSnap.exists && circuitRef) {
       const circuit = circuitSnap.data() as EngineCircuit;
 
-      const updates: any = {
-         matchesCompleted: admin.firestore.FieldValue.increment(1)
-      };
+      const updates: any = {};
 
       const g = matchData.group;
-      const isLeague = circuit.format?.includes('LEAGUE');
+      const isLeague = typeof circuit.format === 'string' && circuit.format.toUpperCase().includes('LEAGUE');
 
-      if (isLeague) {
-         updates[`standings.${matchData.playerIds[0]}.played`] = admin.firestore.FieldValue.increment(1);
-         updates[`standings.${matchData.playerIds[0]}.losses`] = admin.firestore.FieldValue.increment(1);
-         updates[`standings.${matchData.playerIds[1]}.played`] = admin.firestore.FieldValue.increment(1);
-         updates[`standings.${matchData.playerIds[1]}.losses`] = admin.firestore.FieldValue.increment(1);
-      } else if (g && circuit.groups?.[g]) {
+      if (!isLeague) {
+         updates.matchesCompleted = admin.firestore.FieldValue.increment(1);
+      }
+
+      if (g && circuit.groups?.[g] && !isLeague) {
          updates[`groups.${g}.standings.${matchData.playerIds[0]}.played`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${matchData.playerIds[0]}.losses`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${matchData.playerIds[1]}.played`] = admin.firestore.FieldValue.increment(1);
          updates[`groups.${g}.standings.${matchData.playerIds[1]}.losses`] = admin.firestore.FieldValue.increment(1);
       }
 
-      transaction.update(circuitRef, updates);
+      if (Object.keys(updates).length > 0) {
+         transaction.update(circuitRef, updates);
+      }
 
       if (circuit.isPromo) {
          const { handlePromoAdvancement } = await import("./promo-engine");

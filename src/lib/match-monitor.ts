@@ -22,9 +22,28 @@ export async function sweepExpiredMatches(limit = 100) {
       .limit(limit)
       .get();
 
+    const deadlineSnaps = await adminDb
+      .collection('matches')
+      .where('status', 'in', ['WAITING', 'READY'])
+      .limit(limit)
+      .get();
+
     const snapMap = new Map<string, FirebaseFirestore.QueryDocumentSnapshot>();
     for (const doc of expirySnaps.docs) snapMap.set(doc.id, doc);
     for (const doc of resolutionSnaps.docs) snapMap.set(doc.id, doc);
+    for (const doc of deadlineSnaps.docs) {
+      const data = doc.data() as any;
+      const deadline = data.readyDeadline;
+      if (!deadline) continue;
+      const deadlineDate = typeof deadline.toDate === 'function'
+        ? deadline.toDate()
+        : deadline.seconds
+          ? new Date(deadline.seconds * 1000)
+          : new Date(deadline);
+      if (deadlineDate.getTime() <= Date.now()) {
+         snapMap.set(doc.id, doc);
+      }
+    }
     const snaps = Array.from(snapMap.values());
     if (snaps.length === 0) return { success: true, processed: 0 };
 
@@ -43,7 +62,9 @@ export async function sweepExpiredMatches(limit = 100) {
           const readyCount = playersList.filter((p: any) => p.ready).length;
           const claimCount = playersList.filter((p: any) => p.claim).length;
 
-          if (matchData.status === 'WAITING') {
+          const lobbyPlayers = matchData.playerIds?.length || 0;
+          const requiredPlayers = matchData.maxPlayers || 2;
+          if (matchData.status === 'WAITING' && lobbyPlayers < requiredPlayers) {
             // Refund creators for pure WAITING lobbies
             for (const pid of matchData.playerIds || []) {
               transaction.update(adminDb.collection('users').doc(pid), {

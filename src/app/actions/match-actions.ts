@@ -407,7 +407,7 @@ export async function internalFinalizeMatchClosure(
         });
       }
     } else if (isLeague) {
-       // LEAGUE ADVANCEMENT
+       // LEAGUE ADVANCEMENT - Handle even with null championUid (for draws/mutual forfeits)
        const p1 = matchData.playerIds[0];
        const p2 = matchData.playerIds[1];
        const p1Score = getPlayerMatchData(p1).scoreFor || 0;
@@ -564,7 +564,11 @@ export async function createMatchAction(
         duration: duration || 'NONE',
         roomName: roomName || null,
         roomPassword: roomPassword || null,
-        expiresAt: admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 3600 * 1000)),
+        // For pure 1v1 matches: don't start expiration timer until second player joins
+        // For all other modes, keep the normal creation-time countdown
+        expiresAt: format === '1v1'
+          ? null
+          : admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 3600 * 1000)),
         isRanked: challengeFee > 0,
         isProtected: !!roomPassword,
         isPartnerTournament: userData.role === 'PARTNER',
@@ -713,6 +717,13 @@ export async function joinMatchAction(
           }
         } else if (isFull) {
           updates.status = 'READY';
+          
+          // [FIX] For pure 1v1 matches: start expiration timer now that opponent has joined
+          const is1v1Format = matchData.format === '1v1';
+          if (is1v1Format && !matchData.expiresAt) {
+            updates.expiresAt = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 3600 * 1000));
+          }
+          
           // Host candidacy
           const isGatheringFormat = matchData.format === 'league' || matchData.format === 'tournament';
           if (!isGatheringFormat && !matchData.hostUid) {
@@ -1433,7 +1444,7 @@ export async function setReadyStatusAction(idToken: string, matchId: string, rea
          if (readyPlayers.length === 1) {
             // Start 23.5-hour readiness timer for the non-ready player
             if (!matchData.readyDeadline && !matchData.readyDeadlineDisabled) {
-               updates.readyDeadline = new Date(Date.now() + 23.5 * 3600 * 1000).toISOString();
+               updates.readyDeadline = admin.firestore.Timestamp.fromDate(new Date(Date.now() + 23.5 * 3600 * 1000));
                const nonReadyPlayer = playersList.find(p => !p.ready);
                const readyPlayer = playersList.find(p => p.ready);
                if (nonReadyPlayer && readyPlayer) {
@@ -1568,9 +1579,35 @@ export async function claimTechnicalWinAction(idToken: string, matchId: string) 
          throw new Error("Match has already been resolved.");
       }
 
-      const hasGhostOpponent = Object.values(matchData.players).some(p => p.username === 'GHOST');
-      if (!hasGhostOpponent && !matchData.players[uid]?.ready) {
-         throw new Error("You must be READY.");
+      const playersList = Object.values(matchData.players || {});
+      const readyCount = playersList.filter((p: any) => p.ready).length;
+      const hasGhostOpponent = playersList.some(p => p.username === 'GHOST');
+      const myReady = matchData.players[uid]?.ready;
+
+      if (!hasGhostOpponent) {
+         if (!myReady) {
+            throw new Error("You must be READY.");
+         }
+         if (readyCount !== 1) {
+            throw new Error("Cannot claim a technical win while both players are ready.");
+         }
+         if (!['WAITING', 'READY'].includes(matchData.status)) {
+            throw new Error("Match is not eligible for a technical win claim.");
+         }
+         const readyDeadline = (matchData as any).readyDeadline;
+         if (!readyDeadline) {
+            throw new Error("No readiness deadline is active.");
+         }
+
+         const readyDeadlineTs = typeof readyDeadline.toDate === 'function'
+            ? readyDeadline.toDate().getTime()
+            : readyDeadline.seconds
+               ? readyDeadline.seconds * 1000
+               : new Date(readyDeadline).getTime();
+
+         if (Date.now() < readyDeadlineTs) {
+            throw new Error("The readiness timeout has not yet expired.");
+         }
       }
       
       await resolveTechnicalWin(transaction, matchRef, matchData as any as EngineMatch, uid);
@@ -1604,12 +1641,15 @@ export async function applyExpirationExtractionAction(idToken: string, matchId: 
          const playersList = Object.values(matchData.players);
          const readyCount = playersList.filter(p => p.ready).length;
          const claimCount = playersList.filter(p => (p as any).claim).length;
+         const hasReadyDeadline = !!(matchData as any).readyDeadline;
 
          if (matchData.status === 'CLOSED' || matchData.status === 'COMPLETED') return;
 
-         if (matchData.status === 'WAITING') {
+         const lobbyPlayers = matchData.playerIds?.length || 0;
+         const requiredPlayers = matchData.maxPlayers || 2;
+         if (matchData.status === 'WAITING' && lobbyPlayers < requiredPlayers) {
             // MATCHMAKING FAILED: Nobody joined before the lobby expired. Refund the creator.
-            for (const pid of matchData.playerIds) {
+            for (const pid of matchData.playerIds || []) {
                transaction.update(adminDb.collection("users").doc(pid), {
                   balanceCoins: admin.firestore.FieldValue.increment(matchData.challengeFee || 0),
                });
@@ -1632,7 +1672,22 @@ export async function applyExpirationExtractionAction(idToken: string, matchId: 
             return;
          }
 
-         if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
+         const readyDeadlineTs = (() => {
+            const readyDeadline = (matchData as any).readyDeadline;
+            if (!readyDeadline) return null;
+            if (typeof readyDeadline.toDate === 'function') return readyDeadline.toDate().getTime();
+            if (readyDeadline.seconds) return readyDeadline.seconds * 1000;
+            return new Date(readyDeadline).getTime();
+         })();
+
+         const readyPlayerUid = playersList.find((p: any) => p.ready)?.uid;
+         if (readyCount === 1 && claimCount === 0 && readyPlayerUid && readyDeadlineTs && Date.now() >= readyDeadlineTs && ['WAITING', 'READY'].includes(matchData.status)) {
+            const { resolveTechnicalWin } = await import("@/lib/match-engine/validation");
+            await resolveTechnicalWin(transaction, matchRef, matchData as any as EngineMatch, readyPlayerUid);
+            return;
+         }
+
+         if (readyCount === 0 || ((!hasReadyDeadline || matchData.status !== 'WAITING') && readyCount === playersList.length && claimCount === 0)) {
             await resolveDoubleNoShow(transaction, matchRef, matchData as any as EngineMatch);
          } else if (claimCount === 1) {
             // ðŸ† AUTO-RESOLVE: One person submitted, the other vanished. 

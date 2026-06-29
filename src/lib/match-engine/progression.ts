@@ -151,7 +151,8 @@ export async function handleLeagueAdvancement(
    const matchesCompleted = (circuit.matchesCompleted || 0) + 1;
    const totalMatches = circuit.totalMatches || 1;
    const drawClaims = Object.values(matchData.players).filter(p => (p as any).claim === 'DRAW').length;
-   const isDraw = !winnerUid && (drawClaims === matchData.playerIds.length || p1Goals === p2Goals);
+   const isDoubleNoShow = matchData.disputeReason === 'DOUBLE_NO_SHOW_EXTRACTION';
+   const isDraw = !winnerUid && !isDoubleNoShow && drawClaims === matchData.playerIds.length;
    
    const updates: any = {
       matchesCompleted: admin.firestore.FieldValue.increment(1)
@@ -192,23 +193,46 @@ export async function handleLeagueAdvancement(
    transaction.update(circuitRef, updates);
 
    const pCount = circuit.playerIds.length;
-   const roundSize = Math.floor(pCount / 2);
-   if (matchesCompleted % roundSize === 0 && matchesCompleted < totalMatches) {
-      const currentRound = (circuit as any).currentRound || 1;
-      const nextRound = currentRound + 1;
-      const nextRoundMatchIds = (circuit as any).roundSchedule?.[nextRound] || [];
-      // Each scheduled match gets a fresh timer when activated (test mode: 3 min, production: 24h)
-      const isTestMode = (circuit as any).isTestMode || process.env.NEXT_PUBLIC_TEST_MODE === 'true';
-      const expiryMs = isTestMode ? 3 * 60 * 1000 : 24 * 3600 * 1000; // 3 minutes or 24 hours
-      const matchActivatedExpiry = new Date(Date.now() + expiryMs);
-      for (const mid of nextRoundMatchIds) {
-         transaction.update(adminDb.collection("matches").doc(mid), { 
-            status: 'WAITING',
-            expiresAt: matchActivatedExpiry
-         });
+   const currentRoundRaw = (circuit as any).currentRound || 1;
+   const currentRound = Number(currentRoundRaw) || 1;
+   const rawRoundSchedule = (circuit as any).roundSchedule || {};
+   const roundSchedule: Record<number, string[]> = {};
+   for (const [rawKey, ids] of Object.entries(rawRoundSchedule)) {
+      const parsedKey = Number(rawKey.replace(/\D/g, ''));
+      if (!Number.isNaN(parsedKey) && parsedKey > 0) {
+         roundSchedule[parsedKey] = Array.isArray(ids) ? ids : [];
       }
-      transaction.update(circuitRef, { currentRound: nextRound });
-      await pushGlobalCommand(transaction, circuitRef.id, `TACTICAL UPDATE: ROUND ${currentRound} SECURED. ACTIVATING ROUND ${nextRound} SECTORS.`);
+   }
+   const scheduleRounds = Object.keys(roundSchedule)
+      .map((r) => Number(r))
+      .filter((n) => !Number.isNaN(n));
+   const maxRound = scheduleRounds.length > 0 ? Math.max(...scheduleRounds) : currentRound;
+   const totalMatchesFromSchedule = scheduleRounds.reduce((sum, round) => sum + (roundSchedule[round]?.length || 0), 0);
+   const resolvedTotalMatches = Math.max(
+      typeof circuit.totalMatches === 'number' && circuit.totalMatches > 0 ? circuit.totalMatches : 0,
+      totalMatchesFromSchedule
+   ) || 1;
+   const currentRoundMatches = roundSchedule[currentRound]?.length || Math.ceil(pCount / 2);
+
+   if (currentRoundMatches > 0 && matchesCompleted % currentRoundMatches === 0 && matchesCompleted < resolvedTotalMatches) {
+      let nextRound = currentRound + 1;
+      while (nextRound <= maxRound && (!roundSchedule[nextRound] || roundSchedule[nextRound].length === 0)) {
+         nextRound += 1;
+      }
+      const nextRoundMatchIds = roundSchedule[nextRound] || [];
+      if (nextRoundMatchIds.length > 0) {
+         const isTestMode = (circuit as any).isTestMode || process.env.NEXT_PUBLIC_TEST_MODE === 'true';
+         const expiryMs = isTestMode ? 3 * 60 * 1000 : 24 * 3600 * 1000;
+         const matchActivatedExpiry = new Date(Date.now() + expiryMs);
+         for (const mid of nextRoundMatchIds) {
+            transaction.update(adminDb.collection("matches").doc(mid), {
+               status: 'WAITING',
+               expiresAt: matchActivatedExpiry
+            });
+         }
+         transaction.update(circuitRef, { currentRound: nextRound });
+         await pushGlobalCommand(transaction, circuitRef.id, `TACTICAL UPDATE: ROUND ${currentRound} SECURED. ACTIVATING ROUND ${nextRound} SECTORS.`);
+      }
    }
 
    if (matchesCompleted >= totalMatches) {

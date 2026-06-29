@@ -19,7 +19,33 @@ export function RestrictionGuard({ children }: { children: React.ReactNode }) {
     return children;
   }
 
-  const handleLogout = () => auth.signOut();
+  const handleLogout = async () => {
+    try {
+      // Clear all session/storage data first (iOS-specific fix)
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+        sessionStorage.clear();
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c.replace(/^ +/, "").replace(/=.*/, `=;expires=${new Date().toUTCString()};path=/`);
+        });
+      }
+      
+      await auth.signOut();
+      
+      // Wait briefly for auth state to update before redirect
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Force hard redirect
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+    } catch (err) {
+      console.error("Logout failed:", err);
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black flex flex-col items-center justify-center p-6 text-center overflow-hidden">

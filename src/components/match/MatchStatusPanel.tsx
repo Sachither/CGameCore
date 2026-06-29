@@ -36,6 +36,24 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const isDisputed = match?.status === 'DISPUTED';
   const isTournamentOrLeague = (match.format === 'tournament' || match.format === 'league' || !!match.circuitId || !!match.leagueId);
 
+  const parseDateValue = (value: any) => {
+    if (!value) return null;
+    if (typeof value.toDate === 'function') return value.toDate();
+    if (value.seconds) return new Date(value.seconds * 1000);
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const readyDeadlineDate = parseDateValue((match as any).readyDeadline);
+  const readyDeadlineExpired = readyDeadlineDate ? Date.now() >= readyDeadlineDate.getTime() : false;
+
+  const playersDataKey = React.useMemo(() => {
+    return Object.keys(match.players || {}).sort().map(pid => {
+      const player = match.players?.[pid] as any;
+      return `${pid}:${player?.ready ? 1 : 0}:${player?.claim || ''}`;
+    }).join('|');
+  }, [match.players]);
+
   React.useEffect(() => {
     const hasReadyTimer = (match as any)?.readyDeadline && !['CLOSED', 'COMPLETED', 'IN_PROGRESS'].includes(match.status);
     const hasResolutionTimer = !hasReadyTimer && (match?.status === 'RESOLVING' || match?.status === 'WAITING_FOR_OPPONENT') && match?.resolutionEndTime;
@@ -89,7 +107,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
     updateTimer();
     const intv = setInterval(updateTimer, 1000);
     return () => clearInterval(intv);
-  }, [match?.status, match?.resolutionEndTime, match?.expiresAt, (match as any)?.readyDeadline, currentUserUid, user]);
+  }, [match?.status, match?.resolutionEndTime, match?.expiresAt, (match as any)?.readyDeadline, currentUserUid, user, playersDataKey]);
   React.useEffect(() => {
     if (timerSeconds !== 0 || match?.status === 'CLOSED' || match?.status === 'COMPLETED') return;
 
@@ -130,11 +148,11 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
       try {
         setLoading(true);
         const idToken = await user.getIdToken();
-        if (myReady && readyCount === 1) {
+        if (myReady && readyCount === 1 && readyDeadlineExpired) {
           const { claimTechnicalWinAction } = await import("@/app/actions/match-actions");
           await claimTechnicalWinAction(idToken, match.id!);
           toast.success("VICTORY SECURED", "Opponent forfeited by no-show (Auto-Resolved).");
-        } else if (readyCount === 0 || (readyCount === allPlayers.length && claimCount === 0)) {
+        } else if ((readyCount === 0 || (readyCount === allPlayers.length && claimCount === 0)) && (!hasReadyDeadline || readyDeadlineExpired)) {
           const { applyExpirationExtractionAction } = await import("@/app/actions/match-actions");
           await applyExpirationExtractionAction(idToken, match.id!);
           toast.error("MUTUAL FORFEIT", "Extraction protocol initiated (Auto-Resolved).");
@@ -150,7 +168,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
     }, 20000); // 20 second grace window
 
     return () => clearTimeout(timeout);
-  }, [timerSeconds, match?.status, match?.id, user, currentUserUid, loading, hasGhostOpponent]);
+  }, [timerSeconds, match?.status, match?.id, user, currentUserUid, loading, hasGhostOpponent, playersDataKey]);
 
 
   // Auto-redirect ALL users when match closes
@@ -186,7 +204,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
   const readyCount = allPlayers.filter(p => p.ready).length;
   const hasReadyDeadline = !!(match as any).readyDeadline;
   const isFinalTimeout = timerSeconds !== null && timerSeconds <= 0;
-  const showAwaitingOpponentReadyText = hasReadyDeadline && readyCount === 1 && !isFinalTimeout;
+  const showAwaitingOpponentReadyText = hasReadyDeadline && readyCount === 1 && !readyDeadlineExpired;
 
   // Check if current user is facing a ghost opponent (in tournament finals)
 
@@ -383,7 +401,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
               <div className="flex items-center justify-between mb-4">
                  <div className="flex items-center gap-2">
                     <Shield className="w-5 h-5 text-black" />
-                    <h3 className="text-black font-black uppercase tracking-tighter text-lg italic tracking-wider">Uplink Established</h3>
+                    <h3 className="text-black font-black uppercase tracking-wider text-lg italic">Uplink Established</h3>
                  </div>
                  <span className="text-[8px] bg-black text-accent px-2 py-0.5 rounded-full font-black uppercase">Encrypted Link</span>
               </div>
@@ -605,17 +623,17 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                             {/* RANK 2 */}
                             <div className="flex flex-col items-center gap-1">
                                <div className="w-12 h-1 bg-white/10 rounded-full mb-1" />
-                               <div className="text-[8px] font-bold text-gray-400 uppercase truncate max-w-[60px]">2ND</div>
+                               <div className="text-[8px] font-bold text-gray-400 uppercase truncate max-w-15">2ND</div>
                             </div>
                             {/* RANK 1 */}
                             <div className="flex flex-col items-center gap-1 scale-110 px-4">
                                <Crown className="w-4 h-4 text-accent mb-1 animate-bounce" />
-                               <div className="text-[10px] font-black text-accent uppercase truncate max-w-[80px]">CHAMPION</div>
+                               <div className="text-[10px] font-black text-accent uppercase truncate max-w-20">CHAMPION</div>
                             </div>
                             {/* RANK 3 */}
                             <div className="flex flex-col items-center gap-1">
                                <div className="w-12 h-1 bg-white/10 rounded-full mb-1" />
-                               <div className="text-[8px] font-bold text-gray-400 uppercase truncate max-w-[60px]">3RD</div>
+                               <div className="text-[8px] font-bold text-gray-400 uppercase truncate max-w-15">3RD</div>
                             </div>
                          </div>
                          <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest mt-4">
@@ -684,7 +702,9 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                        const myReady = (me as any)?.ready;
 
                        const hasReadyDeadline = !!(match as any).readyDeadline;
-                       if (myReady && readyCount === 1) {
+                       const readyDeadlineDate = parseDateValue((match as any).readyDeadline);
+                       const readyDeadlineExpired = readyDeadlineDate ? Date.now() >= readyDeadlineDate.getTime() : false;
+                       if (myReady && readyCount === 1 && hasReadyDeadline && readyDeadlineExpired) {
                           return (
                              <div className="space-y-3">
                                <button
@@ -732,7 +752,7 @@ export default function MatchStatusPanel({ match, currentUserUid }: MatchStatusP
                                )}
                              </div>
                           );
-                       } else if (readyCount === 0 || (readyCount === allPlayers.length && claimCount === 0)) {
+                       } else if (!hasReadyDeadline && (readyCount === 0 || (readyCount === allPlayers.length && claimCount === 0))) {
                           return (
                              <button
                                disabled={loading}

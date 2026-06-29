@@ -38,10 +38,32 @@ export default function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobile
 
   const handleLogout = async () => {
     try {
+      // Clear all session/storage data first (iOS-specific fix)
+      if (typeof window !== 'undefined') {
+        localStorage.clear();
+        sessionStorage.clear();
+        // Clear all cookies by setting expiration to past
+        document.cookie.split(";").forEach((c) => {
+          document.cookie = c.replace(/^ +/, "").replace(/=.*/, `=;expires=${new Date().toUTCString()};path=/`);
+        });
+      }
+      
+      // Sign out from Firebase
       await signOut(auth);
-      router.push('/');
+      
+      // Wait briefly for auth state to update before redirect
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Force hard redirect (works better on iOS Safari)
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
     } catch (err) {
       console.error("Sign out failed:", err);
+      // Force redirect even if error occurs
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
     }
   };
 

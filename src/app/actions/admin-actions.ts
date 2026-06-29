@@ -1645,8 +1645,19 @@ export async function adminResolveExpiredMatchAction(idToken: string, matchId: s
       throw new Error('Match is not eligible for expiry resolution.');
     }
 
-    const expiredAt = matchData.expiresAt.toDate ? matchData.expiresAt.toDate() : new Date(matchData.expiresAt);
-    if (expiredAt.getTime() > Date.now()) {
+    const expiredAt = matchData.expiresAt?.toDate ? matchData.expiresAt.toDate() : new Date(matchData.expiresAt);
+    const readyDeadline = matchData.readyDeadline;
+    const readyDeadlineTs = readyDeadline?.toDate
+      ? readyDeadline.toDate().getTime()
+      : readyDeadline?.seconds
+        ? readyDeadline.seconds * 1000
+        : readyDeadline
+          ? new Date(readyDeadline).getTime()
+          : null;
+    const isExpiredByExpiresAt = !!matchData.expiresAt && expiredAt.getTime() <= Date.now();
+    const isExpiredByReadyDeadline = readyDeadlineTs !== null && readyDeadlineTs <= Date.now();
+
+    if (!isExpiredByExpiresAt && !isExpiredByReadyDeadline) {
       throw new Error('Match has not expired yet.');
     }
 
@@ -1654,8 +1665,18 @@ export async function adminResolveExpiredMatchAction(idToken: string, matchId: s
       const playersList = Object.values(matchData.players || {});
       const readyCount = playersList.filter((p: any) => p.ready).length;
       const claimCount = playersList.filter((p: any) => p.claim).length;
+      const hasReadyDeadline = !!matchData.readyDeadline;
+      const readyDeadlineTs = matchData.readyDeadline?.toDate
+        ? matchData.readyDeadline.toDate().getTime()
+        : matchData.readyDeadline?.seconds
+          ? matchData.readyDeadline.seconds * 1000
+          : matchData.readyDeadline
+            ? new Date(matchData.readyDeadline).getTime()
+            : null;
 
-      if (matchData.status === 'WAITING') {
+      const lobbyPlayers = matchData.playerIds?.length || 0;
+      const requiredPlayers = matchData.maxPlayers || 2;
+      if (matchData.status === 'WAITING' && lobbyPlayers < requiredPlayers) {
         for (const uid of matchData.playerIds || []) {
           transaction.update(adminDb.collection('users').doc(uid), {
             balanceCoins: admin.firestore.FieldValue.increment(matchData.challengeFee || 0),
@@ -1679,14 +1700,14 @@ export async function adminResolveExpiredMatchAction(idToken: string, matchId: s
         return;
       }
 
-      if (readyCount === 0 || (readyCount === playersList.length && claimCount === 0)) {
-        const { resolveDoubleNoShow } = await import('@/lib/match-engine/validation');
-        await resolveDoubleNoShow(transaction, matchRef, matchData as any);
-      } else if (readyCount === 1 && claimCount === 0) {
+      if (readyCount === 1 && claimCount === 0 && hasReadyDeadline && readyDeadlineTs && readyDeadlineTs <= Date.now() && ['WAITING', 'READY'].includes(matchData.status)) {
         const readyPlayerUid = (playersList.find((p: any) => p.ready) as any)?.uid;
         if (!readyPlayerUid) throw new Error('Unable to resolve ready player.');
         const { resolveTechnicalWin } = await import('@/lib/match-engine/validation');
         await resolveTechnicalWin(transaction, matchRef, matchData as any, readyPlayerUid);
+      } else if (readyCount === 0 || ((!hasReadyDeadline || matchData.status !== 'WAITING') && readyCount === playersList.length && claimCount === 0)) {
+        const { resolveDoubleNoShow } = await import('@/lib/match-engine/validation');
+        await resolveDoubleNoShow(transaction, matchRef, matchData as any);
       } else if (claimCount === 1) {
         const claimantUid = Object.keys(matchData.players).find((pid) => !!(matchData.players[pid] as any).claim);
         if (!claimantUid) throw new Error('No claimant found.');
